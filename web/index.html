@@ -35,7 +35,6 @@
   #out details.trace { color: var(--muted); }
   #out details.trace summary { cursor: pointer; font-size: 0.9em; }
   #out details.trace .body { border-left: 2px solid var(--border); padding-left: 0.75rem; margin-left: 0.3rem; }
-  header label { color: var(--muted); float: right; margin-left: 1rem; cursor: pointer; }
   form { display: flex; border-top: 1px solid var(--border); padding: 0.5rem 1rem; gap: 0.25rem; }
   #prompt { color: var(--echo); white-space: pre; }
   #in { flex: 1; font: inherit; color: inherit; background: transparent; border: none; outline: none; }
@@ -57,7 +56,7 @@
 </style>
 </head>
 <body>
-<header><h1>veripb-repl</h1><span>plain mode · veripb in WebAssembly · files stay in this tab</span><label><input id="show-trace" type="checkbox"> show veripb output</label><span id="status"></span></header>
+<header><h1>veripb-repl</h1><span>plain mode · veripb in WebAssembly · files stay in this tab</span><span id="status"></span></header>
 <main id="term">
   <pre id="out"><span class="note">Loading WebAssembly modules…</span>
 </pre>
@@ -97,23 +96,32 @@ function clearLoading() {
 }
 
 // veripb's own output lines (flagged by the worker) are collected into a
-// collapsed <details> block per run of consecutive lines. Blank lines inside
-// a block belong to it; blank lines after its last line do not.
-const showTraceBox = document.getElementById("show-trace");
-let showTrace = false;
-try { showTrace = localStorage.getItem("veripb-repl-show-trace") === "1"; } catch {}
-showTraceBox.checked = showTrace;
-showTraceBox.addEventListener("change", () => {
-  showTrace = showTraceBox.checked;
-  try { localStorage.setItem("veripb-repl-show-trace", showTrace ? "1" : "0"); } catch {}
-  for (const block of out.querySelectorAll("details.trace")) block.open = showTrace;
-});
+// <details> block per run of consecutive lines. A block starts open and
+// closes once it passes FOLD_LINES lines. Blank lines inside a block belong
+// to it; blank lines after its last line do not.
+const FOLD_LINES = 20;
+
+// Commands whose output is what the user asked to see: their veripb lines
+// are shown as ordinary output, never folded. Resolution mirrors the REPL's
+// `resolve_command`: exact name, else a unique prefix of COMMANDS.
+const COMMANDS = ["check", "show", "explain", "list", "objective", "preserved", "undo", "delete",
+  "formula", "debug", "insert", "reset", "load", "instance", "source", "verify", "save", "edit",
+  "deassert", "help", "theme", "quit"];
+const SHOW_IN_FULL = new Set(["check", "show", "explain", "list", "objective", "preserved", "help"]);
+function resolveCommand(text) {
+  const word = text.trim().match(/^:(\S+)/)?.[1];
+  if (!word) return null;
+  if (COMMANDS.includes(word)) return word;
+  const matches = COMMANDS.filter((name) => name.startsWith(word));
+  return matches.length === 1 ? matches[0] : null;
+}
+let foldTrace = true;
 
 let traceBlock = null;
 let traceBlanks = [];
 
 function newTraceBlock() {
-  const details = Object.assign(document.createElement("details"), { className: "trace", open: showTrace });
+  const details = Object.assign(document.createElement("details"), { className: "trace", open: true });
   const summary = document.createElement("summary");
   const body = Object.assign(document.createElement("div"), { className: "body" });
   details.append(summary, body);
@@ -122,7 +130,9 @@ function newTraceBlock() {
     details,
     add(lines) {
       body.appendChild(document.createTextNode(lines.map((l) => l + "\n").join("")));
+      const before = count;
       count += lines.length;
+      if (before <= FOLD_LINES && count > FOLD_LINES) details.open = false;
       summary.textContent = `veripb output · ${count} line${count === 1 ? "" : "s"}`;
     },
   };
@@ -150,7 +160,7 @@ function append(lines, cls, trace) {
     plain = "";
   };
   lines.forEach((line, i) => {
-    if (trace?.[i] && !cls) {
+    if (trace?.[i] && !cls && foldTrace) {
       if (!traceBlock) {
         flushPlain();
         traceBlock = newTraceBlock();
@@ -221,6 +231,7 @@ document.getElementById("form").addEventListener("submit", (event) => {
   if (input.disabled) return;
   const text = input.value;
   append(PROMPTS[mode] + text, "echo");
+  foldTrace = !SHOW_IN_FULL.has(resolveCommand(text));
   if (text.trim() && history[history.length - 1] !== text) history.push(text);
   historyPos = history.length;
   input.value = "";

@@ -147,10 +147,12 @@ Page:
 - **Paths:** relative paths resolve against `/`, for example
   `:instance two-of-three`.
 - **veripb output:** lines that veripb printed during the command (its
-  version banner, traces, raw errors) are folded into collapsed "veripb
-  output · N lines" blocks. Click a block to open it; "show veripb output"
-  in the header opens all blocks and is remembered. veripb's status lines
-  (`s VERIFIED …`) and all of the REPL's own lines stay visible. A line
+  version banner, traces, raw errors) are grouped into "veripb output · N
+  lines" blocks that open and close on click. A block starts closed when it
+  has more than 20 lines. For `:check`, `:show`, `:explain`, `:list`,
+  `:objective`, `:preserved` and `:help` (or an unambiguous prefix of one),
+  veripb's lines are shown in full and not grouped. veripb's status lines
+  (`s VERIFIED …`) and all of the REPL's own lines are never grouped. A line
   counts as veripb output when it matches, exactly, a line of the stdout or
   stderr of a veripb run made during that command.
 - **Timing:** the header shows the last command's duration and veripb run
