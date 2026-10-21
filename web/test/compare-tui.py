@@ -18,6 +18,7 @@ import subprocess, sys, tempfile, termios, time
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 REPL = os.path.join(ROOT, "upstream", "veripb-repl")
 sys.path.insert(0, os.path.join(REPL, "demos", "tools"))
+sys.dont_write_bytecode = True  # no __pycache__ inside the submodule
 import tuishot  # noqa: E402
 
 NATIVE_TARGET = os.environ.get("NATIVE_TARGET_DIR", os.path.expanduser("~/.cache/veripb-native"))
