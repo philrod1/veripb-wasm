@@ -1058,7 +1058,6 @@ name = "veripb-propagator"
 version = "0.1.2"
 dependencies = [
  "ahash",
- "by_address",
  "colored",
  "malachite-bigint",
  "thiserror",

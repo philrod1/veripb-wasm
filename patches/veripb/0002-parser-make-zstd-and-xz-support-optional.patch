@@ -119,10 +119,10 @@ index 1237126..370926c 100644
              let decoder = xz2::read::XzDecoder::new(BufReader::new(file));
              Ok((MaybeCompressed::Xz(BufReader::new(decoder)), None))
 diff --git a/veripb-parser/src/pbp_parser/parser.rs b/veripb-parser/src/pbp_parser/parser.rs
-index 77de0f5..2fa1733 100644
+index 273b8c2..89ed64e 100644
 --- a/veripb-parser/src/pbp_parser/parser.rs
 +++ b/veripb-parser/src/pbp_parser/parser.rs
-@@ -57,12 +57,14 @@ pub fn parse_proof<P: ProofProcessor>(
+@@ -58,12 +58,14 @@ pub fn parse_proof<P: ProofProcessor>(
          MaybeCompressed::Plain(r) => {
              Parser::new(file_size, r, processor, formula_labels, args).parse()
          }

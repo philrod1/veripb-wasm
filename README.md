@@ -119,6 +119,7 @@ batches crash Node.
 ## Checks
 
 Compare the WASI binary with a native build of unpatched `upstream/veripb`
-on veripb's own test instances (`work/veripb/tests/instances`, 385 proofs).
-Exit codes match on every instance. Three instances under `incorrect/` have
-several violations, and the two builds report a different one first.
+on veripb's own test instances (`work/veripb/tests/instances`, 387 proofs at `f41ce91`).
+Exit codes match on every instance. Two instances under `incorrect/`
+(`version2` and `version3` `solution_not_propagating`) have several
+violations, and the two builds report a different one first.

@@ -15,10 +15,10 @@ The token now holds an `i64`; only its use as a constraint ID converts to
  2 files changed, 6 insertions(+), 4 deletions(-)
 
 diff --git a/veripb-parser/src/pbp_parser/parser.rs b/veripb-parser/src/pbp_parser/parser.rs
-index 47c59b2..77de0f5 100644
+index 9578bdd..273b8c2 100644
 --- a/veripb-parser/src/pbp_parser/parser.rs
 +++ b/veripb-parser/src/pbp_parser/parser.rs
-@@ -2753,7 +2753,7 @@ impl<'a, P: ProofProcessor, R: BufRead> Parser<'a, P, R> {
+@@ -2755,7 +2755,7 @@ impl<'a, P: ProofProcessor, R: BufRead> Parser<'a, P, R> {
                      None
                  }
                  Token::Integer64(Sign::NoSign, id) => {
@@ -27,7 +27,7 @@ index 47c59b2..77de0f5 100644
                  }
                  token if self.is_constraint_id(&token)? => {
                      Some(PolToken::ConstraintId(self.constraint_id(token)?))
-@@ -2841,10 +2841,12 @@ impl<'a, P: ProofProcessor, R: BufRead> Parser<'a, P, R> {
+@@ -2843,10 +2843,12 @@ impl<'a, P: ProofProcessor, R: BufRead> Parser<'a, P, R> {
                  {
                      return Err(self.pol_parse_error(token, stack_size, operand).into());
                  }
