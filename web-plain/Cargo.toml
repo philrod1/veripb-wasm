@@ -1,0 +1,12 @@
+[package]
+name = "web-plain"
+version = "0.0.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+anyhow = "1"
+tempfile = "3"
+veripb-repl = { path = "../work/veripb-repl" }

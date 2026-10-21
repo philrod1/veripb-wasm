@@ -1,3 +1,4 @@
 /work/
 target/
 /.devcontainer/.env
+/web/pkg/

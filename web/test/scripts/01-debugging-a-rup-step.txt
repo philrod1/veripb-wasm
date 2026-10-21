@@ -1,0 +1,9 @@
+:load chain.opb
+:source chain.pbp
+:verify
+:explain
+:edit 3
+@x3 rup 1 x3 >= 1 : @x1_or_x2 @x1_imp_x3 @x2_imp_x3 ;
+:verify
+:check
+:save chain-fixed.pbp

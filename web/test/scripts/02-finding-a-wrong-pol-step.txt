@@ -1,0 +1,15 @@
+:load two-of-three.opb
+:source two-of-three.pbp
+:verify
+:check
+:debug
+:restart
+:break 5
+:continue
+:explain 4
+:break clear
+:done
+:edit 4
+@sum_all pol @sum_12_13 @not_23 + ;
+:verify
+:check

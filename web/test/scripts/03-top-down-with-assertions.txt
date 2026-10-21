@@ -1,0 +1,15 @@
+:load pigeons.opb
+@h1_amo a 1 ~p11 1 ~p21 1 ~p31 >= 2 ;
+@h2_amo a 1 ~p12 1 ~p22 1 ~p32 >= 2 ;
+@contradiction pol @p1_placed @p2_placed + @p3_placed + @h1_amo + @h2_amo + ;
+:check
+:deassert
+@h1_amo pol @h1_not_12 @h1_not_13 + @h1_not_23 + 2 d ;
+:done
+:verify
+:deassert
+@h2_amo pol @h2_not_12 @h2_not_13 + @h2_not_23 + 2 d ;
+:done
+:verify
+:check
+:list

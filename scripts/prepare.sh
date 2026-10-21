@@ -57,7 +57,7 @@ for name in "${names[@]}"; do
     if [ "$name" = veripb-repl ]; then
         strip_tui "$work"
         git -C "$work" add -A
-        git -C "$work" commit -q --date="@0 +0000" -m "local: strip TUI"
+        GIT_COMMITTER_DATE="@0 +0000" git -C "$work" commit -q --date="@0 +0000" -m "local: strip TUI"
     fi
     git -C "$work" tag -f patch-base > /dev/null
 

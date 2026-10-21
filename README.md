@@ -7,7 +7,7 @@ patch series and applied into `work/`.
 | Target | What |
 |---|---|
 | `wasm32-unknown-unknown` | veripb library (browser), veripb-repl core without the TUI |
-| `wasm32-wasip1` | veripb command-line binary, run under a WASI runtime |
+| `wasm32-wasip1` | veripb command-line binary, run under a WASI runtime; veripb-repl plain mode as a WASI reactor (`web-plain`) |
 
 ## Layout
 
@@ -23,6 +23,9 @@ patch series and applied into `work/`.
 | `repl-core/` | wrapper crate for the veripb-repl core; enables `getrandom`'s `wasm_js` backend |
 | `wasi-run/` | Node.js `node:wasi` runners for the WASI binary and WASI test binaries |
 | `bigint-probe/` | prints `malachite-bigint` and `i128` results, for diffing native against wasm |
+| `web-plain/` | veripb-repl plain mode as a `wasm32-wasip1` reactor: `vr_init`, `vr_line`, `vr_alloc`, `vr_free` |
+| `web/` | browser page running `web-plain` and veripb in a Web Worker |
+| `scripts/build-web.sh` | builds `web/pkg/` (generated, not tracked) |
 
 ## Local changes
 
@@ -38,6 +41,12 @@ patch series and applied into `work/`.
 `prepare.sh`, ahead of `patches/veripb-repl/`. It removes `src/tui`,
 `src/main.rs`, `pub mod tui;`, the `crossterm` dependency, `[[bin]]` and
 `[dev-dependencies]`.
+
+`patches/veripb-repl/`:
+
+| Patch | Change |
+|---|---|
+| `0001-checker-run-veripb-through-a-host-import-on-WASI` | On `target_os = "wasi"`, `checker::invoke::run` calls the host import `veripb_host.run_veripb` instead of spawning `veripb`. |
 
 In each `work/<name>`, the tag `patch-base` marks the commit the patch series
 applies to.
@@ -115,6 +124,57 @@ node --no-warnings wasi-run/runtest.mjs <test.wasm> --test-threads=1
 
 Keep each `batch.mjs` run to about 30 lines (use `split -l 30`). Larger
 batches crash Node.
+
+## Browser version
+
+`web/` runs veripb-repl plain mode in the browser. Nothing runs on a server;
+files live in an in-memory filesystem in the tab and are lost on reload.
+
+```
+scripts/prepare.sh
+scripts/build-web.sh
+python3 -m http.server -d web 8000      # then open http://localhost:8000
+```
+
+Serve from the host if the container publishes no ports: `web/` is part of
+the bind-mounted repo.
+
+Page:
+- **Input:** one line per Enter. Up and Down step through command history.
+- **Files:** "Load demo files" copies veripb-repl's `demos/files` into `/`,
+  and "Upload" adds local files. Click a file name to download it, for
+  example after `:save`.
+- **Paths:** relative paths resolve against `/`, for example
+  `:instance two-of-three`.
+
+Differences from `veripb-repl --plain`:
+- A command error is printed and the session continues; plain mode exits.
+- The prompt is always `edit> ` in edit mode, without the de-asserted
+  constraint.
+- No "Working…" line before `:source` and `:instance`.
+
+How it works:
+- **Page and worker:** `index.html` sends input lines to `worker.js`, a
+  module Web Worker. The worker compiles `pkg/repl.wasm` and
+  `pkg/veripb.wasm`, then runs the REPL through `host.js`.
+- **Running veripb:** for each veripb invocation, `host.js` creates a fresh
+  veripb instance on the same filesystem, with regular files as
+  stdout/stderr. It copies those to `/tmp/.veripb-stdout` and
+  `/tmp/.veripb-stderr`, and returns the exit code to the REPL.
+- **WASI shim:** `@bjorn3/browser_wasi_shim` 0.4.2, vendored unmodified in
+  `web/vendor/browser_wasi_shim/`.
+
+Tests (Node.js, after `scripts/build-web.sh`):
+
+```
+web/test/compare.sh              # every web/test/scripts/*.txt: native veripb-repl --plain vs web/pkg
+node web/test/transcript.mjs <files-dir> [<dump-dir>] < script.txt
+```
+
+`compare.sh` builds native veripb and veripb-repl from the unpatched
+submodules. It removes prompts, "Working…" lines and temp-file names from
+both transcripts, then diffs them and the files each run leaves behind. The
+scripts are the four veripb-repl demo walkthroughs in plain-mode form.
 
 ## Checks
 
