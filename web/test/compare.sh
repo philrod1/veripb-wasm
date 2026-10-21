@@ -29,7 +29,7 @@ normalise() {
     sed -E \
         -e ':a' -e 's/^(pbp|opb|debug|edit( \([^)]*\))?)> //' -e 'ta' \
         -e 's/\.tmp[A-Za-z0-9]{6}/.tmpXXXXXX/g' \
-        | grep -v '^Working…$' | sed -e '${/^$/d}'
+        | grep -v '^Working…$' | sed -e '${/^$/d;}'
 }
 
 scripts=("$@")

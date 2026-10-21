@@ -9,9 +9,21 @@ export CARGO_TARGET_DIR="${CARGO_TARGET_DIR:-$HOME/.cache/veripb-wasm-target}"
 out="$CARGO_TARGET_DIR/wasm32-wasip1/release"
 pkg="$root/web/pkg"
 
+# work/<name> must be fully prepared: patch-base tag present, no `git am` in
+# progress, and (veripb-repl) no TUI left.
+export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'
 for name in veripb veripb-repl; do
-    [ -d "$root/work/$name" ] || { echo "work/$name missing: run scripts/prepare.sh" >&2; exit 1; }
+    work="$root/work/$name"
+    if [ ! -d "$work/.git" ] || ! git -C "$work" rev-parse -q --verify patch-base > /dev/null \
+        || [ -d "$work/.git/rebase-apply" ]; then
+        echo "work/$name is not fully prepared: run scripts/prepare.sh $name" >&2
+        exit 1
+    fi
 done
+if grep -q '^crossterm' "$root/work/veripb-repl/Cargo.toml"; then
+    echo "work/veripb-repl still has the TUI: run scripts/prepare.sh veripb-repl" >&2
+    exit 1
+fi
 
 (cd "$root/work/veripb" && cargo build --release --bin veripb --no-default-features --target wasm32-wasip1)
 (cd "$root/web-plain" && cargo build --release --target wasm32-wasip1)
