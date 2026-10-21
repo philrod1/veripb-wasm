@@ -1,0 +1,139 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Phil Rodgers <philip.rodgers@glasgow.ac.uk>
+Date: Wed, 21 Oct 2026 10:42:58 +0000
+Subject: [PATCH 2/3] parser: make zstd and xz support optional
+
+`zstd` and `xz2` build C code, which is not available on wasm targets.
+They are now behind the default feature `native-compression` of
+veripb-parser, forwarded by veripb. Without the feature, `.zst` and `.xz`
+inputs return an "unsupported" error. Gzip is unaffected.
+---
+ Cargo.toml                             |  5 +++++
+ veripb-checker/Cargo.toml              |  1 +
+ veripb-parser/Cargo.toml               |  8 ++++++--
+ veripb-parser/src/io.rs                | 12 ++++++++++++
+ veripb-parser/src/pbp_parser/parser.rs |  2 ++
+ 5 files changed, 26 insertions(+), 2 deletions(-)
+
+diff --git a/Cargo.toml b/Cargo.toml
+index eef93bb..0ccf496 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -58,6 +58,7 @@ version = "0.1.2"
+ path = "veripb-formula"
+ 
+ [dependencies.veripb-parser]
++default-features = false
+ version = "0.1.2"
+ path = "veripb-parser"
+ 
+@@ -108,3 +109,7 @@ panic = "abort"
+ 
+ [profile.bench]
+ debug = true
++
++[features]
++default = ["native-compression"]
++native-compression = ["veripb-parser/native-compression"]
+diff --git a/veripb-checker/Cargo.toml b/veripb-checker/Cargo.toml
+index f86891c..4007f99 100644
+--- a/veripb-checker/Cargo.toml
++++ b/veripb-checker/Cargo.toml
+@@ -38,6 +38,7 @@ version = "0.1.0"
+ path = "../veripb-rules"
+ 
+ [dependencies.veripb-parser]
++default-features = false
+ version = "0.1.2"
+ path = "../veripb-parser"
+ 
+diff --git a/veripb-parser/Cargo.toml b/veripb-parser/Cargo.toml
+index f8c6d1c..32af3d4 100644
+--- a/veripb-parser/Cargo.toml
++++ b/veripb-parser/Cargo.toml
+@@ -22,8 +22,8 @@ malachite-nz = "0.10.0"
+ num-traits = "0.2.19"
+ spire_enum = "1.0.0"
+ thiserror = "2.0.20"
+-zstd = "0.13"
+-xz2 = "0.1.7"
++zstd = { version = "0.13", optional = true }
++xz2 = { version = "0.1.7", optional = true }
+ flate2 = "1.1.9"
+ 
+ [dependencies.veripb-formula]
+@@ -52,3 +52,7 @@ name = "cnf_stats"
+ 
+ [[example]]
+ name = "wcnf_stats"
++
++[features]
++default = ["native-compression"]
++native-compression = ["dep:zstd", "dep:xz2"]
+diff --git a/veripb-parser/src/io.rs b/veripb-parser/src/io.rs
+index 1237126..370926c 100644
+--- a/veripb-parser/src/io.rs
++++ b/veripb-parser/src/io.rs
+@@ -39,8 +39,10 @@ impl Encoding {
+ #[delegated_enum]
+ pub enum MaybeCompressed<R: Read> {
+     Plain(BufReader<R>),
++    #[cfg(feature = "native-compression")]
+     Zstd(BufReader<zstd::stream::read::Decoder<'static, BufReader<R>>>),
+     Gzip(BufReader<flate2::read::GzDecoder<BufReader<R>>>),
++    #[cfg(feature = "native-compression")]
+     Xz(BufReader<xz2::read::XzDecoder<BufReader<R>>>),
+ }
+ 
+@@ -64,8 +66,10 @@ impl<R: Read> MaybeCompressed<R> {
+     pub fn encoding(&self) -> Encoding {
+         match self {
+             Self::Plain(_) => Encoding::Plain,
++            #[cfg(feature = "native-compression")]
+             Self::Zstd(_) => Encoding::Zstd,
+             Self::Gzip(_) => Encoding::Gzip,
++            #[cfg(feature = "native-compression")]
+             Self::Xz(_) => Encoding::Xz,
+         }
+     }
+@@ -85,6 +89,13 @@ pub fn open_maybe_compressed<P: AsRef<Path>>(
+                 Some(file_size),
+             ))
+         }
++        #[cfg(not(feature = "native-compression"))]
++        Encoding::Zstd | Encoding::Xz => Err(io::Error::new(
++            io::ErrorKind::Unsupported,
++            "zstd and xz input require the native-compression feature",
++        )
++        .into()),
++        #[cfg(feature = "native-compression")]
+         Encoding::Zstd => {
+             let decoder = zstd::stream::read::Decoder::new(file)?;
+             Ok((MaybeCompressed::Zstd(BufReader::new(decoder)), None))
+@@ -93,6 +104,7 @@ pub fn open_maybe_compressed<P: AsRef<Path>>(
+             let decoder = flate2::read::GzDecoder::new(BufReader::new(file));
+             Ok((MaybeCompressed::Gzip(BufReader::new(decoder)), None))
+         }
++        #[cfg(feature = "native-compression")]
+         Encoding::Xz => {
+             let decoder = xz2::read::XzDecoder::new(BufReader::new(file));
+             Ok((MaybeCompressed::Xz(BufReader::new(decoder)), None))
+diff --git a/veripb-parser/src/pbp_parser/parser.rs b/veripb-parser/src/pbp_parser/parser.rs
+index 77de0f5..2fa1733 100644
+--- a/veripb-parser/src/pbp_parser/parser.rs
++++ b/veripb-parser/src/pbp_parser/parser.rs
+@@ -57,12 +57,14 @@ pub fn parse_proof<P: ProofProcessor>(
+         MaybeCompressed::Plain(r) => {
+             Parser::new(file_size, r, processor, formula_labels, args).parse()
+         }
++        #[cfg(feature = "native-compression")]
+         MaybeCompressed::Zstd(r) => {
+             Parser::new(file_size, r, processor, formula_labels, args).parse()
+         }
+         MaybeCompressed::Gzip(r) => {
+             Parser::new(file_size, r, processor, formula_labels, args).parse()
+         }
++        #[cfg(feature = "native-compression")]
+         MaybeCompressed::Xz(r) => {
+             Parser::new(file_size, r, processor, formula_labels, args).parse()
+         }

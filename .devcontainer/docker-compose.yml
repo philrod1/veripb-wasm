@@ -1,0 +1,23 @@
+name: veripb-wasm
+services:
+  rust-dev:
+    build:
+      context: .
+      args:
+        USERNAME: ${USER}
+        USER_UID: ${UID}
+    volumes:
+      - ../../veripb-repl:/veripb-repl
+      - ..:/workspace
+      - cargo-cache:/home/${USER}/.cargo/registry
+      - ${HOME}/.claude:/home/${USER}/.claude
+      - ${HOME}/.claude.json:/home/${USER}/.claude.json
+    cap_drop:
+      - ALL
+    stdin_open: true
+    tty: true
+    environment:
+      - CLAUDE_CODE_OAUTH_TOKEN=${CLAUDE_CODE_OAUTH_TOKEN}
+
+volumes:
+  cargo-cache:

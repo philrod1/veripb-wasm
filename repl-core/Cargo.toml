@@ -1,0 +1,10 @@
+[package]
+name = "repl-core"
+version = "0.0.0"
+edition = "2024"
+
+[dependencies]
+veripb-repl = { path = "../work/veripb-repl" }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }

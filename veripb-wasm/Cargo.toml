@@ -1,0 +1,16 @@
+[package]
+name = "veripb-wasm"
+version = "0.0.0"
+edition = "2024"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+veripb = { path = "../work/veripb", default-features = false }
+veripb-checker = { path = "../work/veripb/veripb-checker" }
+veripb-formula = { path = "../work/veripb/veripb-formula" }
+veripb-parser = { path = "../work/veripb/veripb-parser", default-features = false }
+
+[target.'cfg(all(target_arch = "wasm32", target_os = "unknown"))'.dependencies]
+getrandom = { version = "0.3", features = ["wasm_js"] }
