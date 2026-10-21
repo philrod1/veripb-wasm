@@ -7,6 +7,7 @@
 import { createChannelBuffer, ChannelWriter, MAIL_PUT, MAIL_GET, MAIL_DUMP } from "../tty-channel.js";
 
 const FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace';
+const STARTUP_TIMEOUT_MS = 15000;
 // Waited for a file snapshot before falling back to the files given at mount.
 const SNAPSHOT_TIMEOUT_MS = 3000;
 
@@ -81,7 +82,20 @@ export async function mount(root, host) {
   }
   const mail = (op, name, data, resolve) => { queue.push({ op, name, data, resolve }); pumpMail(); };
 
+  // A worker that fails to load reports only through `error`.
+  let started = false;
+  const startupTimer = setTimeout(() => {
+    if (!started) term.write("\r\n\x1b[2mThe TUI has not started yet. If this persists, check the browser console.\x1b[0m\r\n");
+  }, STARTUP_TIMEOUT_MS);
+  worker.onerror = (event) => {
+    event.preventDefault();
+    clearTimeout(startupTimer);
+    term.write(`\r\n\x1b[31mWorker failed: ${event.message || "could not load classic-worker.js (see the browser console)"}\x1b[0m\r\n`);
+  };
+
   worker.onmessage = ({ data: message }) => {
+    started = true;
+    clearTimeout(startupTimer);
     switch (message.type) {
       case "tty":
         term.write(message.data);

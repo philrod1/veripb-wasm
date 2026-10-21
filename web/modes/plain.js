@@ -31,6 +31,8 @@ function resolveCommand(text) {
   return matches.length === 1 ? matches[0] : null;
 }
 
+const STARTUP_TIMEOUT_MS = 15000;
+
 const isError = (line) => line.startsWith("Error") || line.startsWith("[host]");
 
 export function mount(root, host) {
@@ -137,7 +139,20 @@ export function mount(root, host) {
     if (ready) input.focus();
   }
 
+  // A worker that fails to load reports only through `error`; one that says
+  // nothing at all leaves "Loading…" up, so say so after STARTUP_TIMEOUT_MS.
+  const startupTimer = setTimeout(() => {
+    if (mode === null) append("The REPL has not started yet. If this persists, check the browser console.", "note");
+  }, STARTUP_TIMEOUT_MS);
+  worker.onerror = (event) => {
+    event.preventDefault();
+    append(`Worker failed: ${event.message || "could not load plain-worker.js (see the browser console)"}`, "error");
+    setReady(false);
+  };
+  worker.onmessageerror = () => append("Worker message could not be read.", "error");
+
   worker.onmessage = ({ data: message }) => {
+    if (message.type !== "out") clearTimeout(startupTimer);
     switch (message.type) {
       case "out":
         append(message.lines, null, message.trace);
