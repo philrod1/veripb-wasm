@@ -32,6 +32,10 @@
   #out .echo { color: var(--echo); }
   #out .error { color: var(--error); }
   #out .note { color: var(--muted); }
+  #out details.trace { color: var(--muted); }
+  #out details.trace summary { cursor: pointer; font-size: 0.9em; }
+  #out details.trace .body { border-left: 2px solid var(--border); padding-left: 0.75rem; margin-left: 0.3rem; }
+  header label { color: var(--muted); float: right; margin-left: 1rem; cursor: pointer; }
   form { display: flex; border-top: 1px solid var(--border); padding: 0.5rem 1rem; gap: 0.25rem; }
   #prompt { color: var(--echo); white-space: pre; }
   #in { flex: 1; font: inherit; color: inherit; background: transparent; border: none; outline: none; }
@@ -53,7 +57,7 @@
 </style>
 </head>
 <body>
-<header><h1>veripb-repl</h1><span>plain mode · veripb in WebAssembly · files stay in this tab</span><span id="status"></span></header>
+<header><h1>veripb-repl</h1><span>plain mode · veripb in WebAssembly · files stay in this tab</span><label><input id="show-trace" type="checkbox"> show veripb output</label><span id="status"></span></header>
 <main id="term">
   <pre id="out"><span class="note">Loading WebAssembly modules…</span>
 </pre>
@@ -85,8 +89,6 @@ let historyPos = 0;
 const statusText = document.getElementById("status");
 const isError = (line) => line.startsWith("Error") || line.startsWith("[host]");
 
-// Appends lines in one DOM update. `cls` styles every line; otherwise error
-// lines get the "error" style. Layout is read once per call.
 // The "Loading…" note is removed by the first output or prompt.
 let loading = true;
 function clearLoading() {
@@ -94,7 +96,50 @@ function clearLoading() {
   loading = false;
 }
 
-function append(lines, cls) {
+// veripb's own output lines (flagged by the worker) are collected into a
+// collapsed <details> block per run of consecutive lines. Blank lines inside
+// a block belong to it; blank lines after its last line do not.
+const showTraceBox = document.getElementById("show-trace");
+let showTrace = false;
+try { showTrace = localStorage.getItem("veripb-repl-show-trace") === "1"; } catch {}
+showTraceBox.checked = showTrace;
+showTraceBox.addEventListener("change", () => {
+  showTrace = showTraceBox.checked;
+  try { localStorage.setItem("veripb-repl-show-trace", showTrace ? "1" : "0"); } catch {}
+  for (const block of out.querySelectorAll("details.trace")) block.open = showTrace;
+});
+
+let traceBlock = null;
+let traceBlanks = [];
+
+function newTraceBlock() {
+  const details = Object.assign(document.createElement("details"), { className: "trace", open: showTrace });
+  const summary = document.createElement("summary");
+  const body = Object.assign(document.createElement("div"), { className: "body" });
+  details.append(summary, body);
+  let count = 0;
+  return {
+    details,
+    add(lines) {
+      body.appendChild(document.createTextNode(lines.map((l) => l + "\n").join("")));
+      count += lines.length;
+      summary.textContent = `veripb output · ${count} line${count === 1 ? "" : "s"}`;
+    },
+  };
+}
+
+// Closes the current trace block; returns its trailing blank lines as text.
+function endTrace() {
+  const text = traceBlanks.map((l) => l + "\n").join("");
+  traceBlock = null;
+  traceBlanks = [];
+  return text;
+}
+
+// Appends lines in one DOM update. `cls` styles every line; otherwise error
+// lines get the "error" style, and lines with trace[i] go into a trace block.
+// Layout is read once per call.
+function append(lines, cls, trace) {
   clearLoading();
   if (typeof lines === "string") lines = [lines];
   const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
@@ -104,12 +149,27 @@ function append(lines, cls) {
     if (plain) fragment.appendChild(document.createTextNode(plain));
     plain = "";
   };
-  for (const line of lines) {
+  lines.forEach((line, i) => {
+    if (trace?.[i] && !cls) {
+      if (!traceBlock) {
+        flushPlain();
+        traceBlock = newTraceBlock();
+        fragment.appendChild(traceBlock.details);
+      }
+      traceBlock.add([...traceBlanks, line]);
+      traceBlanks = [];
+      return;
+    }
+    if (traceBlock && !cls && line.trim() === "") {
+      traceBlanks.push(line);
+      return;
+    }
+    plain += endTrace();
     const style = cls ?? (isError(line) ? "error" : null);
-    if (!style) { plain += line + "\n"; continue; }
+    if (!style) { plain += line + "\n"; return; }
     flushPlain();
     fragment.appendChild(Object.assign(document.createElement("span"), { className: style, textContent: line + "\n" }));
-  }
+  });
   flushPlain();
   out.appendChild(fragment);
   if (atBottom) out.scrollTop = out.scrollHeight;
@@ -123,9 +183,11 @@ function setReady(ready) {
 worker.onmessage = ({ data: message }) => {
   switch (message.type) {
     case "out":
-      append(message.lines);
+      append(message.lines, null, message.trace);
       break;
-    case "mode":
+    case "mode": {
+      const trailing = endTrace();
+      if (trailing) out.appendChild(document.createTextNode(trailing));
       if (mode === null) { clearLoading(); demosButton.disabled = false; }
       mode = message.mode;
       if (message.veripbRuns !== undefined && message.ms > 0) {
@@ -140,6 +202,7 @@ worker.onmessage = ({ data: message }) => {
         setReady(true);
       }
       break;
+    }
     case "files":
       renderFiles(message.files);
       break;

@@ -49,9 +49,11 @@ export function listFiles(root) {
 /**
  * Instantiates the REPL and returns { mode, line(text) -> mode }.
  * `onLine(text)` receives every output line (stdout and stderr).
+ * `onVeripbOutput(stdout, stderr)`, if given, receives the bytes of each
+ * veripb run's stdout and stderr.
  * `stats.veripbRuns` counts veripb invocations.
  */
-export function startRepl({ replModule, veripbModule, root, onLine }) {
+export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutput }) {
   const decoder = new TextDecoder();
   const encoder = new TextEncoder();
   const stats = { veripbRuns: 0 };
@@ -81,6 +83,7 @@ export function startRepl({ replModule, veripbModule, root, onLine }) {
       tmp.set(".veripb-stdout", stdout);
       tmp.set(".veripb-stderr", stderr);
       stats.veripbRuns += 1;
+      onVeripbOutput?.(stdout.data, stderr.data);
       return code;
     } catch (e) {
       onLine(`[host] veripb failed: ${e}`);

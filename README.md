@@ -146,6 +146,15 @@ Page:
   example after `:save`.
 - **Paths:** relative paths resolve against `/`, for example
   `:instance two-of-three`.
+- **veripb output:** lines that veripb printed during the command (its
+  version banner, traces, raw errors) are folded into collapsed "veripb
+  output · N lines" blocks. Click a block to open it; "show veripb output"
+  in the header opens all blocks and is remembered. veripb's status lines
+  (`s VERIFIED …`) and all of the REPL's own lines stay visible. A line
+  counts as veripb output when it matches, exactly, a line of the stdout or
+  stderr of a veripb run made during that command.
+- **Timing:** the header shows the last command's duration and veripb run
+  count.
 
 Differences from `veripb-repl --plain`:
 - A command error is printed and the session continues; plain mode exits.
