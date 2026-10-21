@@ -13,8 +13,8 @@ patch series and applied into `work/`.
 
 | Path | Contents |
 |---|---|
-| `upstream/veripb` | submodule: `git@gitlab.com:MIAOresearch/software/veripb-dev.git`, branch `main` |
-| `upstream/veripb-repl` | submodule: `git@github.com:philrod1/veripb-repl.git`, branch `main` |
+| `upstream/veripb` | submodule: `https://gitlab.com/MIAOresearch/software/VeriPB.git`, branch `main` |
+| `upstream/veripb-repl` | submodule: `https://github.com/philrod1/veripb-repl.git`, branch `main` |
 | `patches/<name>/` | local changes, one `git format-patch` file per change, applied in name order |
 | `scripts/prepare.sh` | creates `work/<name>`: the submodule's checked-out commit plus local changes |
 | `scripts/refresh-patches.sh` | regenerates `patches/<name>/` from the commits in `work/<name>` |
@@ -48,7 +48,6 @@ applies to.
 - Node.js 22 or later
 - A git identity (`user.name`, `user.email`) in this repo's config. It is
   copied to `work/<name>` and used for local commits.
-- SSH access to both upstreams, only when fetching submodule updates
 
 ## Build
 
@@ -68,7 +67,7 @@ The WASI binary is
 ## Update an upstream
 
 ```
-git submodule update --remote upstream/veripb     # needs SSH access
+git submodule update --remote upstream/veripb
 scripts/prepare.sh veripb
 ```
 

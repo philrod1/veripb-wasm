@@ -1,8 +1,8 @@
 [submodule "upstream/veripb"]
 	path = upstream/veripb
-	url = git@gitlab.com:MIAOresearch/software/veripb-dev.git
+	url = https://gitlab.com/MIAOresearch/software/VeriPB.git
 	branch = main
 [submodule "upstream/veripb-repl"]
 	path = upstream/veripb-repl
-	url = git@github.com:philrod1/veripb-repl.git
+	url = https://github.com/philrod1/veripb-repl.git
 	branch = main
