@@ -147,10 +147,18 @@ aside input[type=file] { display: none; }
 .tab-tools { display: flex; gap: 0.5rem; padding: 0.4rem 1rem 0; }
 .tab-tools button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.6rem; cursor: pointer; }
 .transcript { flex: 1; margin: 0; padding: 0.5rem 1rem; overflow: auto; white-space: pre-wrap; word-break: break-word; }
-.tab-preserved { padding: 0.5rem 1rem; overflow: auto; }
-.tab-preserved dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.4rem 1rem; margin: 0; }
-.tab-preserved dt { color: var(--muted); }
-.tab-preserved dd { margin: 0; }
+.tab-extras {
+  padding: 0.5rem 1rem; overflow: auto; display: grid; gap: 0.75rem 1.5rem; align-content: start;
+  grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
+}
+.tab-extras .extra { min-width: 0; }
+.tab-extras h3 { margin: 0 0 0.35rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.tab-extras dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem; margin: 0; }
+.tab-extras dt { color: var(--muted); }
+.tab-extras dd { margin: 0; overflow-wrap: anywhere; }
+.tab-extras .verdict { margin: 0 0 0.4rem; font-weight: 700; }
+.tab-extras .verdict.ok { color: var(--ok); }
+.tab-extras .report { margin: 0; white-space: pre-wrap; }
 .chips { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .chip { padding: 0 0.4rem; border: 1px solid var(--border); border-radius: 4px; }
 .chip.added { border-color: var(--echo); color: var(--echo); }

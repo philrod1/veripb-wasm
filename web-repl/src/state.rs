@@ -254,3 +254,59 @@ pub extern "C" fn vr_commands() -> i32 {
             .collect(),
     ))
 }
+
+/// Collects output lines, for running a command's own reporting.
+struct Lines(Vec<String>);
+
+impl veripb_repl::output::Output for Lines {
+    fn line(&mut self, text: &str) {
+        self.0.push(text.to_string());
+    }
+}
+
+/// The Extras tab's views, or `null` without a session. Runs veripb (for
+/// the objective bounds, the preserved set and `:check`'s probes).
+/// ```text
+/// { conclusion: {status, lines, version} | {error},
+///   objective: {lines, objective, best, bestValid} | {lines, error},
+///   preserved: as vr_preserved }
+/// ```
+/// `conclusion` is `:check` without arguments (`commands::check::run`):
+/// `status` is its verdict line (`s VERIFIED …` or `NOT YET CONCLUDED`).
+/// `objective.lines` is `:objective`'s output (`commands::objective::run`);
+/// the bound fields are absent for a formula without an objective.
+#[unsafe(no_mangle)]
+pub extern "C" fn vr_extras() -> i32 {
+    STATE.with_borrow(|state| {
+        let Some(session) = &state.session else {
+            return set_result(Value::Null);
+        };
+        let mut lines = Lines(Vec::new());
+        let conclusion = match veripb_repl::commands::check::run(session, "", &mut lines) {
+            Ok(()) => {
+                const BANNER: &str = "Running VeriPB version ";
+                let version = lines.0.iter().find_map(|l| l.strip_prefix(BANNER)).map(str::to_string);
+                let body: Vec<&String> = lines.0.iter().filter(|l| !l.starts_with(BANNER)).collect();
+                json!({ "status": body.last(), "lines": body, "version": version })
+            }
+            Err(e) => json!({ "error": format!("{e:#}") }),
+        };
+        let mut objective_lines = Lines(Vec::new());
+        veripb_repl::commands::objective::run(session, &mut objective_lines);
+        let objective = match session.objective.as_ref().map(|_| session.objective_bounds()) {
+            None => json!({ "lines": objective_lines.0 }),
+            Some(Ok(bounds)) => json!({
+                "lines": objective_lines.0,
+                "objective": bounds.objective,
+                "best": bounds.best,
+                "bestValid": bounds.best_valid,
+            }),
+            Some(Err(e)) => json!({ "lines": objective_lines.0, "error": format!("{e:#}") }),
+        };
+        let preserved = match session.preserved_set() {
+            Ok(set) => json!({ "declared": set.declared, "current": set.current, "lastChange": set.last_change }),
+            Err(e) => json!({ "error": format!("{e:#}") }),
+        };
+        set_result(json!({ "conclusion": conclusion, "objective": objective, "preserved": preserved }))
+    })
+}

@@ -1,6 +1,6 @@
 // Enhanced mode: browser-native panes over the REPL (repl-worker.js).
 //
-// Layout: Formula | Database | Proof on top; Output / Transcript / Preserved
+// Layout: Formula | Database | Proof on top; Output / Transcript / Extras
 // tabs and the command line below. Splitters resize the panes (remembered).
 // Pane contents come from the worker's session state (web-repl
 // src/state.rs), posted after every command.
@@ -63,6 +63,7 @@ export function mount(root, host) {
   let rendered = {};
   let activeTab = "output";
   try { activeTab = localStorage.getItem(TAB_KEY) || "output"; } catch {}
+  if (activeTab === "preserved") activeTab = "extras";
 
   const client = connectReplWorker(host, { what: "REPL", onState: (s) => update(s) });
   // Palettes and the command list come from the REPL.
@@ -113,12 +114,12 @@ export function mount(root, host) {
   const downloadButton = el("button", { type: "button", textContent: "Download" });
   const transcriptPanel = el("div", { className: "tab-panel tab-transcript" },
     el("div", { className: "tab-tools" }, copyButton, downloadButton), transcriptText);
-  const preservedPanel = el("div", { className: "tab-panel tab-preserved" });
+  const extrasPanel = el("div", { className: "tab-panel tab-extras" });
   const outputPanel = el("div", { className: "tab-panel tab-output" }, view.out);
-  const panels = { output: outputPanel, transcript: transcriptPanel, preserved: preservedPanel };
+  const panels = { output: outputPanel, transcript: transcriptPanel, extras: extrasPanel };
   const tabButtons = {};
   const tabBar = el("div", { className: "tabs", role: "tablist" });
-  for (const [name, label] of [["output", "Output"], ["transcript", "Transcript"], ["preserved", "Preserved"]]) {
+  for (const [name, label] of [["output", "Output"], ["transcript", "Transcript"], ["extras", "Extras"]]) {
     const button = el("button", { type: "button", className: "tab", textContent: label });
     button.setAttribute("role", "tab");
     button.addEventListener("click", () => selectTab(name));
@@ -175,7 +176,7 @@ export function mount(root, host) {
       transcriptText.textContent = view.transcript.map((l) => l + "\n").join("");
       transcriptDirty = false;
     }
-    if (name === "preserved") refreshPreserved();
+    if (name === "extras") refreshExtras();
     if (name === "output") outputPanel.querySelector(".plain-out")?.scrollTo(0, 1e9);
   }
   function appendTranscript(lines) {
@@ -192,39 +193,87 @@ export function mount(root, host) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 
-  async function refreshPreserved() {
+  // Extras: status (`:check`'s verdict), objective (`:objective`'s report
+  // and bounds), preserved set, and counts. Recomputed (veripb runs) only
+  // while the tab is open and when the formula or proof has changed.
+  let extrasFor = null;
+  async function refreshExtras() {
     if (!state?.formula) {
-      preservedPanel.replaceChildren(el("p", { className: "muted", textContent: "No formula loaded." }));
+      extrasFor = null;
+      extrasPanel.replaceChildren(el("p", { className: "muted", textContent: "No formula loaded." }));
       return;
     }
-    const set = await client.preserved();
-    if (activeTab !== "preserved") return;
-    if (!set) {
-      preservedPanel.replaceChildren(el("p", { className: "muted", textContent: "No formula loaded." }));
-    } else if (set.error) {
-      preservedPanel.replaceChildren(el("p", { className: "error", textContent: set.error }));
-    } else if (!set.declared) {
-      preservedPanel.replaceChildren(el("p", { className: "muted", textContent: "The formula declares no preserved set." }));
-    } else {
-      const declared = new Set(set.declared);
-      const current = new Set(set.current ?? []);
-      const chips = (names, cls) => el("div", { className: "chips" }, ...names.map((n) => el("span", { className: `chip ${cls(n)}`, textContent: n })));
-      const added = [...current].filter((n) => !declared.has(n));
-      const removed = [...declared].filter((n) => !current.has(n));
-      preservedPanel.replaceChildren(
-        el("dl", {},
-          el("dt", { textContent: `Current (${current.size})` }),
-          el("dd", {}, chips([...current], (n) => (declared.has(n) ? "" : "added"))),
-          el("dt", { textContent: `Declared (${declared.size})` }),
-          el("dd", {}, chips([...declared], (n) => (current.has(n) ? "" : "removed"))),
-          el("dt", { textContent: "Last change" }),
-          el("dd", { textContent: set.lastChange == null ? "none (as declared)" : `proof line ${set.lastChange}` }),
-          el("dt", { textContent: "Changes" }),
-          el("dd", { textContent: added.length || removed.length
-            ? [added.length && `added ${added.join(" ")}`, removed.length && `removed ${removed.join(" ")}`].filter(Boolean).join("; ")
-            : "none" }),
-        ));
+    const key = JSON.stringify([state.formula, state.proof?.lines.map((l) => [l.text, l.status]), state.proof?.checked]);
+    if (key === extrasFor) {
+      renderSummary();
+      return;
     }
+    extrasFor = key;
+    const extras = await client.extras();
+    if (activeTab !== "extras" || extrasFor !== key || !extras) return;
+    extrasPanel.replaceChildren(statusSection(extras.conclusion), objectiveSection(extras.objective),
+      preservedSection(extras.preserved), el("section", { className: "extra extra-summary" }));
+    renderSummary();
+  }
+
+  const section = (title, ...body) => el("section", { className: "extra" }, el("h3", { textContent: title }), ...body);
+  const facts = (...pairs) => el("dl", {}, ...pairs.flatMap(([term, value]) =>
+    [el("dt", { textContent: term }), value instanceof Node ? el("dd", {}, value) : el("dd", { textContent: value })]));
+
+  function statusSection(conclusion) {
+    if (conclusion.error) return section("Status", el("p", { className: "error", textContent: conclusion.error }));
+    const verified = conclusion.status?.startsWith("s VERIFIED");
+    const p = state.proof;
+    const progress = `${p.checked} of ${p.lines.length} line${p.lines.length === 1 ? "" : "s"} checked`
+      + (p.unchecked ? `, ${p.unchecked} unchecked` : "");
+    return section("Status",
+      el("p", { className: `verdict ${verified ? "ok" : "muted"}`, textContent: conclusion.status ?? "" }),
+      facts(
+        ["Proof", progress],
+        ...(p.rejected ? [["Rejected", `line ${p.rejected.n}: ${p.rejected.message}`]] : []),
+        ...(conclusion.version ? [["veripb", conclusion.version]] : []),
+      ));
+  }
+
+  function objectiveSection(objective) {
+    const body = el("pre", { className: "report", textContent: objective.lines.join("\n") });
+    return section("Objective", body, ...(objective.error ? [el("p", { className: "error", textContent: objective.error })] : []));
+  }
+
+  function preservedSection(set) {
+    if (set.error) return section("Preserved set", el("p", { className: "error", textContent: set.error }));
+    if (!set.declared) return section("Preserved set", el("p", { className: "muted", textContent: "The formula declares no preserved set." }));
+    const declared = new Set(set.declared);
+    const current = new Set(set.current ?? []);
+    const chips = (names, cls) => el("div", { className: "chips" }, ...names.map((n) => el("span", { className: `chip ${cls(n)}`, textContent: n })));
+    const added = [...current].filter((n) => !declared.has(n));
+    const removed = [...declared].filter((n) => !current.has(n));
+    return section("Preserved set", facts(
+      [`Current (${current.size})`, chips([...current], (n) => (declared.has(n) ? "" : "added"))],
+      [`Declared (${declared.size})`, chips([...declared], (n) => (current.has(n) ? "" : "removed"))],
+      ["Last change", set.lastChange == null ? "none (as declared)" : `proof line ${set.lastChange}`],
+      ["Changes", added.length || removed.length
+        ? [added.length && `added ${added.join(" ")}`, removed.length && `removed ${removed.join(" ")}`].filter(Boolean).join("; ")
+        : "none"],
+    ));
+  }
+
+  // Counts from the session state; no veripb run.
+  function renderSummary() {
+    const target = extrasPanel.querySelector(".extra-summary");
+    if (!target || !state?.formula) return;
+    const entries = state.database?.entries ?? [];
+    const core = entries.filter((e) => e.core).length;
+    const labels = new Set(entries.flatMap((e) => e.labels)).size;
+    const breakpoints = state.proof.lines.filter((l) => l.breakpoint).length;
+    const modes = ["pbp (normal)", "edit", "opb (formula edit)", "debug"];
+    target.replaceChildren(el("h3", { textContent: "Summary" }), facts(
+      ["Formula", `${state.formula.count} constraint${state.formula.count === 1 ? "" : "s"}, ${state.variables.length} variable${state.variables.length === 1 ? "" : "s"}`],
+      ["Database", state.database?.error ? state.database.error : `${entries.length} (${core} core, ${entries.length - core} derived)`],
+      ["Labels", String(labels)],
+      ["Breakpoints", breakpoints ? state.proof.lines.filter((l) => l.breakpoint).map((l) => l.n).join(", ") : "none"],
+      ["Prompt", modes[state.mode] ?? String(state.mode)],
+    ));
   }
 
   // ---- Rendering ----
@@ -329,7 +378,7 @@ export function mount(root, host) {
     renderFormula();
     renderDatabase();
     renderProof();
-    if (activeTab === "preserved") refreshPreserved();
+    if (activeTab === "extras") refreshExtras();
   }
 
   update(null);

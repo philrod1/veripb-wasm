@@ -164,11 +164,23 @@ await dropFiles(["add_preserved_var.opb", "add_preserved_var.pbp"].map((n) => [n
 await until(async () => (await fileNames()).includes("add_preserved_var.pbp"));
 await command(":instance add_preserved_var");
 await command(":verify");
-await page.click('.tab:has-text("Preserved")');
-check("enhanced: preserved set", await until(async () => (await page.textContent(".tab-preserved")).includes("Current (3)")),
-  (await page.textContent(".tab-preserved")).slice(0, 120));
-const chips = await page.$$eval(".tab-preserved .chip.added", (c) => c.map((x) => x.textContent));
+await page.click('.tab:has-text("Extras")');
+const extras = () => page.textContent(".tab-extras");
+check("enhanced: extras preserved set", await until(async () => (await extras()).includes("Current (3)")), (await extras()).slice(0, 160));
+const chips = await page.$$eval(".tab-extras .chip.added", (c) => c.map((x) => x.textContent));
 check("enhanced: preserved additions marked", chips.join() === "x5", chips.join());
+check("enhanced: extras summary", (await extras()).includes("Prompt") && (await extras()).includes("core"));
+
+// Status and objective: demo 04 (clique) proves optimality.
+await dropFiles([demo("clique.opb")]);
+await until(async () => (await fileNames()).includes("clique.opb"));
+for (const text of [":load clique.opb", "soli x1 x2 x3 x4 ~x5 ;", "@better soli x1 x2 x3 ~x4 ~x5 ;"]) await command(text);
+check("enhanced: extras objective bounds", await until(async () => (await extras()).includes("Best value found so far: -3")), (await extras()).slice(0, 200));
+check("enhanced: extras not yet concluded", (await page.textContent(".tab-extras .verdict")) === "NOT YET CONCLUDED");
+for (const text of ["@colour_bound pol @better @no_15 + @no_34 + ;", "@contradiction rup >= 1 : @colour_bound ;"]) await command(text);
+check("enhanced: extras verdict", await until(async () => (await page.textContent(".tab-extras .verdict")) === "s VERIFIED BOUNDS -3 <= obj <= -3"),
+  await page.textContent(".tab-extras .verdict"));
+check("enhanced: extras veripb version", (await extras()).includes("veripb3.0"));
 
 check("no page errors", errors.length === 0, errors.join(" | "));
 await browser.close();

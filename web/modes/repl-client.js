@@ -89,6 +89,7 @@ export function connectReplWorker(host, { what = "REPL", onState } = {}) {
     complete: (text) => request({ type: "query", kind: "complete", text }),
     themes: () => request({ type: "query", kind: "themes" }),
     commands: () => request({ type: "query", kind: "commands" }),
+    extras: () => request({ type: "query", kind: "extras" }),
     putFile,
     deleteFile: (name) => worker.postMessage({ type: "delete", name }),
     getFile: (name) => request({ type: "get", name }),
