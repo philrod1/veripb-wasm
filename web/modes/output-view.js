@@ -172,7 +172,10 @@ export class OutputView {
     if (atBottom) out.scrollTop = out.scrollHeight;
   }
 
-  /** The REPL finished a command and is in prompt mode `mode` (or quit/failed). */
+  /**
+   * The REPL finished a command and is in prompt mode `mode` (or quit/failed).
+   * Also used after a command the page answers itself, with the current mode.
+   */
   setMode(mode) {
     const trailing = this.#endTrace();
     if (trailing) this.out.appendChild(document.createTextNode(trailing));

@@ -234,6 +234,10 @@ Enhanced mode:
   set).
 - **Editing:** as in plain mode, through the command line (`:edit`,
   `:insert`, `:delete`, `:undo`).
+- **`:theme [<name>]`:** the TUI's palettes (`dark`, `light`, `hi-contrast`,
+  `colorblind`) for the whole page while enhanced mode is open; remembered.
+  Without a choice the page follows the browser's light/dark setting, using
+  the TUI's `light` or `dark` colours.
 
 Differences from `veripb-repl --plain` (plain and enhanced):
 - A command error is printed and the session continues; plain mode exits.

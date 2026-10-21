@@ -7,7 +7,8 @@
 //
 // Implements the mode interface described in modes/plain.js.
 
-import { OutputView } from "./output-view.js";
+import { OutputView, resolveCommand } from "./output-view.js";
+import { applyTheme, resetTheme, storedTheme, themeCommand } from "./themes.js";
 import { connectReplWorker } from "./repl-client.js";
 import { splitter } from "./splitter.js";
 
@@ -64,8 +65,17 @@ export function mount(root, host) {
   try { activeTab = localStorage.getItem(TAB_KEY) || "output"; } catch {}
 
   const client = connectReplWorker(host, { what: "REPL", onState: (s) => update(s) });
+  applyTheme(storedTheme());
   const view = new OutputView({
-    onSubmit: (text) => client.line(text),
+    // `:theme` recolours this page (the REPL itself answers "TUI only").
+    onSubmit: (text) => {
+      if (resolveCommand(text) === "theme") {
+        view.append(themeCommand(text.trim().replace(/^:\S+/, "")));
+        view.setMode(view.mode);
+        return;
+      }
+      client.line(text);
+    },
     onTranscript: (lines) => appendTranscript(lines),
   });
   client.attach(view);
@@ -328,6 +338,7 @@ export function mount(root, host) {
     focus: () => view.focus(),
     unmount() {
       client.terminate();
+      resetTheme();
       root.classList.remove("enhanced");
       root.style.gridTemplateRows = "";
     },
