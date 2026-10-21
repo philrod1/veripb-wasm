@@ -1,0 +1,126 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Phil Rodgers <philip.rodgers@glasgow.ac.uk>
+Date: Wed, 21 Oct 2026 12:59:40 +0000
+Subject: [PATCH 1/2] Share the unix input parser and internal events with WASI
+
+`event/sys/unix/parse.rs`, the CursorPosition / KeyboardEnhancementFlags /
+PrimaryDeviceAttributes internal events, their filters, `cursor::position`
+and the `KeyModifiers::CONTROL` display arm now build on
+`any(unix, target_os = "wasi")`. The event-stream waker stays unix-only.
+---
+ src/cursor/sys.rs     |  4 ++--
+ src/event.rs          | 10 +++++-----
+ src/event/filter.rs   |  6 +++---
+ src/event/sys.rs      |  2 +-
+ src/event/sys/unix.rs |  2 +-
+ 5 files changed, 12 insertions(+), 12 deletions(-)
+
+diff --git a/src/cursor/sys.rs b/src/cursor/sys.rs
+index 1623740..406e2ed 100644
+--- a/src/cursor/sys.rs
++++ b/src/cursor/sys.rs
+@@ -1,6 +1,6 @@
+ //! This module provides platform related functions.
+ 
+-#[cfg(unix)]
++#[cfg(any(unix, target_os = "wasi"))]
+ #[cfg(feature = "events")]
+ pub use self::unix::position;
+ #[cfg(windows)]
+@@ -15,6 +15,6 @@ pub(crate) use self::windows::{
+ #[cfg(windows)]
+ pub(crate) mod windows;
+ 
+-#[cfg(unix)]
++#[cfg(any(unix, target_os = "wasi"))]
+ #[cfg(feature = "events")]
+ pub(crate) mod unix;
+diff --git a/src/event.rs b/src/event.rs
+index 1e838fc..a082ac8 100644
+--- a/src/event.rs
++++ b/src/event.rs
+@@ -249,7 +249,7 @@ pub fn poll(timeout: Duration) -> std::io::Result<bool> {
+ pub fn read() -> std::io::Result<Event> {
+     match read_internal(&EventFilter)? {
+         InternalEvent::Event(event) => Ok(event),
+-        #[cfg(unix)]
++        #[cfg(any(unix, target_os = "wasi"))]
+         _ => unreachable!(),
+     }
+ }
+@@ -875,7 +875,7 @@ impl Display for KeyModifiers {
+             first = false;
+             match modifier {
+                 KeyModifiers::SHIFT => f.write_str("Shift")?,
+-                #[cfg(unix)]
++                #[cfg(any(unix, target_os = "wasi"))]
+                 KeyModifiers::CONTROL => f.write_str("Control")?,
+                 #[cfg(windows)]
+                 KeyModifiers::CONTROL => f.write_str("Ctrl")?,
+@@ -1476,13 +1476,13 @@ pub(crate) enum InternalEvent {
+     /// An event.
+     Event(Event),
+     /// A cursor position (`col`, `row`).
+-    #[cfg(unix)]
++    #[cfg(any(unix, target_os = "wasi"))]
+     CursorPosition(u16, u16),
+     /// The progressive keyboard enhancement flags enabled by the terminal.
+-    #[cfg(unix)]
++    #[cfg(any(unix, target_os = "wasi"))]
+     KeyboardEnhancementFlags(KeyboardEnhancementFlags),
+     /// Attributes and architectural class of the terminal.
+-    #[cfg(unix)]
++    #[cfg(any(unix, target_os = "wasi"))]
+     PrimaryDeviceAttributes,
+ }
+ 
+diff --git a/src/event/filter.rs b/src/event/filter.rs
+index cd7abce..8639c67 100644
+--- a/src/event/filter.rs
++++ b/src/event/filter.rs
+@@ -6,11 +6,11 @@ pub(crate) trait Filter: Send + Sync + 'static {
+     fn eval(&self, event: &InternalEvent) -> bool;
+ }
+ 
+-#[cfg(unix)]
++#[cfg(any(unix, target_os = "wasi"))]
+ #[derive(Debug, Clone)]
+ pub(crate) struct CursorPositionFilter;
+ 
+-#[cfg(unix)]
++#[cfg(any(unix, target_os = "wasi"))]
+ impl Filter for CursorPositionFilter {
+     fn eval(&self, event: &InternalEvent) -> bool {
+         matches!(*event, InternalEvent::CursorPosition(_, _))
+@@ -50,7 +50,7 @@ impl Filter for PrimaryDeviceAttributesFilter {
+ pub(crate) struct EventFilter;
+ 
+ impl Filter for EventFilter {
+-    #[cfg(unix)]
++    #[cfg(any(unix, target_os = "wasi"))]
+     fn eval(&self, event: &InternalEvent) -> bool {
+         matches!(*event, InternalEvent::Event(_))
+     }
+diff --git a/src/event/sys.rs b/src/event/sys.rs
+index bd79307..7e7e692 100644
+--- a/src/event/sys.rs
++++ b/src/event/sys.rs
+@@ -3,7 +3,7 @@ pub(crate) use unix::waker::Waker;
+ #[cfg(all(windows, feature = "event-stream"))]
+ pub(crate) use windows::waker::Waker;
+ 
+-#[cfg(unix)]
++#[cfg(any(unix, target_os = "wasi"))]
+ pub(crate) mod unix;
+ #[cfg(windows)]
+ pub(crate) mod windows;
+diff --git a/src/event/sys/unix.rs b/src/event/sys/unix.rs
+index 2106ca0..3264632 100644
+--- a/src/event/sys/unix.rs
++++ b/src/event/sys/unix.rs
+@@ -1,4 +1,4 @@
+-#[cfg(feature = "event-stream")]
++#[cfg(all(unix, feature = "event-stream"))]
+ pub(crate) mod waker;
+ 
+ #[cfg(feature = "events")]

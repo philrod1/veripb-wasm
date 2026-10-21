@@ -1,0 +1,17 @@
+[package]
+name = "web-tui"
+version = "0.0.0"
+edition = "2024"
+
+[[bin]]
+name = "web-tui"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = "1"
+tempfile = "3"
+veripb-repl = { path = "../work/veripb-repl-tui" }
+
+# The TUI's crossterm, with the WASI backend from patches/crossterm/.
+[patch.crates-io]
+crossterm = { path = "../work/crossterm" }

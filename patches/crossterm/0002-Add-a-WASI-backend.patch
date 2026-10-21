@@ -1,0 +1,274 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Phil Rodgers <philip.rodgers@glasgow.ac.uk>
+Date: Wed, 21 Oct 2026 13:00:25 +0000
+Subject: [PATCH 2/2] Add a WASI backend
+
+On `target_os = "wasi"` the host supplies the terminal through the
+`crossterm_host` imports: `terminal_size()` and a blocking
+`read_input(buf, len, timeout_ms)`, which returns bytes, 0 on timeout or
+-2 after a resize. `terminal/sys/wasi.rs` implements size and raw mode
+(a flag only); `event/source/wasi.rs` feeds input bytes to the unix ANSI
+parser and turns a resize into `Event::Resize`.
+---
+ src/event/read.rs        |   4 ++
+ src/event/source.rs      |   2 +
+ src/event/source/wasi.rs | 107 +++++++++++++++++++++++++++++++++++++++
+ src/terminal.rs          |   2 +-
+ src/terminal/sys.rs      |   9 ++++
+ src/terminal/sys/wasi.rs |  65 ++++++++++++++++++++++++
+ 6 files changed, 188 insertions(+), 1 deletion(-)
+ create mode 100644 src/event/source/wasi.rs
+ create mode 100644 src/terminal/sys/wasi.rs
+
+diff --git a/src/event/read.rs b/src/event/read.rs
+index 22f989b..b41933e 100644
+--- a/src/event/read.rs
++++ b/src/event/read.rs
+@@ -2,6 +2,8 @@ use std::{collections::vec_deque::VecDeque, io, time::Duration};
+ 
+ #[cfg(unix)]
+ use crate::event::source::unix::UnixInternalEventSource;
++#[cfg(target_os = "wasi")]
++use crate::event::source::wasi::WasiEventSource;
+ #[cfg(windows)]
+ use crate::event::source::windows::WindowsEventSource;
+ #[cfg(feature = "event-stream")]
+@@ -21,6 +23,8 @@ impl Default for InternalEventReader {
+         let source = WindowsEventSource::new();
+         #[cfg(unix)]
+         let source = UnixInternalEventSource::new();
++        #[cfg(target_os = "wasi")]
++        let source = WasiEventSource::new();
+ 
+         let source = source.ok().map(|x| Box::new(x) as Box<dyn EventSource>);
+ 
+diff --git a/src/event/source.rs b/src/event/source.rs
+index e53bd31..b26088b 100644
+--- a/src/event/source.rs
++++ b/src/event/source.rs
+@@ -6,6 +6,8 @@ use super::InternalEvent;
+ 
+ #[cfg(unix)]
+ pub(crate) mod unix;
++#[cfg(target_os = "wasi")]
++pub(crate) mod wasi;
+ #[cfg(windows)]
+ pub(crate) mod windows;
+ 
+diff --git a/src/event/source/wasi.rs b/src/event/source/wasi.rs
+new file mode 100644
+index 0000000..52189fc
+--- /dev/null
++++ b/src/event/source/wasi.rs
+@@ -0,0 +1,107 @@
++//! WASI event source: input bytes come from the host's `read_input`
++//! (`terminal/sys/wasi.rs`) and are parsed with the unix ANSI parser.
++
++use std::{collections::VecDeque, io, time::Duration};
++
++use crate::event::{
++    source::EventSource, sys::unix::parse::parse_event, timeout::PollTimeout, Event,
++    InternalEvent,
++};
++use crate::terminal::sys::wasi::host;
++
++const INPUT_BUFFER_SIZE: usize = 1_024;
++
++pub(crate) struct WasiEventSource {
++    parser: Parser,
++    input: [u8; INPUT_BUFFER_SIZE],
++}
++
++impl WasiEventSource {
++    pub fn new() -> io::Result<Self> {
++        Ok(WasiEventSource {
++            parser: Parser::default(),
++            input: [0; INPUT_BUFFER_SIZE],
++        })
++    }
++}
++
++impl EventSource for WasiEventSource {
++    fn try_read(&mut self, timeout: Option<Duration>) -> io::Result<Option<InternalEvent>> {
++        let timeout = PollTimeout::new(timeout);
++        loop {
++            if let Some(event) = self.parser.next() {
++                return Ok(Some(event));
++            }
++            let timeout_ms = match timeout.leftover() {
++                None => -1,
++                Some(left) => left.as_millis().min(i32::MAX as u128) as i32,
++            };
++            let read = unsafe {
++                host::read_input(self.input.as_mut_ptr(), INPUT_BUFFER_SIZE, timeout_ms)
++            };
++            match read {
++                host::RESIZED => {
++                    let (columns, rows) = crate::terminal::size()?;
++                    return Ok(Some(InternalEvent::Event(Event::Resize(columns, rows))));
++                }
++                n if n > 0 => {
++                    let n = n as usize;
++                    self.parser.advance(&self.input[..n], n == INPUT_BUFFER_SIZE);
++                }
++                n if n < 0 => {
++                    return Err(io::Error::other(format!(
++                        "crossterm_host.read_input failed ({n})"
++                    )));
++                }
++                _ => {
++                    if timeout.elapsed() {
++                        return Ok(None);
++                    }
++                }
++            }
++        }
++    }
++}
++
++/// Splits input bytes into events, as the unix mio source's parser does.
++#[derive(Debug)]
++struct Parser {
++    buffer: Vec<u8>,
++    internal_events: VecDeque<InternalEvent>,
++}
++
++impl Default for Parser {
++    fn default() -> Self {
++        Parser {
++            buffer: Vec::with_capacity(256),
++            internal_events: VecDeque::with_capacity(128),
++        }
++    }
++}
++
++impl Parser {
++    fn advance(&mut self, buffer: &[u8], more: bool) {
++        for (idx, byte) in buffer.iter().enumerate() {
++            let more = idx + 1 < buffer.len() || more;
++            self.buffer.push(*byte);
++            match parse_event(&self.buffer, more) {
++                Ok(Some(event)) => {
++                    self.internal_events.push_back(event);
++                    self.buffer.clear();
++                }
++                // Incomplete sequence: keep the bytes for the next call.
++                Ok(None) => {}
++                // Malformed sequence: drop it.
++                Err(_) => self.buffer.clear(),
++            }
++        }
++    }
++}
++
++impl Iterator for Parser {
++    type Item = InternalEvent;
++
++    fn next(&mut self) -> Option<Self::Item> {
++        self.internal_events.pop_front()
++    }
++}
+diff --git a/src/terminal.rs b/src/terminal.rs
+index 3aebc1f..b685442 100644
+--- a/src/terminal.rs
++++ b/src/terminal.rs
+@@ -105,7 +105,7 @@ pub use sys::supports_keyboard_enhancement;
+ ///
+ /// Please have a look at the [raw mode](./index.html#raw-mode) section.
+ pub fn is_raw_mode_enabled() -> io::Result<bool> {
+-    #[cfg(unix)]
++    #[cfg(any(unix, target_os = "wasi"))]
+     {
+         Ok(sys::is_raw_mode_enabled())
+     }
+diff --git a/src/terminal/sys.rs b/src/terminal/sys.rs
+index 9dde47d..ea7e390 100644
+--- a/src/terminal/sys.rs
++++ b/src/terminal/sys.rs
+@@ -21,6 +21,15 @@ pub(crate) use self::windows::{
+ #[cfg(windows)]
+ mod windows;
+ 
++#[cfg(all(target_os = "wasi", feature = "events"))]
++pub use self::wasi::supports_keyboard_enhancement;
++#[cfg(target_os = "wasi")]
++pub(crate) use self::wasi::{
++    disable_raw_mode, enable_raw_mode, is_raw_mode_enabled, size, window_size,
++};
++#[cfg(target_os = "wasi")]
++pub(crate) mod wasi;
++
+ #[cfg(unix)]
+ pub mod file_descriptor;
+ #[cfg(unix)]
+diff --git a/src/terminal/sys/wasi.rs b/src/terminal/sys/wasi.rs
+new file mode 100644
+index 0000000..140e533
+--- /dev/null
++++ b/src/terminal/sys/wasi.rs
+@@ -0,0 +1,65 @@
++//! WASI implementation of the terminal functions. The host (the program
++//! embedding the WebAssembly module) supplies the terminal size and the raw
++//! input bytes through the `crossterm_host` imports; output is written to
++//! stdout as ANSI sequences, as on unix.
++
++use std::io;
++use std::sync::atomic::{AtomicBool, Ordering};
++
++use crate::terminal::WindowSize;
++
++pub(crate) mod host {
++    #[link(wasm_import_module = "crossterm_host")]
++    unsafe extern "C" {
++        /// The terminal size as `columns << 16 | rows`.
++        pub(crate) fn terminal_size() -> u32;
++
++        /// Waits up to `timeout_ms` milliseconds (-1: no limit) for input and
++        /// copies at most `len` bytes of it to `buf`. Returns the number of
++        /// bytes copied, 0 on timeout, [`RESIZED`] if the terminal was resized,
++        /// or another negative value on failure.
++        pub(crate) fn read_input(buf: *mut u8, len: usize, timeout_ms: i32) -> i32;
++    }
++
++    /// `read_input` result: the terminal size changed.
++    pub(crate) const RESIZED: i32 = -2;
++}
++
++/// The host terminal has no line discipline; this flag only records the
++/// requested mode for `is_raw_mode_enabled`.
++static RAW_MODE: AtomicBool = AtomicBool::new(false);
++
++pub(crate) fn is_raw_mode_enabled() -> bool {
++    RAW_MODE.load(Ordering::Relaxed)
++}
++
++pub(crate) fn enable_raw_mode() -> io::Result<()> {
++    RAW_MODE.store(true, Ordering::Relaxed);
++    Ok(())
++}
++
++pub(crate) fn disable_raw_mode() -> io::Result<()> {
++    RAW_MODE.store(false, Ordering::Relaxed);
++    Ok(())
++}
++
++pub(crate) fn size() -> io::Result<(u16, u16)> {
++    let size = unsafe { host::terminal_size() };
++    Ok(((size >> 16) as u16, (size & 0xffff) as u16))
++}
++
++pub(crate) fn window_size() -> io::Result<WindowSize> {
++    let (columns, rows) = size()?;
++    Ok(WindowSize {
++        rows,
++        columns,
++        width: 0,
++        height: 0,
++    })
++}
++
++/// Progressive keyboard enhancement is not offered by the host.
++#[cfg(feature = "events")]
++pub fn supports_keyboard_enhancement() -> io::Result<bool> {
++    Ok(false)
++}

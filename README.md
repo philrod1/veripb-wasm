@@ -1,13 +1,13 @@
 # veripb-wasm
 
-WebAssembly builds of veripb and the veripb-repl core. The upstream sources
-are pinned git submodules and are not modified. Local changes are kept as
+WebAssembly builds of veripb and veripb-repl, and a browser page that runs
+them. The upstream sources are pinned git submodules and are not modified. Local changes are kept as
 patch series and applied into `work/`.
 
 | Target | What |
 |---|---|
 | `wasm32-unknown-unknown` | veripb library (browser), veripb-repl core without the TUI |
-| `wasm32-wasip1` | veripb command-line binary, run under a WASI runtime; veripb-repl plain mode as a WASI reactor (`web-plain`) |
+| `wasm32-wasip1` | veripb command-line binary, run under a WASI runtime; veripb-repl plain mode as a WASI reactor (`web-plain`); the veripb-repl TUI as a WASI command (`web-tui`) |
 
 ## Layout
 
@@ -15,17 +15,29 @@ patch series and applied into `work/`.
 |---|---|
 | `upstream/veripb` | submodule: `https://gitlab.com/MIAOresearch/software/VeriPB.git`, branch `main` |
 | `upstream/veripb-repl` | submodule: `https://github.com/philrod1/veripb-repl.git`, branch `main` |
+| `upstream/crossterm` | submodule: `https://github.com/crossterm-rs/crossterm.git`, tag `0.29` (the crates.io 0.29.0 release) |
 | `patches/<name>/` | local changes, one `git format-patch` file per change, applied in name order |
-| `scripts/prepare.sh` | creates `work/<name>`: the submodule's checked-out commit plus local changes |
-| `scripts/refresh-patches.sh` | regenerates `patches/<name>/` from the commits in `work/<name>` |
+| `scripts/prepare.sh` | creates the trees in `work/` (table below) |
+| `scripts/refresh-patches.sh` | regenerates a patch series from the commits in a `work/` tree |
 | `work/` | generated, not tracked: the patched trees that cargo builds |
 | `veripb-wasm/` | wrapper crate for the veripb library; enables `getrandom`'s `wasm_js` backend |
 | `repl-core/` | wrapper crate for the veripb-repl core; enables `getrandom`'s `wasm_js` backend |
 | `wasi-run/` | Node.js `node:wasi` runners for the WASI binary and WASI test binaries |
 | `bigint-probe/` | prints `malachite-bigint` and `i128` results, for diffing native against wasm |
 | `web-plain/` | veripb-repl plain mode as a `wasm32-wasip1` reactor: `vr_init`, `vr_line`, `vr_alloc`, `vr_free` |
-| `web/` | browser page running `web-plain` and veripb in a Web Worker |
+| `web-tui/` | the veripb-repl TUI as a `wasm32-wasip1` command, built against `work/crossterm` |
+| `web/` | browser page: mode menu, plain and classic modes, veripb in Web Workers |
 | `scripts/build-web.sh` | builds `web/pkg/` (generated, not tracked) |
+| `scripts/serve.py` | serves `web/` with the headers classic mode needs |
+
+Trees in `work/`:
+
+| Tree | Upstream | Patches | Used by |
+|---|---|---|---|
+| `veripb` | `upstream/veripb` | `patches/veripb/` | all builds |
+| `veripb-repl` | `upstream/veripb-repl` | `patches/veripb-repl/`, TUI stripped | `repl-core`, `web-plain` |
+| `veripb-repl-tui` | `upstream/veripb-repl` | `patches/veripb-repl/`, TUI kept | `web-tui` |
+| `crossterm` | `upstream/crossterm` | `patches/crossterm/` | `web-tui` (`[patch.crates-io]`) |
 
 ## Local changes
 
@@ -48,7 +60,14 @@ patch series and applied into `work/`.
 |---|---|
 | `0001-checker-run-veripb-through-a-host-import-on-WASI` | On `target_os = "wasi"`, `checker::invoke::run` calls the host import `veripb_host.run_veripb` instead of spawning `veripb`. |
 
-In each `work/<name>`, the tag `patch-base` marks the commit the patch series
+`patches/crossterm/`:
+
+| Patch | Change |
+|---|---|
+| `0001-Share-the-unix-input-parser-and-internal-events-with` | The ANSI input parser, its internal events and filters, `cursor::position` and the `KeyModifiers::CONTROL` display arm build on `any(unix, target_os = "wasi")`. |
+| `0002-Add-a-WASI-backend` | On `target_os = "wasi"`, the terminal comes from the host imports `crossterm_host.terminal_size()` and `crossterm_host.read_input(buf, len, timeout_ms)` (bytes, 0 on timeout, -2 after a resize). Input bytes go through the unix parser; raw mode is a flag only. |
+
+In each `work/<tree>`, the tag `patch-base` marks the commit the patch series
 applies to.
 
 ## Requirements
@@ -136,7 +155,7 @@ choice is remembered):
 | Mode | Interface | Status |
 |---|---|---|
 | `plain` | `veripb-repl --plain` line interface | available |
-| `classic` | the veripb-repl TUI in a terminal emulator | planned |
+| `classic` | the veripb-repl TUI in a terminal emulator (xterm.js) | available |
 | `enhanced` | browser-native panes driven by session data | planned |
 
 Switching modes starts a fresh REPL. Files are carried over; the proof
@@ -145,11 +164,15 @@ session is not (`:save` it first).
 ```
 scripts/prepare.sh
 scripts/build-web.sh
-python3 -m http.server -d web 8000      # then open http://localhost:8000
+scripts/serve.py [port] [address]      # default 8000 127.0.0.1; then open http://localhost:8000
 ```
 
-Serve from the host if the container publishes no ports: `web/` is part of
-the bind-mounted repo.
+`serve.py` sends `Cross-Origin-Opener-Policy: same-origin` and
+`Cross-Origin-Embedder-Policy: require-corp` (classic mode needs a
+cross-origin-isolated page for `SharedArrayBuffer`) and `Cache-Control:
+no-cache`. Without those headers plain mode works and classic mode shows
+what is missing. Serve from the host if the container publishes no ports:
+`web/` is part of the bind-mounted repo.
 
 Plain mode:
 - **Input:** one line per Enter. Up and Down step through command history.
@@ -170,6 +193,19 @@ Plain mode:
 - **Timing:** the header shows the last command's duration and veripb run
   count.
 
+Classic mode:
+- **Interface:** the veripb-repl TUI, unchanged, in an xterm.js terminal
+  that fills the mode area. Keys and mouse (hover, scroll, clicks) behave as
+  in a terminal; the terminal size follows the window.
+- **Starting:** the TUI starts without a formula; load one with
+  `:instance`, `:load` or `:source` after adding files.
+- **Keys the browser keeps:** some shortcuts never reach the page, for
+  example Ctrl-W, Ctrl-T and Ctrl-N in Chrome.
+- **Files:** uploads, demo files and downloads work while the TUI runs, up
+  to 32 MiB per file.
+- **Ending:** `:quit` or Ctrl-D on an empty line ends the session; switch
+  mode or reload to start again.
+
 Differences from `veripb-repl --plain`:
 - A command error is printed and the session continues; plain mode exits.
 - The prompt is always `edit> ` in edit mode, without the de-asserted
@@ -184,19 +220,44 @@ How it works:
 - **Plain mode:** `modes/plain.js` sends input lines to `plain-worker.js`, a
   module Web Worker. The worker compiles `pkg/repl.wasm` and
   `pkg/veripb.wasm`, then runs the REPL through `host.js`.
+- **Classic mode:**
+  - **Startup:** `modes/classic.js` starts `classic-worker.js`, which runs
+    `pkg/tui.wasm` until the TUI exits.
+  - **Waiting for input:** the TUI blocks in crossterm's `event::read()`.
+    The `crossterm_host.read_input` import waits with `Atomics.wait` on a
+    `SharedArrayBuffer` (`tty-channel.js`).
+  - **Page to worker:** terminal input from xterm.js `onData`, the terminal
+    size, and file requests (a mailbox) all go through that buffer.
+  - **Worker to page:** terminal output and replies to file requests come
+    back by `postMessage`.
 - **Running veripb:** for each veripb invocation, `host.js` creates a fresh
   veripb instance on the same filesystem, with regular files as
   stdout/stderr. It copies those to `/tmp/.veripb-stdout` and
   `/tmp/.veripb-stderr`, and returns the exit code to the REPL.
-- **WASI shim:** `@bjorn3/browser_wasi_shim` 0.4.2, vendored unmodified in
-  `web/vendor/browser_wasi_shim/`.
+- **Vendored code:**
+  - `@bjorn3/browser_wasi_shim` 0.4.2 in `web/vendor/browser_wasi_shim/`
+  - `@xterm/xterm` 6.0.0 and `@xterm/addon-fit` 0.11.0 in
+    `web/vendor/xterm/`
+
+  All unmodified, each with its licence.
 
 Tests (Node.js, after `scripts/build-web.sh`):
 
 ```
 web/test/compare.sh              # every web/test/scripts/*.txt: native veripb-repl --plain vs web/pkg
 node web/test/transcript.mjs <files-dir> [<dump-dir>] < script.txt
+web/test/compare-tui.py          # veripb-repl's demos/tools/*.json: native TUI vs pkg/tui.wasm, screen by screen
 ```
+
+`compare-tui.py` replays each demo screenshot script, including its typed
+keys, clicks and snapshots, against two targets:
+- the native TUI in a pseudo-terminal
+- `web/test/tui-bridge.mjs`, which runs `classic-worker.js` in a Node worker
+  thread with the same `SharedArrayBuffer` channel
+
+Both are rendered with the scripts' own screen emulator
+(`demos/tools/tuishot.py`). It compares the screen text at every snapshot,
+with temp-file names normalised.
 
 `compare.sh` builds native veripb and veripb-repl from the unpatched
 submodules. It removes prompts, "Working…" lines and temp-file names from

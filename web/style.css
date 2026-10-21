@@ -41,6 +41,11 @@ aside input[type=file] { display: none; }
   aside { border-left: none; border-top: 1px solid var(--border); max-height: 30vh; }
 }
 
+/* Classic mode */
+.classic-term { flex: 1; min-height: 0; padding: 0.25rem; background: #000; }
+.classic-unavailable { padding: 1rem 1.5rem; max-width: 42rem; }
+.classic-unavailable code { background: var(--panel); padding: 0 0.2rem; border-radius: 3px; }
+
 /* Plain mode */
 .plain-out { flex: 1; margin: 0; padding: 0.75rem 1rem; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 .plain-out .echo { color: var(--echo); }

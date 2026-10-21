@@ -1,7 +1,7 @@
 // Plain mode: veripb-repl's `--plain` line interface, run by plain-worker.js.
 //
 // Mode interface (shared by all modes, see shell.js):
-//   mount(root, host) -> instance
+//   mount(root, host) -> instance, or a Promise of one
 //     root: element to render into (emptied by the shell on unmount)
 //     host: { files: Map<name, Uint8Array>, setStatus(text), setFiles([{name, size}]) }
 //   instance: { putFile(name, bytes), getFile(name) -> Promise<Uint8Array|null>,

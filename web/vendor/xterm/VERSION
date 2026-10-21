@@ -1,0 +1,2 @@
+@xterm/xterm 6.0.0 (npm): lib/xterm.mjs, css/xterm.css, unmodified.
+@xterm/addon-fit 0.11.0 (npm): lib/addon-fit.mjs, unmodified.

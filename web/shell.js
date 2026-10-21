@@ -5,12 +5,11 @@
 // Switching modes starts a fresh REPL; files are carried over, the proof
 // session is not.
 
-import * as plain from "./modes/plain.js";
-
+// `load` imports the mode's module on first use (classic pulls in xterm.js).
 const MODES = {
-  plain: { label: "Plain", module: plain },
-  classic: { label: "Classic (TUI)", module: null },
-  enhanced: { label: "Enhanced", module: null },
+  plain: { label: "Plain", load: () => import("./modes/plain.js") },
+  classic: { label: "Classic (TUI)", load: () => import("./modes/classic.js") },
+  enhanced: { label: "Enhanced", load: null },
 };
 const STORAGE_KEY = "veripb-repl-mode";
 
@@ -23,11 +22,11 @@ let current = null;
 let currentName = null;
 let files = new Map();
 
-for (const [name, { label, module }] of Object.entries(MODES)) {
+for (const [name, { label, load }] of Object.entries(MODES)) {
   const option = Object.assign(document.createElement("option"), {
     value: name,
-    textContent: module ? label : `${label} — planned`,
-    disabled: !module,
+    textContent: load ? label : `${label} — planned`,
+    disabled: !load,
   });
   modeSelect.appendChild(option);
 }
@@ -36,7 +35,7 @@ function initialMode() {
   const fromUrl = new URLSearchParams(location.search).get("mode");
   let stored = null;
   try { stored = localStorage.getItem(STORAGE_KEY); } catch {}
-  return [fromUrl, stored, "plain"].find((name) => MODES[name]?.module);
+  return [fromUrl, stored, "plain"].find((name) => MODES[name]?.load);
 }
 
 async function switchTo(name) {
@@ -54,7 +53,8 @@ async function switchTo(name) {
   const url = new URL(location.href);
   url.searchParams.set("mode", name);
   history.replaceState(null, "", url);
-  current = MODES[name].module.mount(modeRoot, {
+  const module = await MODES[name].load();
+  current = await module.mount(modeRoot, {
     files,
     setStatus: (text) => { statusText.textContent = text; },
     setFiles: renderFiles,

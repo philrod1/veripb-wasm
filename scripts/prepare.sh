@@ -1,8 +1,14 @@
 #!/usr/bin/env bash
-# Builds work/<name> for each upstream: the commit checked out in
-# upstream/<name>, plus local changes, plus patches/<name>/*.patch.
+# Builds the trees in work/: the commit checked out in the tree's upstream
+# submodule, plus local changes, plus its patch series.
 #
-# Usage: scripts/prepare.sh [veripb] [veripb-repl]   (default: both)
+#   tree             upstream               patches                TUI
+#   veripb           upstream/veripb        patches/veripb/
+#   veripb-repl      upstream/veripb-repl   patches/veripb-repl/   stripped
+#   veripb-repl-tui  upstream/veripb-repl   patches/veripb-repl/   kept
+#   crossterm        upstream/crossterm     patches/crossterm/
+#
+# Usage: scripts/prepare.sh [<tree> ...]   (default: all trees)
 #
 # work/<name> is a git repo. The tag `patch-base` marks the commit the
 # patches apply to. On a patch conflict the script stops with `git am` in
@@ -14,8 +20,18 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 
 # Bind mounts can report a foreign owner intermittently; trust every repo these scripts touch.
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'
+ALL_TREES=(veripb veripb-repl veripb-repl-tui crossterm)
 names=("$@")
-[ ${#names[@]} -gt 0 ] || names=(veripb veripb-repl)
+[ ${#names[@]} -gt 0 ] || names=("${ALL_TREES[@]}")
+
+# Upstream submodule and patch directory name for a tree.
+tree_source() {
+    case "$1" in
+        veripb | veripb-repl | crossterm) echo "$1" ;;
+        veripb-repl-tui) echo veripb-repl ;;
+        *) echo "unknown tree $1 (trees: ${ALL_TREES[*]})" >&2; exit 1 ;;
+    esac
+}
 
 # Committer identity for local commits: this repo's git config, else a fixed one.
 export GIT_COMMITTER_NAME="$(git -C "$root" config user.name || echo veripb-wasm)"
@@ -47,9 +63,10 @@ strip_tui() {
 }
 
 for name in "${names[@]}"; do
-    src="$root/upstream/$name"
+    source_name="$(tree_source "$name")"
+    src="$root/upstream/$source_name"
     work="$root/work/$name"
-    [ -e "$src/.git" ] || { echo "upstream/$name missing: run git submodule update --init" >&2; exit 1; }
+    [ -e "$src/.git" ] || { echo "upstream/$source_name missing: run git submodule update --init" >&2; exit 1; }
     pin="$(git -C "$src" rev-parse HEAD)"
     echo "== $name @ ${pin:0:12}"
 
@@ -72,7 +89,7 @@ for name in "${names[@]}"; do
     git -C "$work" tag -f patch-base > /dev/null
 
     shopt -s nullglob
-    patches=("$root/patches/$name"/*.patch)
+    patches=("$root/patches/$source_name"/*.patch)
     shopt -u nullglob
     # One patch per `git am`, with an index refresh first: bind mounts can
     # leave stale stat data that makes `git am` report local changes.
