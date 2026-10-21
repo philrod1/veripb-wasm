@@ -1,14 +1,17 @@
-// Module worker: owns the filesystem and the REPL; the page sends input
-// lines and file operations and receives output.
+// Module worker for plain mode: owns the filesystem and the REPL; the page
+// sends input lines and file operations and receives output.
 //
-// Page -> worker: {type: "line", text} | {type: "put", name, data} | {type: "get", name}
+// Page -> worker: {type: "line", text} | {type: "put", name, data}
+//                 | {type: "get", id, name} | {type: "dump", id}
 // Worker -> page: {type: "out", lines, trace} | {type: "mode", mode, ms, veripbRuns}
-//                 | {type: "files", files}
-//                 | {type: "file", name, data} | {type: "fatal", text}
+//                 | {type: "files", files} | {type: "file", id, data}
+//                 | {type: "dump", id, files: [[name, data], ...]} | {type: "fatal", text}
+//
+// Files may be put before the REPL is ready; input lines may not.
 
 import { createRoot, startRepl, writeFile, readFile, listFiles } from "./host.js";
 
-let root;
+const root = createRoot();
 let repl;
 
 // Output lines are sent in batches: one message per OUT_BATCH lines and at
@@ -50,7 +53,6 @@ async function init() {
     compile("pkg/repl.wasm"),
     compile("pkg/veripb.wasm"),
   ]);
-  root = createRoot();
   repl = startRepl({
     replModule,
     veripbModule,
@@ -81,7 +83,10 @@ onmessage = ({ data: message }) => {
         postFiles();
         break;
       case "get":
-        post({ type: "file", name: message.name, data: readFile(root, message.name) });
+        post({ type: "file", id: message.id, data: readFile(root, message.name) });
+        break;
+      case "dump":
+        post({ type: "dump", id: message.id, files: listFiles(root).map(({ name }) => [name, readFile(root, name)]) });
         break;
     }
   } catch (error) {

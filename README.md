@@ -127,8 +127,20 @@ batches crash Node.
 
 ## Browser version
 
-`web/` runs veripb-repl plain mode in the browser. Nothing runs on a server;
-files live in an in-memory filesystem in the tab and are lost on reload.
+`web/` runs veripb-repl in the browser. Nothing runs on a server; files
+live in an in-memory filesystem in the tab and are lost on reload.
+
+Modes, chosen in the header menu or with `?mode=<name>` in the URL (the last
+choice is remembered):
+
+| Mode | Interface | Status |
+|---|---|---|
+| `plain` | `veripb-repl --plain` line interface | available |
+| `classic` | the veripb-repl TUI in a terminal emulator | planned |
+| `enhanced` | browser-native panes driven by session data | planned |
+
+Switching modes starts a fresh REPL. Files are carried over; the proof
+session is not (`:save` it first).
 
 ```
 scripts/prepare.sh
@@ -139,7 +151,7 @@ python3 -m http.server -d web 8000      # then open http://localhost:8000
 Serve from the host if the container publishes no ports: `web/` is part of
 the bind-mounted repo.
 
-Page:
+Plain mode:
 - **Input:** one line per Enter. Up and Down step through command history.
 - **Files:** "Load demo files" copies veripb-repl's `demos/files` into `/`,
   and "Upload" adds local files. Click a file name to download it, for
@@ -165,7 +177,11 @@ Differences from `veripb-repl --plain`:
 - No "Working…" line before `:source` and `:instance`.
 
 How it works:
-- **Page and worker:** `index.html` sends input lines to `worker.js`, a
+- **Shell:** `index.html`, `style.css` and `shell.js` provide the mode
+  menu, status line and files panel. Each mode is a module in `web/modes/`
+  with `mount(root, host)`; the interface is described in
+  `web/modes/plain.js`.
+- **Plain mode:** `modes/plain.js` sends input lines to `plain-worker.js`, a
   module Web Worker. The worker compiles `pkg/repl.wasm` and
   `pkg/veripb.wasm`, then runs the REPL through `host.js`.
 - **Running veripb:** for each veripb invocation, `host.js` creates a fresh
