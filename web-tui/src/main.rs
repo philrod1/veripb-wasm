@@ -6,8 +6,9 @@
 
 use std::path::Path;
 
-/// Temp files go here; WASI has no default temp directory.
-const TEMP_DIR: &str = "/tmp";
+/// Temp files go here; WASI has no default temp directory. A dot-directory,
+/// so file completion does not offer it.
+const TEMP_DIR: &str = "/.tmp";
 
 fn main() -> anyhow::Result<()> {
     let _ = tempfile::env::override_temp_dir(Path::new(TEMP_DIR));

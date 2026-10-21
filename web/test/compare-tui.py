@@ -6,7 +6,7 @@ step. Screens are rendered by the scripts' own emulator
 (demos/tools/tuishot.py, `Screen`).
 
 Native veripb and veripb-repl are built from the unpatched submodules.
-Temp-file names are normalised before comparing.
+Temp-file paths are normalised before comparing (`normalise`).
 
 Usage: web/test/compare-tui.py [script.json ...]   (default: all four)
 Exit status 1 if any screen differs.
@@ -22,7 +22,19 @@ sys.dont_write_bytecode = True  # no __pycache__ inside the submodule
 import tuishot  # noqa: E402
 
 NATIVE_TARGET = os.environ.get("NATIVE_TARGET_DIR", os.path.expanduser("~/.cache/veripb-native"))
-TEMP_NAME = re.compile(r"\.tmp[A-Za-z0-9]{6}")
+TEMP_NAME = re.compile(r"/\.?tmp/\.tmp[A-Za-z0-9]{6}")
+
+
+def normalise(screen):
+    """Temp-file paths replaced (native /tmp, web /.tmp); on those lines the
+    padding before a pane border is collapsed, since the paths differ in
+    length."""
+    lines = []
+    for line in screen.split("\n"):
+        if TEMP_NAME.search(line):
+            line = re.sub(r" +(?=[│┃])", " ", TEMP_NAME.sub("TMP/.tmpXXXXXX", line))
+        lines.append(line)
+    return "\n".join(lines)
 
 
 def build_native():
@@ -140,7 +152,7 @@ def main():
         native, web = run_native(spec, repl_bin, veripb_bin), run_web(spec)
         name = os.path.basename(path)
         for (snap, a), (_, b) in zip(native, web):
-            a, b = TEMP_NAME.sub(".tmpXXXXXX", a), TEMP_NAME.sub(".tmpXXXXXX", b)
+            a, b = normalise(a), normalise(b)
             if a == b:
                 print(f"same   {name} {snap}")
             else:

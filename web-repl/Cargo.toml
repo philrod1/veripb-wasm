@@ -10,4 +10,10 @@ crate-type = ["cdylib"]
 anyhow = "1"
 serde_json = "1"
 tempfile = "3"
-veripb-repl = { path = "../work/veripb-repl" }
+crossterm = "0.29"
+veripb-repl = { path = "../work/veripb-repl-tui" }
+
+# The TUI tree (for its completion and themes) builds crossterm; use the
+# WASI backend from patches/crossterm/.
+[patch.crates-io]
+crossterm = { path = "../work/crossterm" }

@@ -6,10 +6,14 @@
 //                 | {type: "watch", on}          post session state after every line
 //                 | {type: "state", id} | {type: "preserved", id}
 //                 | {type: "breakpoint", index} toggle; posts state if watching
+//                 | {type: "query", id, kind: "complete" | "themes" | "commands", text?}
 // Worker -> page: {type: "out", lines, trace} | {type: "mode", mode, ms, veripbRuns}
 //                 | {type: "files", files} | {type: "file", id, data}
 //                 | {type: "dump", id, files: [[name, data], ...]} | {type: "fatal", text}
 //                 | {type: "state", id?, state} | {type: "preserved", id, preserved}
+//                 | {type: "query", id, result}
+//
+// Queries wait for the REPL to start.
 //
 // Files may be put before the REPL is ready; input lines may not.
 
@@ -17,6 +21,8 @@ import { createRoot, startRepl, writeFile, readFile, deleteFile, listFiles } fro
 
 const root = createRoot();
 let repl;
+let markReplReady;
+const replReady = new Promise((resolve) => { markReplReady = resolve; });
 let watching = false;
 const postState = (id) => post({ type: "state", id, state: repl.state() });
 
@@ -67,6 +73,7 @@ async function init() {
     onVeripbOutput: recordVeripbOutput,
   });
   flush();
+  markReplReady();
   post({ type: "mode", mode: repl.mode, ms: 0, veripbRuns: 0 });
   if (watching) postState();
   postFiles();
@@ -95,6 +102,15 @@ onmessage = ({ data: message }) => {
         break;
       case "preserved":
         post({ type: "preserved", id: message.id, preserved: repl ? repl.preserved() : null });
+        break;
+      case "query":
+        replReady.then(() => {
+          const result = message.kind === "complete" ? repl.complete(message.text)
+            : message.kind === "themes" ? repl.themes()
+            : message.kind === "commands" ? repl.commands()
+            : null;
+          post({ type: "query", id: message.id, result });
+        });
         break;
       case "breakpoint":
         if (repl?.toggleBreakpoint(message.index) && watching) postState();

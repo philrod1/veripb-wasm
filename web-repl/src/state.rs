@@ -1,4 +1,5 @@
-//! JSON views of the session for the page's enhanced mode.
+//! JSON views of the session, and of the TUI's completion and palettes,
+//! for the page's enhanced mode.
 //!
 //! Each `vr_*` query writes its JSON into a result buffer and returns the
 //! length in bytes; `vr_result_ptr` gives the buffer's address. The buffer
@@ -6,9 +7,13 @@
 
 use std::cell::RefCell;
 
+use crossterm::style::Color;
 use serde_json::{Value, json};
 use veripb_repl::checker::parse::{formula_line_constraints, rule_keyword};
+use veripb_repl::commands::{debug, edit, formula, help};
 use veripb_repl::session::Session;
+use veripb_repl::tui::complete;
+use veripb_repl::tui::theme::ThemeName;
 
 use crate::{MODE_DEBUG, STATE, State};
 
@@ -170,4 +175,82 @@ fn database_json(session: &Session) -> Value {
         }
         Err(e) => json!({ "error": format!("{e:#}") }),
     }
+}
+
+/// Tab-completion candidates for the input line `text` (UTF-8, `len` bytes
+/// at `ptr`), from the TUI's completer (`tui::complete`), with the command
+/// vocabulary of the current prompt mode as the TUI uses it:
+/// `{candidates: [{line, left, right}], selected: index | null, common}`.
+///
+/// # Safety
+/// `ptr` must point to `len` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vr_complete(ptr: *const u8, len: usize) -> i32 {
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    let text = String::from_utf8_lossy(bytes);
+    STATE.with_borrow(|state| {
+        // As the TUI's `App::refresh_candidates`: `:formula`'s own
+        // vocabulary, or `:debug`'s plus the read-only commands every
+        // edit-family mode allows; otherwise the normal registry.
+        let vocabulary: Option<Vec<&help::Topic>> = if state.formula.is_some() {
+            Some(formula::MODE_VOCABULARY.iter().collect())
+        } else if state.debug.is_some() {
+            Some(
+                debug::MODE_VOCABULARY
+                    .iter()
+                    .chain(help::COMMANDS.iter().filter(|t| edit::READONLY_DURING_EDIT.contains(&t.name)))
+                    .collect(),
+            )
+        } else {
+            None
+        };
+        let candidates = complete::suggestions(&text, state.session.as_ref(), vocabulary.as_deref());
+        set_result(json!({
+            "candidates": candidates
+                .iter()
+                .map(|c| json!({ "line": c.line, "left": c.left, "right": c.right }))
+                .collect::<Vec<_>>(),
+            "selected": complete::default_selection(&candidates),
+            "common": complete::common_line_prefix(&candidates),
+        }))
+    })
+}
+
+/// The TUI's colour palettes (`tui::theme`): `{default, themes: [{name,
+/// colors: {slot: "#rrggbb"}}]}`, slots as in `tui::theme::Theme`.
+#[unsafe(no_mangle)]
+pub extern "C" fn vr_themes() -> i32 {
+    let hex = |color: Color| match color {
+        Color::Rgb { r, g, b } => format!("#{r:02x}{g:02x}{b:02x}"),
+        other => format!("{other:?}"),
+    };
+    let themes: Vec<Value> = ThemeName::ALL
+        .iter()
+        .map(|name| {
+            let t = name.theme();
+            json!({
+                "name": name.name(),
+                "colors": {
+                    "bg": hex(t.bg), "fg": hex(t.fg), "dim": hex(t.dim),
+                    "variable": hex(t.variable), "label": hex(t.label),
+                    "cursorAccent": hex(t.cursor_accent), "cursorBg": hex(t.cursor_bg),
+                    "assertionBg": hex(t.assertion_bg), "coreBg": hex(t.core_bg),
+                    "derivedBg": hex(t.derived_bg), "errorBg": hex(t.error_bg),
+                    "breakpoint": hex(t.breakpoint), "errorFg": hex(t.error_fg), "okFg": hex(t.ok_fg),
+                },
+            })
+        })
+        .collect();
+    set_result(json!({ "default": ThemeName::default().name(), "themes": themes }))
+}
+
+/// The REPL's `:` commands (`help::COMMANDS`): `[{name, usage, summary}]`.
+#[unsafe(no_mangle)]
+pub extern "C" fn vr_commands() -> i32 {
+    set_result(Value::Array(
+        help::COMMANDS
+            .iter()
+            .map(|t| json!({ "name": t.name, "usage": t.usage, "summary": t.summary }))
+            .collect(),
+    ))
 }

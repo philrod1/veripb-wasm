@@ -1,0 +1,73 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Phil Rodgers <philip.rodgers@glasgow.ac.uk>
+Date: Wed, 21 Oct 2026 14:42:48 +0000
+Subject: [PATCH 2/2] Make completion, themes and mode vocabularies public
+
+Visibility only, so a frontend outside the crate can use them:
+`tui::complete` and `tui::theme` become `pub mod`; the `:formula` and
+`:debug` MODE_VOCABULARY consts and `edit::READONLY_DURING_EDIT` become
+`pub`.
+---
+ src/commands/debug.rs   | 2 +-
+ src/commands/edit.rs    | 2 +-
+ src/commands/formula.rs | 2 +-
+ src/tui/mod.rs          | 4 ++--
+ 4 files changed, 5 insertions(+), 5 deletions(-)
+
+diff --git a/src/commands/debug.rs b/src/commands/debug.rs
+index 687f9ad..a2fa614 100644
+--- a/src/commands/debug.rs
++++ b/src/commands/debug.rs
+@@ -22,7 +22,7 @@ pub struct DebugState;
+ /// chain on separately). Not registered in `help::COMMANDS`; uses [`Topic`]
+ /// for TUI completion. Order sets abbreviation priority (see
+ /// [`resolve_debug_command`]) and should match `:help debug`.
+-pub(crate) const MODE_VOCABULARY: &[Topic] = &[
++pub const MODE_VOCABULARY: &[Topic] = &[
+     Topic {
+         name: "step",
+         usage: ":step [n]",
+diff --git a/src/commands/edit.rs b/src/commands/edit.rs
+index 58b92ee..3952be9 100644
+--- a/src/commands/edit.rs
++++ b/src/commands/edit.rs
+@@ -24,7 +24,7 @@ use crate::session::Session;
+ 
+ /// The single allowlist of commands safe to run mid-`:edit` (none touch the
+ /// buffer; `:check` is always a dry run). `:debug` reuses it.
+-pub(crate) const READONLY_DURING_EDIT: &[&str] =
++pub const READONLY_DURING_EDIT: &[&str] =
+     &["show", "list", "objective", "preserved", "check", "explain"];
+ 
+ /// Runs a `READONLY_DURING_EDIT` command directly, skipping `dispatch`'s undo
+diff --git a/src/commands/formula.rs b/src/commands/formula.rs
+index 21b4ecb..e99735f 100644
+--- a/src/commands/formula.rs
++++ b/src/commands/formula.rs
+@@ -61,7 +61,7 @@ pub struct FormulaEditState {
+ /// neither is registered in `help::COMMANDS` — same [`Topic`] shape as
+ /// that registry purely so the TUI's suggestion strip can build
+ /// candidates for these the way it already does for everything else.
+-pub(crate) const MODE_VOCABULARY: &[Topic] = &[
++pub const MODE_VOCABULARY: &[Topic] = &[
+     Topic {
+         name: "formula cancel",
+         usage: ":formula cancel",
+diff --git a/src/tui/mod.rs b/src/tui/mod.rs
+index 8630f22..7cae859 100644
+--- a/src/tui/mod.rs
++++ b/src/tui/mod.rs
+@@ -17,11 +17,11 @@
+ //! own arrow-cursor browse mode (`FormulaBrowse` below), instead of the
+ //! plain frontend's queue-based flow. See `App::execute`.
+ 
+-mod complete;
++pub mod complete;
+ mod draw;
+ mod input;
+ mod layout;
+-mod theme;
++pub mod theme;
+ 
+ use std::io;
+ use std::time::{Duration, Instant};

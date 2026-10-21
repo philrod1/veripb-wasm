@@ -4,9 +4,11 @@
 #
 #   tree             upstream               patches                TUI
 #   veripb           upstream/veripb        patches/veripb/
-#   veripb-repl      upstream/veripb-repl   patches/veripb-repl/   stripped
+#   veripb-repl      upstream/veripb-repl   patches/veripb-repl/   stripped after the patches
 #   veripb-repl-tui  upstream/veripb-repl   patches/veripb-repl/   kept
 #   crossterm        upstream/crossterm     patches/crossterm/
+#
+# veripb-repl patches are written in work/veripb-repl-tui (full source).
 #
 # Usage: scripts/prepare.sh [<tree> ...]   (default: all trees)
 #
@@ -81,11 +83,6 @@ for name in "${names[@]}"; do
     git -C "$work" checkout -q --force --detach FETCH_HEAD
     git -C "$work" clean -q -fd
 
-    if [ "$name" = veripb-repl ]; then
-        strip_tui "$work"
-        git -C "$work" add -A
-        GIT_COMMITTER_DATE="@0 +0000" git -C "$work" commit -q --date="@0 +0000" -m "local: strip TUI"
-    fi
     git -C "$work" tag -f patch-base > /dev/null
 
     shopt -s nullglob
@@ -102,4 +99,11 @@ for name in "${names[@]}"; do
         fi
     done
     echo "   ${#patches[@]} patch(es) applied"
+
+    if [ "$name" = veripb-repl ]; then
+        strip_tui "$work"
+        git -C "$work" add -A
+        GIT_COMMITTER_DATE="@0 +0000" git -C "$work" commit -q --date="@0 +0000" -m "local: strip TUI"
+        echo "   TUI stripped"
+    fi
 done

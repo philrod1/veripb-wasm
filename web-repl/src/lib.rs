@@ -25,8 +25,9 @@ const MODE_FORMULA: i32 = 2;
 pub(crate) const MODE_DEBUG: i32 = 3;
 const MODE_QUIT: i32 = 4;
 
-/// Temp files go here; WASI has no default temp directory.
-const TEMP_DIR: &str = "/tmp";
+/// Temp files go here; WASI has no default temp directory. A dot-directory,
+/// so file completion does not offer it.
+const TEMP_DIR: &str = "/.tmp";
 
 #[derive(Default)]
 pub(crate) struct State {

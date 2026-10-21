@@ -161,3 +161,15 @@ aside input[type=file] { display: none; }
   .enh-top { grid-template-columns: minmax(0, 1fr) !important; grid-auto-rows: minmax(8rem, 1fr); overflow: auto; }
   .enh-top .splitter { display: none; }
 }
+
+/* Suggestion strip (enhanced mode's command line) */
+.suggest {
+  max-height: 9.5em; overflow: auto; border-top: 1px solid var(--border); background: var(--panel);
+  padding: 0.15rem 0;
+}
+.suggest[hidden] { display: none; }
+.suggestion { display: flex; gap: 1.5rem; padding: 0 1rem; white-space: pre; cursor: pointer; line-height: 1.45; }
+.suggestion .left { flex: none; min-width: 16ch; }
+.suggestion .right { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
+.suggestion.selected { background: var(--cursor-bg, color-mix(in srgb, var(--accent) 22%, transparent)); }
+.suggestion.selected .left { color: var(--cursor-accent); }

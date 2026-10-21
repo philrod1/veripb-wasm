@@ -2,7 +2,7 @@
 // in-memory filesystem. Used by worker.js and test/transcript.mjs.
 //
 // Filesystem: `root` is the contents Map of the preopened directory "/".
-// It always holds a "tmp" directory. Relative paths typed in the REPL
+// It always holds a ".tmp" directory for temp files. Relative paths typed in the REPL
 // resolve against "/".
 
 import {
@@ -21,9 +21,9 @@ export const MODE_QUIT = 4;
 const ENV = ["HOME=/"];
 const WASI_OPTIONS = { debug: false };
 
-/** A new root directory listing containing an empty "tmp". */
+/** A new root directory listing containing an empty ".tmp". */
 export function createRoot() {
-  return new Map([["tmp", new Directory(new Map())]]);
+  return new Map([[".tmp", new Directory(new Map())]]);
 }
 
 /**
@@ -68,7 +68,7 @@ export function listFiles(root) {
  * The `veripb_host.run_veripb` import: runs veripb on `root` with the
  * NUL-terminated argv found in `memory()` (the calling module's memory) and
  * returns its exit code, or -1 if veripb could not be run. veripb's stdout
- * and stderr go to /tmp/.veripb-stdout and /tmp/.veripb-stderr.
+ * and stderr go to /.tmp/.veripb-stdout and /.tmp/.veripb-stderr.
  * Hooks: `onRun()` before each run, `onOutput(stdout, stderr)` after it,
  * `onError(message)` on failure. `stats.veripbRuns` counts runs.
  */
@@ -94,7 +94,7 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
         wasi_snapshot_preview1: wasi.wasiImport,
       });
       const code = wasi.start(instance);
-      const tmp = root.get("tmp").contents;
+      const tmp = root.get(".tmp").contents;
       tmp.set(".veripb-stdout", stdout);
       tmp.set(".veripb-stderr", stderr);
       stats.veripbRuns += 1;
@@ -123,7 +123,8 @@ export function createWasi(args, { stdout, stderr, root, env = [] }) {
 
 /**
  * Instantiates the REPL (plain and enhanced modes) and returns
- * { mode, line(text) -> mode, state(), preserved(), toggleBreakpoint(index), stats }.
+ * { mode, line(text) -> mode, state(), preserved(), toggleBreakpoint(index),
+ *   complete(text), themes(), commands(), stats }.
  * `state()` and `preserved()` return the parsed JSON of web-repl's
  * `vr_state` / `vr_preserved` (web-repl/src/state.rs).
  * `onLine(text)` receives every output line (stdout and stderr).
@@ -175,6 +176,16 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
     state: () => result(repl.exports.vr_state()),
     preserved: () => result(repl.exports.vr_preserved()),
     toggleBreakpoint: (index) => repl.exports.vr_toggle_breakpoint(index) === 1,
+    complete(text) {
+      const bytes = encoder.encode(text);
+      const ptr = repl.exports.vr_alloc(bytes.length);
+      new Uint8Array(repl.exports.memory.buffer, ptr, bytes.length).set(bytes);
+      const len = repl.exports.vr_complete(ptr, bytes.length);
+      repl.exports.vr_free(ptr, bytes.length);
+      return result(len);
+    },
+    themes: () => result(repl.exports.vr_themes()),
+    commands: () => result(repl.exports.vr_commands()),
     stats,
   };
 }

@@ -7,8 +7,8 @@
 //
 // Implements the mode interface described in modes/plain.js.
 
-import { OutputView, resolveCommand } from "./output-view.js";
-import { applyTheme, resetTheme, storedTheme, themeCommand } from "./themes.js";
+import { OutputView, resolveCommand, setCommands } from "./output-view.js";
+import { applyStoredOrSystem, resetTheme, setPalettes, storedTheme, themeCommand, themeNames } from "./themes.js";
 import { connectReplWorker } from "./repl-client.js";
 import { splitter } from "./splitter.js";
 
@@ -65,8 +65,14 @@ export function mount(root, host) {
   try { activeTab = localStorage.getItem(TAB_KEY) || "output"; } catch {}
 
   const client = connectReplWorker(host, { what: "REPL", onState: (s) => update(s) });
-  applyTheme(storedTheme());
+  // Palettes and the command list come from the REPL.
+  const colorScheme = matchMedia("(prefers-color-scheme: dark)");
+  const followSystem = () => { if (!themeNames().includes(storedTheme())) applyStoredOrSystem(); };
+  client.themes().then((data) => { setPalettes(data); applyStoredOrSystem(); });
+  colorScheme.addEventListener("change", followSystem);
+  client.commands().then((commands) => setCommands(commands.map((c) => c.name)));
   const view = new OutputView({
+    complete: (text) => client.complete(text),
     // `:theme` recolours this page (the REPL itself answers "TUI only").
     onSubmit: (text) => {
       if (resolveCommand(text) === "theme") {
@@ -119,7 +125,7 @@ export function mount(root, host) {
     tabButtons[name] = button;
     tabBar.append(button);
   }
-  const bottom = el("div", { className: "enh-bottom" }, tabBar, ...Object.values(panels), view.form);
+  const bottom = el("div", { className: "enh-bottom" }, tabBar, ...Object.values(panels), view.commandLine);
   const splitH = el("div");
   root.append(top, splitH, bottom);
 
@@ -338,6 +344,7 @@ export function mount(root, host) {
     focus: () => view.focus(),
     unmount() {
       client.terminate();
+      colorScheme.removeEventListener("change", followSystem);
       resetTheme();
       root.classList.remove("enhanced");
       root.style.gridTemplateRows = "";

@@ -24,7 +24,7 @@ patch series and applied into `work/`.
 | `repl-core/` | wrapper crate for the veripb-repl core; enables `getrandom`'s `wasm_js` backend |
 | `wasi-run/` | Node.js `node:wasi` runners for the WASI binary and WASI test binaries |
 | `bigint-probe/` | prints `malachite-bigint` and `i128` results, for diffing native against wasm |
-| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON session views `vr_state`, `vr_preserved`, `vr_toggle_breakpoint`, `vr_result_ptr` |
+| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state`, `vr_preserved`, `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, plus `vr_toggle_breakpoint` and `vr_result_ptr` |
 | `web-tui/` | the veripb-repl TUI as a `wasm32-wasip1` command, built against `work/crossterm` |
 | `web/` | browser page: mode menu, plain and classic modes, veripb in Web Workers |
 | `scripts/build-web.sh` | builds `web/pkg/` (generated, not tracked) |
@@ -35,8 +35,8 @@ Trees in `work/`:
 | Tree | Upstream | Patches | Used by |
 |---|---|---|---|
 | `veripb` | `upstream/veripb` | `patches/veripb/` | all builds |
-| `veripb-repl` | `upstream/veripb-repl` | `patches/veripb-repl/`, TUI stripped | `repl-core`, `web-repl` |
-| `veripb-repl-tui` | `upstream/veripb-repl` | `patches/veripb-repl/`, TUI kept | `web-tui` |
+| `veripb-repl` | `upstream/veripb-repl` | `patches/veripb-repl/`, then TUI stripped | `repl-core` |
+| `veripb-repl-tui` | `upstream/veripb-repl` | `patches/veripb-repl/`, TUI kept | `web-repl`, `web-tui` |
 | `crossterm` | `upstream/crossterm` | `patches/crossterm/` | `web-tui` (`[patch.crates-io]`) |
 
 ## Local changes
@@ -50,15 +50,17 @@ Trees in `work/`:
 | `0003-bin-use-mimalloc-on-native-targets-only` | `mimalloc` (C code) is used on non-wasm targets only. |
 
 `work/veripb-repl` also gets a commit `local: strip TUI` made by
-`prepare.sh`, ahead of `patches/veripb-repl/`. It removes `src/tui`,
+`prepare.sh`, after `patches/veripb-repl/`. It removes `src/tui`,
 `src/main.rs`, `pub mod tui;`, the `crossterm` dependency, `[[bin]]` and
-`[dev-dependencies]`.
+`[dev-dependencies]`. Patches for `patches/veripb-repl/` are made in
+`work/veripb-repl-tui`, which has the full source.
 
 `patches/veripb-repl/`:
 
 | Patch | Change |
 |---|---|
-| `0001-checker-run-veripb-through-a-host-import-on-WASI` | On `target_os = "wasi"`, `checker::invoke::run` calls the host import `veripb_host.run_veripb` instead of spawning `veripb`. |
+| `0001-checker-run-veripb-through-a-host-import-on-WASI` | On `target_os = "wasi"`, `checker::invoke::run` calls the host import `veripb_host.run_veripb` instead of spawning `veripb`; veripb's stdout and stderr are read from `/.tmp/.veripb-stdout` and `/.tmp/.veripb-stderr`. |
+| `0002-Make-completion-themes-and-mode-vocabularies-public` | Visibility only: `tui::complete` and `tui::theme` become `pub mod`; `formula::MODE_VOCABULARY`, `debug::MODE_VOCABULARY` and `edit::READONLY_DURING_EDIT` become `pub`. |
 
 `patches/crossterm/`:
 
@@ -116,11 +118,15 @@ git commit
 
 ## Add or change a local fix
 
-1. Run `scripts/prepare.sh <name>`.
-2. Commit the change in `work/<name>`. To change an existing patch, use
-   `git rebase -i patch-base` there.
-3. Run `scripts/refresh-patches.sh <name>`.
-4. Commit `patches/<name>/`.
+1. Run `scripts/prepare.sh <tree>`. For veripb-repl patches the tree is
+   `veripb-repl-tui`.
+2. Commit the change in `work/<tree>`. To change an existing patch, use
+   `git rebase -i patch-base` there. If git reports local changes that are
+   not there (bind mounts), run `git update-index --refresh` and retry.
+3. Run `scripts/refresh-patches.sh <tree>`. It refuses to run while a
+   `git am` or rebase is in progress.
+4. Commit `patches/<name>/`, then run `scripts/prepare.sh` again so
+   `work/veripb-repl` picks up veripb-repl changes.
 
 `refresh-patches.sh` writes no commit hashes or git version, so unchanged
 commits produce unchanged patch files.
@@ -234,10 +240,21 @@ Enhanced mode:
   set).
 - **Editing:** as in plain mode, through the command line (`:edit`,
   `:insert`, `:delete`, `:undo`).
-- **`:theme [<name>]`:** the TUI's palettes (`dark`, `light`, `hi-contrast`,
-  `colorblind`) for the whole page while enhanced mode is open; remembered.
-  Without a choice the page follows the browser's light/dark setting, using
-  the TUI's `light` or `dark` colours.
+- **Tab completion:** the TUI's completer (`tui::complete`) and its rules.
+  - **The strip:** the suggestion strip above the command line updates as
+    you type.
+  - **Keys:** ↑/↓ move the highlight. Tab inserts the highlighted
+    candidate, or the only one, or the candidates' longest common prefix;
+    it never submits. Esc hides the strip.
+  - **What it completes:** commands and rule names, files for
+    `:load`/`:source`/`:save`/`:instance`, `:help` topics, `:theme` names,
+    and constraint IDs, labels and variables inside rule lines.
+  - **Modes:** in `:debug` and `opb>` mode it offers that mode's own
+    commands.
+- **`:theme [<name>]`:** the TUI's palettes, read from veripb-repl
+  (`tui::theme`), for the whole page while enhanced mode is open;
+  remembered. Without a choice the page uses the REPL's `light` or `dark`
+  palette following the browser's colour scheme.
 
 Differences from `veripb-repl --plain` (plain and enhanced):
 - A command error is printed and the session continues; plain mode exits.
@@ -270,8 +287,9 @@ How it works:
     back by `postMessage`.
 - **Running veripb:** for each veripb invocation, `host.js` creates a fresh
   veripb instance on the same filesystem, with regular files as
-  stdout/stderr. It copies those to `/tmp/.veripb-stdout` and
-  `/tmp/.veripb-stderr`, and returns the exit code to the REPL.
+  stdout/stderr. It copies those to `/.tmp/.veripb-stdout` and
+  `/.tmp/.veripb-stderr`, and returns the exit code to the REPL. Temp files
+  live in `/.tmp`, a dot-directory, so file completion does not offer it.
 - **Vendored code:**
   - `@bjorn3/browser_wasi_shim` 0.4.2 in `web/vendor/browser_wasi_shim/`
   - `@xterm/xterm` 6.0.0 and `@xterm/addon-fit` 0.11.0 in

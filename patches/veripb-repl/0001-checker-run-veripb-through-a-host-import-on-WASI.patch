@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Phil Rodgers <philip.rodgers@glasgow.ac.uk>
 Date: Wed, 21 Oct 2026 11:07:07 +0000
-Subject: [PATCH] checker: run veripb through a host import on WASI
+Subject: [PATCH 1/2] checker: run veripb through a host import on WASI
 
 WASI has no subprocesses. On `target_os = "wasi"`, `invoke::run` passes
 the veripb arguments to the host import `veripb_host.run_veripb` and reads
@@ -12,7 +12,7 @@ still spawn the `veripb` binary.
  1 file changed, 83 insertions(+), 15 deletions(-)
 
 diff --git a/src/checker/invoke.rs b/src/checker/invoke.rs
-index f7d5e12..c9be105 100644
+index f7d5e12..982f9c7 100644
 --- a/src/checker/invoke.rs
 +++ b/src/checker/invoke.rs
 @@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
@@ -104,8 +104,8 @@ index f7d5e12..c9be105 100644
 +        fn run_veripb(args_ptr: *const u8, args_len: usize) -> i32;
 +    }
 +
-+    const STDOUT_PATH: &str = "/tmp/.veripb-stdout";
-+    const STDERR_PATH: &str = "/tmp/.veripb-stderr";
++    const STDOUT_PATH: &str = "/.tmp/.veripb-stdout";
++    const STDERR_PATH: &str = "/.tmp/.veripb-stderr";
 +
 +    pub struct Output {
 +        pub stdout: Vec<u8>,

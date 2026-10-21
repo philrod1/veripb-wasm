@@ -65,6 +65,10 @@ await command(":verify");
 const plainOut = await page.textContent(".plain-out");
 check("plain: :verify", plainOut.includes("Verified 4 line(s)."));
 check("plain: veripb output folded", (await page.$$(".plain-out details.trace")).length === 1);
+await page.type(".plain-in", ":ve");
+await sleep(150);
+check("plain: no suggestion strip", (await page.$$(".suggest")).length === 0);
+await page.fill(".plain-in", "");
 
 // ---- Classic ----
 await page.selectOption("#mode", "classic");
@@ -104,6 +108,35 @@ await command(":verify");
 const fixed = await page.$$eval(".pane-proof .row:not(.preamble) .status", (s) => s.map((x) => x.textContent).join(""));
 check("enhanced: after fix all checked", fixed === "✓✓✓", fixed);
 check("enhanced: database grew", (await page.$$(".pane-database .pane-body .row")).length === 8);
+
+// Tab completion (the TUI's completer).
+const strip = () => page.$$eval(".suggest:not([hidden]) .suggestion .left", (r) => r.map((x) => x.textContent));
+const typeLine = async (text) => { await page.fill(".plain-in", ""); await page.type(".plain-in", text); await sleep(150); };
+await typeLine(":ve");
+check("enhanced: suggestions for :ve", (await strip()).join() === ":verify", (await strip()).join());
+await page.press(".plain-in", "Tab");
+check("enhanced: Tab completes :verify", (await page.inputValue(".plain-in")) === ":verify ");
+await typeLine(":load ");
+const files = await strip();
+check("enhanced: :load offers .opb files only", files.length > 0 && files.every((f) => f.endsWith(".opb")), files.join(" "));
+await page.press(".plain-in", "ArrowDown");
+await page.press(".plain-in", "ArrowDown");
+const highlighted = await page.$eval(".suggestion.selected .left", (e) => e.textContent);
+await page.press(".plain-in", "Tab");
+check("enhanced: arrows + Tab insert the highlighted file", (await page.inputValue(".plain-in")) === `:load ${highlighted}`, highlighted);
+await typeLine("pol @x1");
+await page.press(".plain-in", "Tab");
+check("enhanced: Tab completes labels to their common prefix", (await page.inputValue(".plain-in")) === "pol @x1_");
+await page.fill(".plain-in", "");
+await command(":debug");
+await typeLine(":");
+const debugNames = (await strip()).slice(0, 3).map((usage) => usage.split(" ")[0]);
+check("enhanced: debug-mode vocabulary", debugNames.join() === ":step,:back,:continue", debugNames.join());
+await page.fill(".plain-in", "");
+await command(":done");
+await command(":theme hi-contrast");
+check("enhanced: :theme uses the REPL's palette", (await page.evaluate(() => getComputedStyle(document.body).backgroundColor)) === "rgb(0, 0, 0)");
+await command(":theme light");
 
 await page.click('.tab:has-text("Transcript")');
 const transcript = await page.textContent(".transcript");

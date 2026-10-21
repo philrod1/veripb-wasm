@@ -7,7 +7,7 @@
 //   instance: { putFile(name, bytes), deleteFile(name), getFile(name) -> Promise<Uint8Array|null>,
 //               snapshot() -> Promise<Map<name, Uint8Array>>, note(text), focus(), unmount() }
 
-import { OutputView } from "./output-view.js";
+import { OutputView, setCommands } from "./output-view.js";
 import { connectReplWorker } from "./repl-client.js";
 
 export function mount(root, host) {
@@ -16,6 +16,7 @@ export function mount(root, host) {
   const view = new OutputView({ onSubmit: (text) => client.line(text) });
   root.append(view.out, view.form);
   client.attach(view);
+  client.commands().then((commands) => setCommands(commands.map((c) => c.name)));
 
   return {
     putFile: client.putFile,

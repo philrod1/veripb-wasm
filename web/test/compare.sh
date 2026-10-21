@@ -6,7 +6,7 @@
 #
 # Normalisation before the diff: prompts removed, "Working…" lines removed
 # (the web frontend does not print them), temp-file names replaced by
-# `.tmpXXXXXX`.
+# `TMP/.tmpXXXXXX` (native uses /tmp, the web build /.tmp).
 #
 # Usage: web/test/compare.sh [script.txt ...]   (default: all scripts)
 set -euo pipefail
@@ -28,7 +28,7 @@ native_repl="$native_target/release/veripb-repl"
 normalise() {
     sed -E \
         -e ':a' -e 's/^(pbp|opb|debug|edit( \([^)]*\))?)> //' -e 'ta' \
-        -e 's/\.tmp[A-Za-z0-9]{6}/.tmpXXXXXX/g' \
+        -e 's#/\.?tmp/\.tmp[A-Za-z0-9]{6}#TMP/.tmpXXXXXX#g' \
         | grep -v '^Working…$' | sed -e '${/^$/d;}'
 }
 
