@@ -9,7 +9,7 @@
 const MODES = {
   plain: { label: "Plain", load: () => import("./modes/plain.js") },
   classic: { label: "Classic (TUI)", load: () => import("./modes/classic.js") },
-  enhanced: { label: "Enhanced", load: null },
+  enhanced: { label: "Enhanced", load: () => import("./modes/enhanced.js") },
 };
 const STORAGE_KEY = "veripb-repl-mode";
 const FILES_HIDDEN_KEY = "veripb-repl-files-hidden";
@@ -116,6 +116,41 @@ document.getElementById("demos").addEventListener("click", async () => {
   const names = await (await fetch("pkg/demos/index.json")).json();
   for (const name of names) current.putFile(name, new Uint8Array(await (await fetch(`pkg/demos/${name}`)).arrayBuffer()));
   current.note(`Loaded demo files: ${names.join(", ")}. Try :instance two-of-three`);
+  current.focus();
+});
+
+// Files dropped anywhere on the page are added (base names only).
+const dropOverlay = document.getElementById("drop-overlay");
+let dragDepth = 0;
+const hasFiles = (event) => [...(event.dataTransfer?.types ?? [])].includes("Files");
+document.addEventListener("dragenter", (event) => {
+  if (!hasFiles(event)) return;
+  event.preventDefault();
+  dragDepth += 1;
+  dropOverlay.hidden = false;
+});
+document.addEventListener("dragover", (event) => {
+  if (!hasFiles(event)) return;
+  event.preventDefault();
+  event.dataTransfer.dropEffect = "copy";
+});
+document.addEventListener("dragleave", (event) => {
+  if (!hasFiles(event)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (!dragDepth) dropOverlay.hidden = true;
+});
+document.addEventListener("drop", async (event) => {
+  if (!hasFiles(event)) return;
+  event.preventDefault();
+  dragDepth = 0;
+  dropOverlay.hidden = true;
+  const added = [];
+  for (const file of event.dataTransfer.files) {
+    if (!file.size && !file.type) continue; // directories arrive as empty, typeless entries
+    current.putFile(file.name, new Uint8Array(await file.arrayBuffer()));
+    added.push(file.name);
+  }
+  if (added.length) current.note(`Added ${added.join(", ")}.`);
   current.focus();
 });
 

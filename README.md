@@ -7,7 +7,7 @@ patch series and applied into `work/`.
 | Target | What |
 |---|---|
 | `wasm32-unknown-unknown` | veripb library (browser), veripb-repl core without the TUI |
-| `wasm32-wasip1` | veripb command-line binary, run under a WASI runtime; veripb-repl plain mode as a WASI reactor (`web-plain`); the veripb-repl TUI as a WASI command (`web-tui`) |
+| `wasm32-wasip1` | veripb command-line binary, run under a WASI runtime; veripb-repl's line interface as a WASI reactor (`web-repl`, plain and enhanced modes); the veripb-repl TUI as a WASI command (`web-tui`) |
 
 ## Layout
 
@@ -24,7 +24,7 @@ patch series and applied into `work/`.
 | `repl-core/` | wrapper crate for the veripb-repl core; enables `getrandom`'s `wasm_js` backend |
 | `wasi-run/` | Node.js `node:wasi` runners for the WASI binary and WASI test binaries |
 | `bigint-probe/` | prints `malachite-bigint` and `i128` results, for diffing native against wasm |
-| `web-plain/` | veripb-repl plain mode as a `wasm32-wasip1` reactor: `vr_init`, `vr_line`, `vr_alloc`, `vr_free` |
+| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON session views `vr_state`, `vr_preserved`, `vr_toggle_breakpoint`, `vr_result_ptr` |
 | `web-tui/` | the veripb-repl TUI as a `wasm32-wasip1` command, built against `work/crossterm` |
 | `web/` | browser page: mode menu, plain and classic modes, veripb in Web Workers |
 | `scripts/build-web.sh` | builds `web/pkg/` (generated, not tracked) |
@@ -35,7 +35,7 @@ Trees in `work/`:
 | Tree | Upstream | Patches | Used by |
 |---|---|---|---|
 | `veripb` | `upstream/veripb` | `patches/veripb/` | all builds |
-| `veripb-repl` | `upstream/veripb-repl` | `patches/veripb-repl/`, TUI stripped | `repl-core`, `web-plain` |
+| `veripb-repl` | `upstream/veripb-repl` | `patches/veripb-repl/`, TUI stripped | `repl-core`, `web-repl` |
 | `veripb-repl-tui` | `upstream/veripb-repl` | `patches/veripb-repl/`, TUI kept | `web-tui` |
 | `crossterm` | `upstream/crossterm` | `patches/crossterm/` | `web-tui` (`[patch.crates-io]`) |
 
@@ -156,7 +156,7 @@ choice is remembered):
 |---|---|---|
 | `plain` | `veripb-repl --plain` line interface | available |
 | `classic` | the veripb-repl TUI in a terminal emulator (xterm.js) | available |
-| `enhanced` | browser-native panes driven by session data | planned |
+| `enhanced` | browser-native panes driven by session data | available (first milestone) |
 
 Switching modes starts a fresh REPL. Files are carried over; the proof
 session is not (`:save` it first).
@@ -166,6 +166,8 @@ Files panel (left; "Files" in the header hides and shows it, remembered):
 - **Upload:** adds local files.
 - **Download:** click a file name.
 - **Delete:** × next to a file, after a confirmation.
+- **Drag and drop:** files dropped anywhere on the page are added, in every
+  mode (base names only).
 
 ```
 scripts/prepare.sh
@@ -209,7 +211,31 @@ Classic mode:
 - **Ending:** `:quit` or Ctrl-D on an empty line ends the session; switch
   mode or reload to start again.
 
-Differences from `veripb-repl --plain`:
+Enhanced mode:
+- **Panes:** Formula | Database | Proof on top; Output, Transcript and
+  Preserved tabs and the command line below. Drag the splitters to resize
+  (double-click resets); sizes and the open tab are remembered.
+- **Formula:** each line with its constraint ids; `@labels` and variables
+  highlighted; objective and `preserved:` lines on top.
+- **Database:** the checked prefix's constraints with labels; a grey bar
+  marks core constraints, a blue bar derived ones. The filter matches an id,
+  label or text; the core/derived boxes hide either kind. During `:debug`,
+  the constraints derived by the last step are highlighted.
+- **Proof:** ✓ checked, ○ unchecked, ✗ rejected (hover for the message).
+  Click the gutter to toggle a breakpoint. Click a line to put `:edit <n>`
+  in the command line (it is not run); hover a line for "explain"
+  (`:explain <n>`).
+- **Output:** as in plain mode, with veripb's output folded.
+- **Transcript:** every line of the session, input included and nothing
+  folded; Copy and Download (`transcript.txt`).
+- **Preserved:** the current and declared preserved sets, the proof line
+  of the last change, and what was added or removed. Refreshed after each
+  command while the tab is open (this runs veripb when the proof changes the
+  set).
+- **Editing:** as in plain mode, through the command line (`:edit`,
+  `:insert`, `:delete`, `:undo`).
+
+Differences from `veripb-repl --plain` (plain and enhanced):
 - A command error is printed and the session continues; plain mode exits.
 - The prompt is always `edit> ` in edit mode, without the de-asserted
   constraint.
@@ -220,9 +246,14 @@ How it works:
   menu, status line and files panel. Each mode is a module in `web/modes/`
   with `mount(root, host)`; the interface is described in
   `web/modes/plain.js`.
-- **Plain mode:** `modes/plain.js` sends input lines to `plain-worker.js`, a
-  module Web Worker. The worker compiles `pkg/repl.wasm` and
-  `pkg/veripb.wasm`, then runs the REPL through `host.js`.
+- **Plain and enhanced modes:** `modes/repl-client.js` starts
+  `repl-worker.js`, a module Web Worker. The worker compiles `pkg/repl.wasm`
+  and `pkg/veripb.wasm`, then runs the REPL through `host.js`.
+  - `modes/output-view.js` is the output pane and command line, shared by
+    both modes.
+  - Enhanced mode asks the worker to watch the session. After every command
+    the worker then also posts `vr_state()`'s JSON, which `modes/enhanced.js`
+    renders.
 - **Classic mode:**
   - **Startup:** `modes/classic.js` starts `classic-worker.js`, which runs
     `pkg/tui.wasm` until the TUI exits.
@@ -250,7 +281,24 @@ Tests (Node.js, after `scripts/build-web.sh`):
 web/test/compare.sh              # every web/test/scripts/*.txt: native veripb-repl --plain vs web/pkg
 node web/test/transcript.mjs <files-dir> [<dump-dir>] < script.txt
 web/test/compare-tui.py          # veripb-repl's demos/tools/*.json: native TUI vs pkg/tui.wasm, screen by screen
+node web/test/state-check.mjs    # web-repl's JSON views vs the REPL's own :list, :show and :preserved output
+CHROME=<chrome> [PLAYWRIGHT_CORE=<dir>] node web/test/browser-smoke.mjs [url]   # all three modes in a browser
 ```
+
+`state-check.mjs` runs the plain demo scripts and checks, at every `pbp>`
+prompt:
+- `vr_state()`'s proof statuses and breakpoints against `:list`
+- its database against `:show`
+
+It also checks `vr_preserved()` against `:preserved` on veripb's
+`add_preserved_var*` test instances.
+
+`browser-smoke.mjs` needs the `playwright-core` npm package and a Chrome or
+`chrome-headless-shell` executable, and a running `scripts/serve.py`
+(default URL `http://127.0.0.1:8000/`). It drives each mode: dropped files,
+a verify run, carry-over of files between modes, and in enhanced mode the
+pane titles and statuses, the database filter, breakpoints, a splitter drag
+remembered across a reload, the transcript and the preserved set.
 
 `compare-tui.py` replays each demo screenshot script, including its typed
 keys, clicks and snapshots, against two targets:

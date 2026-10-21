@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Builds web/pkg/: veripb.wasm (WASI command), repl.wasm (web-plain WASI
-# reactor, plain mode), tui.wasm (web-tui WASI command, classic mode) and
+# Builds web/pkg/: veripb.wasm (WASI command), repl.wasm (web-repl WASI
+# reactor, plain and enhanced modes), tui.wasm (web-tui WASI command, classic mode) and
 # the veripb-repl demo files. Needs work/ from scripts/prepare.sh; does not
 # run it, since that resets work/.
 set -euo pipefail
@@ -27,13 +27,13 @@ if grep -q '^crossterm' "$root/work/veripb-repl/Cargo.toml"; then
 fi
 
 (cd "$root/work/veripb" && cargo build --release --bin veripb --no-default-features --target wasm32-wasip1)
-(cd "$root/web-plain" && cargo build --release --target wasm32-wasip1)
+(cd "$root/web-repl" && cargo build --release --target wasm32-wasip1)
 (cd "$root/web-tui" && cargo build --release --target wasm32-wasip1)
 
 rm -rf "$pkg"
 mkdir -p "$pkg/demos"
 cp "$out/veripb.wasm" "$pkg/veripb.wasm"
-cp "$out/web_plain.wasm" "$pkg/repl.wasm"
+cp "$out/web_repl.wasm" "$pkg/repl.wasm"
 cp "$out/web-tui.wasm" "$pkg/tui.wasm"
 cp "$root/work/veripb-repl/demos/files/"* "$pkg/demos/"
 (cd "$pkg/demos" && ls | grep -v '^index.json$' | sed 's/.*/"&"/' | paste -sd, - | sed 's/.*/[&]/') > "$pkg/demos/index.json"

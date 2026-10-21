@@ -1,4 +1,4 @@
-// Runs veripb-repl (web-plain reactor) and veripb (WASI command) on one
+// Runs veripb-repl (web-repl reactor) and veripb (WASI command) on one
 // in-memory filesystem. Used by worker.js and test/transcript.mjs.
 //
 // Filesystem: `root` is the contents Map of the preopened directory "/".
@@ -122,7 +122,10 @@ export function createWasi(args, { stdout, stderr, root, env = [] }) {
 }
 
 /**
- * Instantiates the plain-mode REPL and returns { mode, line(text) -> mode }.
+ * Instantiates the REPL (plain and enhanced modes) and returns
+ * { mode, line(text) -> mode, state(), preserved(), toggleBreakpoint(index), stats }.
+ * `state()` and `preserved()` return the parsed JSON of web-repl's
+ * `vr_state` / `vr_preserved` (web-repl/src/state.rs).
  * `onLine(text)` receives every output line (stdout and stderr).
  * `onVeripbOutput(stdout, stderr)`, if given, receives the bytes of each
  * veripb run's stdout and stderr.
@@ -160,5 +163,18 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
     return next;
   }
 
-  return { mode, line, stats };
+  const decoder = new TextDecoder();
+  function result(len) {
+    const bytes = new Uint8Array(repl.exports.memory.buffer, repl.exports.vr_result_ptr(), len);
+    return JSON.parse(decoder.decode(bytes));
+  }
+
+  return {
+    mode,
+    line,
+    state: () => result(repl.exports.vr_state()),
+    preserved: () => result(repl.exports.vr_preserved()),
+    toggleBreakpoint: (index) => repl.exports.vr_toggle_breakpoint(index) === 1,
+    stats,
+  };
 }

@@ -1,11 +1,15 @@
-// Module worker for plain mode: owns the filesystem and the REPL; the page
-// sends input lines and file operations and receives output.
+// Module worker for plain and enhanced modes: owns the filesystem and the
+// REPL; the page sends input lines and file operations and receives output.
 //
 // Page -> worker: {type: "line", text} | {type: "put", name, data} | {type: "delete", name}
 //                 | {type: "get", id, name} | {type: "dump", id}
+//                 | {type: "watch", on}          post session state after every line
+//                 | {type: "state", id} | {type: "preserved", id}
+//                 | {type: "breakpoint", index} toggle; posts state if watching
 // Worker -> page: {type: "out", lines, trace} | {type: "mode", mode, ms, veripbRuns}
 //                 | {type: "files", files} | {type: "file", id, data}
 //                 | {type: "dump", id, files: [[name, data], ...]} | {type: "fatal", text}
+//                 | {type: "state", id?, state} | {type: "preserved", id, preserved}
 //
 // Files may be put before the REPL is ready; input lines may not.
 
@@ -13,6 +17,8 @@ import { createRoot, startRepl, writeFile, readFile, deleteFile, listFiles } fro
 
 const root = createRoot();
 let repl;
+let watching = false;
+const postState = (id) => post({ type: "state", id, state: repl.state() });
 
 // Output lines are sent in batches: one message per OUT_BATCH lines and at
 // the end of each command. `trace[i]` is true when lines[i] is, verbatim, a
@@ -62,6 +68,7 @@ async function init() {
   });
   flush();
   post({ type: "mode", mode: repl.mode, ms: 0, veripbRuns: 0 });
+  if (watching) postState();
   postFiles();
 }
 
@@ -75,9 +82,23 @@ onmessage = ({ data: message }) => {
         const mode = repl.line(message.text);
         flush();
         post({ type: "mode", mode, ms: performance.now() - t0, veripbRuns: repl.stats.veripbRuns - runs });
+        if (watching) postState();
         postFiles();
         break;
       }
+      case "watch":
+        watching = message.on;
+        if (watching && repl) postState();
+        break;
+      case "state":
+        if (repl) postState(message.id);
+        break;
+      case "preserved":
+        post({ type: "preserved", id: message.id, preserved: repl ? repl.preserved() : null });
+        break;
+      case "breakpoint":
+        if (repl?.toggleBreakpoint(message.index) && watching) postState();
+        break;
       case "put":
         writeFile(root, message.name, new Uint8Array(message.data));
         postFiles();

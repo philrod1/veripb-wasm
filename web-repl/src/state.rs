@@ -1,0 +1,173 @@
+//! JSON views of the session for the page's enhanced mode.
+//!
+//! Each `vr_*` query writes its JSON into a result buffer and returns the
+//! length in bytes; `vr_result_ptr` gives the buffer's address. The buffer
+//! is valid until the next query.
+
+use std::cell::RefCell;
+
+use serde_json::{Value, json};
+use veripb_repl::checker::parse::{formula_line_constraints, rule_keyword};
+use veripb_repl::session::Session;
+
+use crate::{MODE_DEBUG, STATE, State};
+
+thread_local! {
+    static RESULT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
+}
+
+fn set_result(value: Value) -> i32 {
+    let bytes = value.to_string().into_bytes();
+    let len = bytes.len() as i32;
+    RESULT.with_borrow_mut(|result| *result = bytes);
+    len
+}
+
+/// Address of the last query's JSON.
+#[unsafe(no_mangle)]
+pub extern "C" fn vr_result_ptr() -> *const u8 {
+    RESULT.with_borrow(|result| result.as_ptr())
+}
+
+/// The whole session view (see web/modes/enhanced.js for its use):
+/// `{mode, formula, proof, database, variables}`; the last four are `null`
+/// without a session. Runs veripb only when the database cache is stale.
+#[unsafe(no_mangle)]
+pub extern "C" fn vr_state() -> i32 {
+    STATE.with_borrow(|state| set_result(state_json(state)))
+}
+
+/// The preserved set: `{declared, current, lastChange}` (`null` where
+/// absent), `{error}`, or `null` without a session. May run veripb.
+#[unsafe(no_mangle)]
+pub extern "C" fn vr_preserved() -> i32 {
+    STATE.with_borrow(|state| {
+        let value = match &state.session {
+            None => Value::Null,
+            Some(session) => match session.preserved_set() {
+                Ok(set) => json!({
+                    "declared": set.declared,
+                    "current": set.current,
+                    "lastChange": set.last_change,
+                }),
+                Err(e) => json!({ "error": format!("{e:#}") }),
+            },
+        };
+        set_result(value)
+    })
+}
+
+/// Toggles the breakpoint on proof buffer line `index` (0-based). Returns 1
+/// if there is a session, 0 otherwise.
+#[unsafe(no_mangle)]
+pub extern "C" fn vr_toggle_breakpoint(index: usize) -> i32 {
+    STATE.with_borrow_mut(|state| match state.session.as_mut() {
+        Some(session) if index < session.buffer.len() => {
+            session.toggle_breakpoint(index);
+            1
+        }
+        _ => 0,
+    })
+}
+
+fn state_json(state: &State) -> Value {
+    let mode = state.mode();
+    let Some(session) = &state.session else {
+        return json!({ "mode": mode, "formula": null, "proof": null, "database": null, "variables": null });
+    };
+    json!({
+        "mode": mode,
+        "formula": formula_json(session),
+        "proof": proof_json(session, mode == MODE_DEBUG),
+        "database": database_json(session),
+        "variables": session.variables.names().collect::<Vec<_>>(),
+    })
+}
+
+fn formula_json(session: &Session) -> Value {
+    let first_ids = session.formula_first_ids();
+    let lines: Vec<Value> = session
+        .formula
+        .iter()
+        .zip(first_ids)
+        .map(|(text, first)| {
+            let count = formula_line_constraints(text).max(1);
+            let ids = if count == 1 { first.to_string() } else { format!("{first}-{}", first + count - 1) };
+            json!({ "ids": ids, "text": text })
+        })
+        .collect();
+    let name = std::path::Path::new(&session.formula_path)
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| session.formula_path.clone());
+    json!({
+        "name": name,
+        "path": session.formula_path,
+        "count": session.formula_constraint_count(),
+        "lines": lines,
+        "objective": session.objective,
+        "preserved": session.preserved,
+    })
+}
+
+fn proof_json(session: &Session, debugging: bool) -> Value {
+    let checked = session.checked_len;
+    let lines: Vec<Value> = session
+        .buffer
+        .iter()
+        .enumerate()
+        .map(|(i, text)| {
+            let status = if i < checked {
+                "checked"
+            } else if i == checked && session.known_bad.is_some() {
+                "rejected"
+            } else {
+                "unchecked"
+            };
+            json!({
+                "n": session.display_line(i),
+                "index": i,
+                "text": text,
+                "status": status,
+                "breakpoint": session.breakpoints.contains(&i),
+                "assertion": rule_keyword(text) == Some("a"),
+            })
+        })
+        .collect();
+    let rejected = session.known_bad.as_ref().map(|message| {
+        json!({ "n": session.display_line(checked), "message": message })
+    });
+    let debug_line = (debugging && !session.buffer.is_empty())
+        .then(|| session.display_line(checked.min(session.buffer.len() - 1)));
+    json!({
+        "preamble": session.preamble_lines(),
+        "lines": lines,
+        "checked": checked,
+        "unchecked": session.buffer.len() - checked,
+        "rejected": rejected,
+        "debugLine": debug_line,
+        "lastStepIds": session.last_step_constraint_ids,
+    })
+}
+
+fn database_json(session: &Session) -> Value {
+    let labels = session.labels_by_id();
+    match session.database() {
+        Ok(database) => {
+            let entries: Vec<Value> = database
+                .entries
+                .iter()
+                .map(|entry| {
+                    json!({
+                        "id": entry.id,
+                        "core": entry.is_core,
+                        "text": entry.text,
+                        "labels": labels.get(&(entry.id as isize)).cloned().unwrap_or_default(),
+                    })
+                })
+                .collect();
+            json!({ "entries": entries })
+        }
+        Err(e) => json!({ "error": format!("{e:#}") }),
+    }
+}

@@ -1,11 +1,15 @@
-//! veripb-repl's plain line interface as a `wasm32-wasip1` reactor.
+//! veripb-repl's line interface as a `wasm32-wasip1` reactor, for the
+//! page's plain and enhanced modes.
 //!
 //! The host calls `vr_init` once, then `vr_line` for each input line. All
 //! output goes to stdout. veripb itself runs through the host import
-//! `veripb_host.run_veripb` (see `checker/invoke.rs`).
+//! `veripb_host.run_veripb` (see `checker/invoke.rs`). `state.rs` adds
+//! JSON views of the session for enhanced mode.
 //!
 //! The mode handling matches `veripb_repl::plain::run`, except that errors
 //! are printed and the session continues.
+
+mod state;
 
 use std::cell::RefCell;
 use std::path::Path;
@@ -18,14 +22,14 @@ use veripb_repl::session::Session;
 const MODE_PBP: i32 = 0;
 const MODE_EDIT: i32 = 1;
 const MODE_FORMULA: i32 = 2;
-const MODE_DEBUG: i32 = 3;
+pub(crate) const MODE_DEBUG: i32 = 3;
 const MODE_QUIT: i32 = 4;
 
 /// Temp files go here; WASI has no default temp directory.
 const TEMP_DIR: &str = "/tmp";
 
 #[derive(Default)]
-struct State {
+pub(crate) struct State {
     session: Option<Session>,
     edit: Option<edit::EditState>,
     formula: Option<formula::FormulaEditState>,
@@ -33,7 +37,7 @@ struct State {
 }
 
 impl State {
-    fn mode(&self) -> i32 {
+    pub(crate) fn mode(&self) -> i32 {
         if self.debug.is_some() {
             MODE_DEBUG
         } else if self.formula.is_some() {
@@ -87,7 +91,7 @@ impl State {
 }
 
 thread_local! {
-    static STATE: RefCell<State> = RefCell::default();
+    pub(crate) static STATE: RefCell<State> = RefCell::default();
 }
 
 /// Sets up the temp directory and an empty session. Returns the prompt
