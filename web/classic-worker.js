@@ -10,8 +10,8 @@
 //                 | {type: "exited", code} | {type: "fatal", text}
 
 import { ConsoleStdout } from "./vendor/browser_wasi_shim/index.js";
-import { createRoot, createVeripbRunner, createWasi, writeFile, readFile, listFiles } from "./host.js";
-import { ChannelReader, MAIL_PUT, MAIL_GET, MAIL_DUMP } from "./tty-channel.js";
+import { createRoot, createVeripbRunner, createWasi, writeFile, readFile, deleteFile, listFiles } from "./host.js";
+import { ChannelReader, MAIL_PUT, MAIL_GET, MAIL_DUMP, MAIL_DELETE } from "./tty-channel.js";
 
 // read_input result for a terminal resize (patches/crossterm/, terminal/sys/wasi.rs).
 const RESIZED = -2;
@@ -56,6 +56,10 @@ function serveMail(request) {
   switch (request.op) {
     case MAIL_PUT:
       writeFile(root, request.name, request.data);
+      postFilesIfChanged();
+      break;
+    case MAIL_DELETE:
+      deleteFile(root, request.name);
       postFilesIfChanged();
       break;
     case MAIL_GET:

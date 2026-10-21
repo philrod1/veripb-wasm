@@ -4,7 +4,7 @@
 //   mount(root, host) -> instance, or a Promise of one
 //     root: element to render into (emptied by the shell on unmount)
 //     host: { files: Map<name, Uint8Array>, setStatus(text), setFiles([{name, size}]) }
-//   instance: { putFile(name, bytes), getFile(name) -> Promise<Uint8Array|null>,
+//   instance: { putFile(name, bytes), deleteFile(name), getFile(name) -> Promise<Uint8Array|null>,
 //               snapshot() -> Promise<Map<name, Uint8Array>>, note(text), focus(), unmount() }
 
 const PROMPTS = ["pbp> ", "edit> ", "opb> ", "debug> "];
@@ -217,6 +217,7 @@ export function mount(root, host) {
 
   return {
     putFile,
+    deleteFile: (name) => worker.postMessage({ type: "delete", name }),
     getFile: (name) => request({ type: "get", name }),
     snapshot: () => request({ type: "dump" }),
     note: (text) => append(text, "note"),

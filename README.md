@@ -161,6 +161,12 @@ choice is remembered):
 Switching modes starts a fresh REPL. Files are carried over; the proof
 session is not (`:save` it first).
 
+Files panel (left; "Files" in the header hides and shows it, remembered):
+- **Load demo files:** copies veripb-repl's `demos/files` into `/`.
+- **Upload:** adds local files.
+- **Download:** click a file name.
+- **Delete:** × next to a file, after a confirmation.
+
 ```
 scripts/prepare.sh
 scripts/build-web.sh
@@ -176,9 +182,6 @@ what is missing. Serve from the host if the container publishes no ports:
 
 Plain mode:
 - **Input:** one line per Enter. Up and Down step through command history.
-- **Files:** "Load demo files" copies veripb-repl's `demos/files` into `/`,
-  and "Upload" adds local files. Click a file name to download it, for
-  example after `:save`.
 - **Paths:** relative paths resolve against `/`, for example
   `:instance two-of-three`.
 - **veripb output:** lines that veripb printed during the command (its

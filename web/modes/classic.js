@@ -4,7 +4,7 @@
 //
 // Implements the mode interface described in modes/plain.js.
 
-import { createChannelBuffer, ChannelWriter, MAIL_PUT, MAIL_GET, MAIL_DUMP } from "../tty-channel.js";
+import { createChannelBuffer, ChannelWriter, MAIL_PUT, MAIL_GET, MAIL_DUMP, MAIL_DELETE } from "../tty-channel.js";
 
 const FONT = 'ui-monospace, SFMono-Regular, Menlo, Consolas, "DejaVu Sans Mono", monospace';
 const STARTUP_TIMEOUT_MS = 15000;
@@ -31,6 +31,7 @@ function mountUnavailable(root, host) {
   list();
   return {
     putFile(name, bytes) { files.set(name, bytes); list(); },
+    deleteFile(name) { files.delete(name); list(); },
     getFile: async (name) => files.get(name) ?? null,
     snapshot: async () => files,
     note: (text) => host.setStatus(text),
@@ -122,6 +123,7 @@ export async function mount(root, host) {
 
   return {
     putFile: (name, bytes) => mail(MAIL_PUT, name, bytes),
+    deleteFile: (name) => mail(MAIL_DELETE, name),
     getFile: (name) => new Promise((resolve) => mail(MAIL_GET, name, undefined, resolve)),
     snapshot: () => Promise.race([
       new Promise((resolve) => mail(MAIL_DUMP, "", undefined, resolve)),

@@ -1,7 +1,7 @@
 // Module worker for plain mode: owns the filesystem and the REPL; the page
 // sends input lines and file operations and receives output.
 //
-// Page -> worker: {type: "line", text} | {type: "put", name, data}
+// Page -> worker: {type: "line", text} | {type: "put", name, data} | {type: "delete", name}
 //                 | {type: "get", id, name} | {type: "dump", id}
 // Worker -> page: {type: "out", lines, trace} | {type: "mode", mode, ms, veripbRuns}
 //                 | {type: "files", files} | {type: "file", id, data}
@@ -9,7 +9,7 @@
 //
 // Files may be put before the REPL is ready; input lines may not.
 
-import { createRoot, startRepl, writeFile, readFile, listFiles } from "./host.js";
+import { createRoot, startRepl, writeFile, readFile, deleteFile, listFiles } from "./host.js";
 
 const root = createRoot();
 let repl;
@@ -80,6 +80,10 @@ onmessage = ({ data: message }) => {
       }
       case "put":
         writeFile(root, message.name, new Uint8Array(message.data));
+        postFiles();
+        break;
+      case "delete":
+        deleteFile(root, message.name);
         postFiles();
         break;
       case "get":

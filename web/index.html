@@ -8,13 +8,14 @@
 </head>
 <body>
 <header>
+  <button id="files-toggle" type="button" aria-controls="files-panel" aria-pressed="true" title="Show or hide the files panel">Files</button>
   <h1>veripb-repl</h1>
   <label>mode <select id="mode" aria-label="Interface mode"></select></label>
   <span class="about">veripb in WebAssembly · files stay in this tab</span>
   <span id="status"></span>
 </header>
 <main id="mode-root"></main>
-<aside>
+<aside id="files-panel">
   <h2>Files</h2>
   <button id="demos" type="button">Load demo files</button>
   <label class="button" for="upload">Upload .opb / .pbp…</label>

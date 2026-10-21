@@ -18,7 +18,7 @@ const HEADER_INTS = 16;
 const HEADER_BYTES = HEADER_INTS * 4;
 export const INPUT_SIZE = 64 * 1024;
 export const MAIL_SIZE = 32 * 1024 * 1024;
-export const MAIL_PUT = 1, MAIL_GET = 2, MAIL_DUMP = 3;
+export const MAIL_PUT = 1, MAIL_GET = 2, MAIL_DUMP = 3, MAIL_DELETE = 4;
 
 const encoder = new TextEncoder();
 const decoder = new TextDecoder();

@@ -45,6 +45,11 @@ export function writeFile(root, name, data) {
   dir.set(parts.at(-1), new File(bytes));
 }
 
+/** Removes root file `name`, if it exists. */
+export function deleteFile(root, name) {
+  if (root.get(name) instanceof File) root.delete(name);
+}
+
 /** Returns the bytes of root file `name`, or null. */
 export function readFile(root, name) {
   const entry = root.get(name);

@@ -12,6 +12,7 @@ const MODES = {
   enhanced: { label: "Enhanced", load: null },
 };
 const STORAGE_KEY = "veripb-repl-mode";
+const FILES_HIDDEN_KEY = "veripb-repl-files-hidden";
 
 const modeRoot = document.getElementById("mode-root");
 const modeSelect = document.getElementById("mode");
@@ -70,10 +71,32 @@ function renderFiles(list) {
       const data = await current.getFile(name);
       if (data) download(name, data);
     });
-    item.append(link, Object.assign(document.createElement("span"), { textContent: `${size} B` }));
+    const remove = Object.assign(document.createElement("button"), {
+      type: "button", className: "delete", textContent: "×", title: `Delete ${name}`,
+    });
+    remove.setAttribute("aria-label", `Delete ${name}`);
+    remove.addEventListener("click", () => {
+      if (confirm(`Delete ${name}? Files exist only in this tab, so it cannot be recovered.`)) current.deleteFile(name);
+    });
+    item.append(link, Object.assign(document.createElement("span"), { textContent: `${size} B` }), remove);
     return item;
   }));
 }
+
+// Files panel visibility, remembered.
+const filesToggle = document.getElementById("files-toggle");
+function setFilesHidden(hidden) {
+  document.body.classList.toggle("files-hidden", hidden);
+  filesToggle.setAttribute("aria-pressed", String(!hidden));
+  try { localStorage.setItem(FILES_HIDDEN_KEY, hidden ? "1" : "0"); } catch {}
+}
+filesToggle.addEventListener("click", () => {
+  setFilesHidden(!document.body.classList.contains("files-hidden"));
+  current?.focus();
+});
+let filesHidden = false;
+try { filesHidden = localStorage.getItem(FILES_HIDDEN_KEY) === "1"; } catch {}
+setFilesHidden(filesHidden);
 
 function download(name, data) {
   const url = URL.createObjectURL(new Blob([data], { type: "text/plain" }));
