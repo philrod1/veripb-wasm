@@ -1,7 +1,7 @@
 // Enhanced mode: browser-native panes over the REPL (repl-worker.js).
 //
-// Layout: Formula | Database | Proof on top; Output / Transcript / Extras
-// tabs and the command line below. Splitters resize the panes (remembered).
+// Layout: Formula | Database | Proof on top (each with a filter box);
+// Output / Transcript / Preserved / Extras tabs and the command line below. Splitters resize the panes (remembered).
 // Pane contents come from the worker's session state (web-repl
 // src/state.rs), posted after every command.
 //
@@ -63,7 +63,6 @@ export function mount(root, host) {
   let rendered = {};
   let activeTab = "output";
   try { activeTab = localStorage.getItem(TAB_KEY) || "output"; } catch {}
-  if (activeTab === "preserved") activeTab = "extras";
 
   const client = connectReplWorker(host, { what: "REPL", onState: (s) => update(s) });
   // Palettes and the command list come from the REPL.
@@ -93,15 +92,25 @@ export function mount(root, host) {
   const database = pane("database", "Database");
   const proof = pane("proof", "Proof");
 
-  const filter = el("input", { className: "db-filter", type: "search", placeholder: "filter: id, @label, text" });
-  filter.setAttribute("aria-label", "Filter database");
+  // Filter boxes: a number matches that id (formula, database) or line
+  // (proof); anything else is a case-insensitive substring of the text.
+  const filterBox = (target, className, placeholder, label, render) => {
+    const input = el("input", { className: `pane-filter ${className}`, type: "search", placeholder });
+    input.setAttribute("aria-label", label);
+    input.addEventListener("input", () => render(true));
+    target.head.append(input);
+    return input;
+  };
+  const formulaFilter = filterBox(formula, "formula-filter", "filter: id, @label, text", "Filter formula", (f) => renderFormula(f));
+  const proofFilter = filterBox(proof, "proof-filter", "filter: line, @label, text", "Filter proof", (f) => renderProof(f));
+  const filter = filterBox(database, "db-filter", "filter: id, @label, text", "Filter database", (f) => renderDatabase(f));
   const coreBox = el("input", { type: "checkbox", checked: true });
   const derivedBox = el("input", { type: "checkbox", checked: true });
   database.head.title = "Grey bar: core constraint; blue bar: derived";
-  database.head.append(filter,
+  database.head.append(
     el("label", { className: "db-kind", title: "Show core constraints" }, coreBox, "core"),
     el("label", { className: "db-kind", title: "Show derived constraints" }, derivedBox, "derived"));
-  for (const control of [filter, coreBox, derivedBox]) control.addEventListener("input", () => renderDatabase(true));
+  for (const control of [coreBox, derivedBox]) control.addEventListener("input", () => renderDatabase(true));
 
   const top = el("div", { className: "enh-top" });
   const split1 = el("div");
@@ -114,12 +123,13 @@ export function mount(root, host) {
   const downloadButton = el("button", { type: "button", textContent: "Download" });
   const transcriptPanel = el("div", { className: "tab-panel tab-transcript" },
     el("div", { className: "tab-tools" }, copyButton, downloadButton), transcriptText);
+  const preservedPanel = el("div", { className: "tab-panel tab-preserved" });
   const extrasPanel = el("div", { className: "tab-panel tab-extras" });
   const outputPanel = el("div", { className: "tab-panel tab-output" }, view.out);
-  const panels = { output: outputPanel, transcript: transcriptPanel, extras: extrasPanel };
+  const panels = { output: outputPanel, transcript: transcriptPanel, preserved: preservedPanel, extras: extrasPanel };
   const tabButtons = {};
   const tabBar = el("div", { className: "tabs", role: "tablist" });
-  for (const [name, label] of [["output", "Output"], ["transcript", "Transcript"], ["extras", "Extras"]]) {
+  for (const [name, label] of [["output", "Output"], ["transcript", "Transcript"], ["preserved", "Preserved"], ["extras", "Extras"]]) {
     const button = el("button", { type: "button", className: "tab", textContent: label });
     button.setAttribute("role", "tab");
     button.addEventListener("click", () => selectTab(name));
@@ -176,6 +186,7 @@ export function mount(root, host) {
       transcriptText.textContent = view.transcript.map((l) => l + "\n").join("");
       transcriptDirty = false;
     }
+    if (name === "preserved") refreshPreserved();
     if (name === "extras") refreshExtras();
     if (name === "output") outputPanel.querySelector(".plain-out")?.scrollTo(0, 1e9);
   }
@@ -193,17 +204,36 @@ export function mount(root, host) {
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   });
 
+  // Preserved and Extras tabs run veripb, so each is recomputed only while
+  // open and when the formula or proof has changed since its last view.
+  const sessionKey = () => JSON.stringify([state.formula, state.proof?.lines.map((l) => [l.text, l.status]), state.proof?.checked]);
+  const noFormula = () => el("p", { className: "muted", textContent: "No formula loaded." });
+
+  let preservedFor = null;
+  async function refreshPreserved() {
+    if (!state?.formula) {
+      preservedFor = null;
+      preservedPanel.replaceChildren(noFormula());
+      return;
+    }
+    const key = sessionKey();
+    if (key === preservedFor) return;
+    preservedFor = key;
+    const set = await client.preserved();
+    if (activeTab !== "preserved" || preservedFor !== key || !set) return;
+    preservedPanel.replaceChildren(preservedSection(set));
+  }
+
   // Extras: status (`:check`'s verdict), objective (`:objective`'s report
-  // and bounds), preserved set, and counts. Recomputed (veripb runs) only
-  // while the tab is open and when the formula or proof has changed.
+  // and bounds), and counts.
   let extrasFor = null;
   async function refreshExtras() {
     if (!state?.formula) {
       extrasFor = null;
-      extrasPanel.replaceChildren(el("p", { className: "muted", textContent: "No formula loaded." }));
+      extrasPanel.replaceChildren(noFormula());
       return;
     }
-    const key = JSON.stringify([state.formula, state.proof?.lines.map((l) => [l.text, l.status]), state.proof?.checked]);
+    const key = sessionKey();
     if (key === extrasFor) {
       renderSummary();
       return;
@@ -212,7 +242,7 @@ export function mount(root, host) {
     const extras = await client.extras();
     if (activeTab !== "extras" || extrasFor !== key || !extras) return;
     extrasPanel.replaceChildren(statusSection(extras.conclusion), objectiveSection(extras.objective),
-      preservedSection(extras.preserved), el("section", { className: "extra extra-summary" }));
+      el("section", { className: "extra extra-summary" }));
     renderSummary();
   }
 
@@ -314,19 +344,33 @@ export function mount(root, host) {
     return true;
   };
 
-  function renderFormula() {
+  // Whether a row matches a filter `query` (lower-cased): a number matches
+  // the row's id or line (`ids` may be a range "1-2"); other text matches
+  // a case-insensitive substring of the row's text.
+  const matchesQuery = (query, ids, text) => {
+    if (!query) return true;
+    if (/^\d+$/.test(query)) {
+      const [lo, hi = lo] = String(ids).split("-").map(Number);
+      return Number(query) >= lo && Number(query) <= hi;
+    }
+    return text.toLowerCase().includes(query);
+  };
+
+  function renderFormula(force = false) {
     const f = state?.formula ?? null;
-    if (!changed("formula", [f, [...variables]])) return;
+    const query = formulaFilter.value.trim().toLowerCase();
+    if (!changed("formula", [f, [...variables], query]) && !force) return;
     if (!f) {
       formula.setTitle("Formula");
       formula.body.replaceChildren(placeholder("No formula loaded. Add files, then :instance <name> or :load <file.opb>."));
       return;
     }
-    formula.setTitle(`Formula: ${f.name} (${f.count})`);
-    const rows = f.lines.map(({ ids, text }) =>
+    const shown = f.lines.filter(({ ids, text }) => matchesQuery(query, ids, text));
+    formula.setTitle(shown.length === f.lines.length ? `Formula: ${f.name} (${f.count})` : `Formula: ${f.name} (${shown.length} of ${f.lines.length} lines)`);
+    const rows = shown.map(({ ids, text }) =>
       el("div", { className: "row" }, el("span", { className: "num", textContent: ids }), el("span", { className: "text" }, tokens(stripSemicolon(text), variables))));
-    if (f.objective) rows.unshift(el("div", { className: "row meta" }, el("span", { className: "num", textContent: "obj" }), el("span", { className: "text", textContent: stripSemicolon(f.objective) })));
-    if (f.preserved) rows.unshift(el("div", { className: "row meta" }, el("span", { className: "num", textContent: "pres" }), el("span", { className: "text", textContent: stripSemicolon(f.preserved) })));
+    if (f.objective && !query) rows.unshift(el("div", { className: "row meta" }, el("span", { className: "num", textContent: "obj" }), el("span", { className: "text", textContent: stripSemicolon(f.objective) })));
+    if (f.preserved && !query) rows.unshift(el("div", { className: "row meta" }, el("span", { className: "num", textContent: "pres" }), el("span", { className: "text", textContent: stripSemicolon(f.preserved) })));
     formula.body.replaceChildren(...rows);
   }
 
@@ -347,10 +391,7 @@ export function mount(root, host) {
     const query = filter.value.trim().toLowerCase();
     const shown = db.entries.filter((entry) => {
       if (entry.core ? !coreBox.checked : !derivedBox.checked) return false;
-      if (!query) return true;
-      return String(entry.id) === query
-        || entry.labels.some((label) => label.toLowerCase().includes(query))
-        || entry.text.toLowerCase().includes(query);
+      return matchesQuery(query, entry.id, [...entry.labels, entry.text].join(" "));
     });
     const lit = new Set(highlight);
     database.setTitle(shown.length === db.entries.length ? `Database (${db.entries.length})` : `Database (${shown.length} of ${db.entries.length})`);
@@ -362,20 +403,23 @@ export function mount(root, host) {
           tokens(entry.text, variables)))));
   }
 
-  function renderProof() {
+  function renderProof(force = false) {
     const p = state?.proof ?? null;
-    if (!changed("proof", [p, state?.mode, [...variables]])) return;
+    const query = proofFilter.value.trim().toLowerCase();
+    if (!changed("proof", [p, state?.mode, [...variables], query]) && !force) return;
     if (!p) {
       proof.setTitle("Proof");
       proof.body.replaceChildren(placeholder("No formula loaded."));
       return;
     }
-    proof.setTitle(`Proof (${p.lines.length})${p.unchecked ? ` (${p.unchecked} unchecked)` : ""}`);
-    const rows = p.preamble.map((text, i) =>
+    const shown = p.lines.filter((line) => matchesQuery(query, line.n, line.text));
+    const count = shown.length === p.lines.length ? `${p.lines.length}` : `${shown.length} of ${p.lines.length}`;
+    proof.setTitle(`Proof (${count})${p.unchecked ? ` (${p.unchecked} unchecked)` : ""}`);
+    const rows = (query ? [] : p.preamble).map((text, i) =>
       el("div", { className: "row preamble" }, el("span", { className: "gutter" }), el("span", { className: "status" }),
         el("span", { className: "num", textContent: i + 1 }), el("span", { className: "text", textContent: text })));
     const icon = { checked: "✓", unchecked: "○", rejected: "✗" };
-    for (const line of p.lines) {
+    for (const line of shown) {
       const bp = el("button", {
         type: "button", className: `gutter${line.breakpoint ? " on" : ""}`, textContent: "●",
         title: line.breakpoint ? "Remove breakpoint" : "Set breakpoint",
@@ -407,6 +451,7 @@ export function mount(root, host) {
     renderFormula();
     renderDatabase();
     renderProof();
+    if (activeTab === "preserved") refreshPreserved();
     if (activeTab === "extras") refreshExtras();
   }
 

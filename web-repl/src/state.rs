@@ -265,11 +265,10 @@ impl veripb_repl::output::Output for Lines {
 }
 
 /// The Extras tab's views, or `null` without a session. Runs veripb (for
-/// the objective bounds, the preserved set and `:check`'s probes).
+/// the objective bounds and `:check`'s probes).
 /// ```text
 /// { conclusion: {status, lines, version} | {error},
-///   objective: {lines, objective, best, bestValid} | {lines, error},
-///   preserved: as vr_preserved }
+///   objective: {lines, objective, best, bestValid} | {lines, error} }
 /// ```
 /// `conclusion` is `:check` without arguments (`commands::check::run`):
 /// `status` is its verdict line (`s VERIFIED …` or `NOT YET CONCLUDED`).
@@ -303,11 +302,7 @@ pub extern "C" fn vr_extras() -> i32 {
             }),
             Some(Err(e)) => json!({ "lines": objective_lines.0, "error": format!("{e:#}") }),
         };
-        let preserved = match session.preserved_set() {
-            Ok(set) => json!({ "declared": set.declared, "current": set.current, "lastChange": set.last_change }),
-            Err(e) => json!({ "error": format!("{e:#}") }),
-        };
-        set_result(json!({ "conclusion": conclusion, "objective": objective, "preserved": preserved }))
+        set_result(json!({ "conclusion": conclusion, "objective": objective }))
     })
 }
 

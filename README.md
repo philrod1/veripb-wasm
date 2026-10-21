@@ -24,7 +24,7 @@ patch series and applied into `work/`.
 | `repl-core/` | wrapper crate for the veripb-repl core; enables `getrandom`'s `wasm_js` backend |
 | `wasi-run/` | Node.js `node:wasi` runners for the WASI binary and WASI test binaries |
 | `bigint-probe/` | prints `malachite-bigint` and `i128` results, for diffing native against wasm |
-| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state`, `vr_preserved`, `vr_explain` (`:explain <n>`'s output), `vr_extras` (`:check` and `:objective` output, bounds, preserved set), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, plus `vr_toggle_breakpoint` and `vr_result_ptr` |
+| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state`, `vr_preserved`, `vr_explain` (`:explain <n>`'s output), `vr_extras` (`:check` and `:objective` output, bounds), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, plus `vr_toggle_breakpoint` and `vr_result_ptr` |
 | `web-tui/` | the veripb-repl TUI as a `wasm32-wasip1` command, built against `work/crossterm` |
 | `web/` | browser page: mode menu, plain and classic modes, veripb in Web Workers |
 | `scripts/build-web.sh` | builds `web/pkg/` (generated, not tracked) |
@@ -218,14 +218,18 @@ Classic mode:
   mode or reload to start again.
 
 Enhanced mode:
-- **Panes:** Formula | Database | Proof on top; Output, Transcript and
-  Extras tabs and the command line below. Drag the splitters to resize
+- **Panes:** Formula | Database | Proof on top; Output, Transcript,
+  Preserved and Extras tabs and the command line below.
+- **Filters:** each top pane has a filter box. A number matches that id
+  (Formula, Database) or proof line; other text matches a case-insensitive
+  substring of the row, labels included. The pane title shows "m of n"
+  while filtering. Drag the splitters to resize
   (double-click resets); sizes and the open tab are remembered.
 - **Formula:** each line with its constraint ids; `@labels` and variables
   highlighted; objective and `preserved:` lines on top.
 - **Database:** the checked prefix's constraints with labels; a grey bar
   marks core constraints, a blue bar derived ones. The filter matches an id,
-  label or text; the core/derived boxes hide either kind. During `:debug`,
+  label or text (see Filters); the core/derived boxes hide either kind. During `:debug`,
   the constraints derived by the last step are highlighted.
 - **Proof:** ✓ checked, ○ unchecked, ✗ rejected (hover for the message).
   Click the gutter to toggle a breakpoint. Click a line to put `:edit <n>`
@@ -236,16 +240,17 @@ Enhanced mode:
 - **Output:** as in plain mode, with veripb's output folded.
 - **Transcript:** every line of the session, input included and nothing
   folded; Copy and Download (`transcript.txt`).
-- **Extras:** refreshed while the tab is open, whenever the formula or proof
-  has changed. This runs veripb: `:check`'s probes, the objective bounds,
-  and the preserved set when the proof changes it.
+- **Preserved:** the current and declared preserved sets, the proof line of
+  the last change, and what was added or removed. Refreshed while the tab is
+  open, whenever the formula or proof has changed (this runs veripb when the
+  proof changes the set).
+- **Extras:** refreshed in the same way. This runs veripb: `:check`'s probes
+  and the objective bounds.
   - **Status:** `:check`'s verdict (`s VERIFIED …` or `NOT YET
     CONCLUDED`), the proof's checked and unchecked counts, a rejected
     line's reason, and the veripb version.
   - **Objective:** `:objective`'s report: the objective, the best value
     found so far, and the best value with checked-deletion guarantees.
-  - **Preserved set:** the current and declared sets, the proof line of the
-    last change, and what was added or removed.
   - **Summary:** formula constraints and variables; database size, core
     and derived; labels; breakpoints; the prompt mode.
 - **Editing:** as in plain mode, through the command line (`:edit`,
@@ -331,7 +336,7 @@ It also checks `vr_preserved()` against `:preserved` on veripb's
 a verify run, carry-over of files between modes, and in enhanced mode the
 pane titles and statuses, the database filter, breakpoints, a splitter drag
 remembered across a reload, Tab completion, `:theme`, the transcript, and the Extras
-tab (preserved set, objective bounds, `:check` verdict).
+tab (objective bounds, `:check` verdict), the Preserved tab, and the pane filters.
 
 `compare-tui.py` replays each demo screenshot script, including its typed
 keys, clicks and snapshots, against two targets:

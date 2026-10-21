@@ -103,7 +103,7 @@ aside input[type=file] { display: none; }
 .pane .row.error { color: var(--error); white-space: pre-wrap; }
 .tok-label { color: var(--label); }
 .tok-var { color: var(--variable); }
-.db-filter { margin-left: auto; font: inherit; flex: 0 1 12rem; width: 12rem; min-width: 3rem; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.3rem; }
+.pane-filter { margin-left: auto; font: inherit; flex: 0 1 12rem; width: 12rem; min-width: 3rem; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.3rem; }
 .db-kind { display: inline-flex; align-items: center; gap: 0.15rem; cursor: pointer; }
 .pane-database .row.core { background: var(--core-bg); }
 .pane-database .row.derived { background: var(--derived-bg); }
@@ -147,15 +147,15 @@ aside input[type=file] { display: none; }
 .tab-tools { display: flex; gap: 0.5rem; padding: 0.4rem 1rem 0; }
 .tab-tools button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.6rem; cursor: pointer; }
 .transcript { flex: 1; margin: 0; padding: 0.5rem 1rem; overflow: auto; white-space: pre-wrap; word-break: break-word; }
-.tab-extras {
+.tab-extras, .tab-preserved {
   padding: 0.5rem 1rem; overflow: auto; display: grid; gap: 0.75rem 1.5rem; align-content: start;
   grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));
 }
-.tab-extras .extra { min-width: 0; }
-.tab-extras h3 { margin: 0 0 0.35rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
-.tab-extras dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem; margin: 0; }
-.tab-extras dt { color: var(--muted); }
-.tab-extras dd { margin: 0; overflow-wrap: anywhere; }
+.tab-extras .extra, .tab-preserved .extra { min-width: 0; }
+.tab-extras h3, .tab-preserved h3 { margin: 0 0 0.35rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
+.tab-extras dl, .tab-preserved dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem; margin: 0; }
+.tab-extras dt, .tab-preserved dt { color: var(--muted); }
+.tab-extras dd, .tab-preserved dd { margin: 0; overflow-wrap: anywhere; }
 .tab-extras .verdict { margin: 0 0 0.4rem; font-weight: 700; }
 .tab-extras .verdict.ok { color: var(--ok); }
 .tab-extras .report { margin: 0; white-space: pre-wrap; }
