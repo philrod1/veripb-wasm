@@ -276,6 +276,35 @@ export function mount(root, host) {
     ));
   }
 
+  // ---- Explain modal: `:explain <n>`'s output, without touching Output ----
+  const explainTitle = el("h2");
+  const explainLine = el("pre", { className: "explain-line" });
+  const explainBody = el("pre", { className: "explain-body" });
+  const explainCopy = el("button", { type: "button", textContent: "Copy" });
+  const explainClose = el("button", { type: "button", textContent: "Close", autofocus: true });
+  const explainDialog = el("dialog", { className: "explain-modal" },
+    el("header", {}, explainTitle, el("div", { className: "explain-tools" }, explainCopy, explainClose)),
+    explainLine, explainBody);
+  root.append(explainDialog);
+  let explainSeq = 0;
+  explainClose.addEventListener("click", () => explainDialog.close());
+  explainDialog.addEventListener("click", (event) => { if (event.target === explainDialog) explainDialog.close(); });
+  explainDialog.addEventListener("close", () => view.focus());
+  explainCopy.addEventListener("click", () => navigator.clipboard?.writeText(explainBody.textContent));
+
+  async function openExplain(line) {
+    const mine = ++explainSeq;
+    explainTitle.textContent = `Line ${line.n}`;
+    explainLine.replaceChildren(tokens(line.text, variables));
+    explainBody.replaceChildren(el("span", { className: "muted", textContent: "Explaining…" }));
+    if (!explainDialog.open) explainDialog.showModal();
+    const result = await client.explain(line.n);
+    if (mine !== explainSeq) return;
+    const lines = result?.lines ?? ["No formula loaded."];
+    explainBody.replaceChildren(...lines.map((text) =>
+      el("span", { className: /^(Error|.*still fails)/.test(text) ? "error" : "", textContent: text + "\n" })));
+  }
+
   // ---- Rendering ----
   const placeholder = (text) => el("div", { className: "pane-empty", textContent: text });
   const changed = (key, value) => {
@@ -352,10 +381,10 @@ export function mount(root, host) {
         title: line.breakpoint ? "Remove breakpoint" : "Set breakpoint",
       });
       bp.addEventListener("click", (event) => { event.stopPropagation(); client.toggleBreakpoint(line.index); });
-      const explain = el("button", { type: "button", className: "row-action", textContent: "explain", title: `:explain ${line.n}` });
+      const explain = el("button", { type: "button", className: "row-action", textContent: "explain", title: `Explain line ${line.n}` });
       explain.addEventListener("click", (event) => {
         event.stopPropagation();
-        if (view.ready()) view.submit(`:explain ${line.n}`);
+        openExplain(line);
       });
       const row = el("div", {
         className: `row ${line.status}${line.n === p.debugLine ? " debug-current" : ""}${line.assertion ? " assertion" : ""}`,

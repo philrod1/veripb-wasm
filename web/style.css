@@ -181,3 +181,22 @@ aside input[type=file] { display: none; }
 .suggestion .right { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 .suggestion.selected { background: var(--cursor-bg, color-mix(in srgb, var(--accent) 22%, transparent)); }
 .suggestion.selected .left { color: var(--cursor-accent); }
+
+/* Explain modal (enhanced mode) */
+.explain-modal {
+  width: min(56rem, calc(100vw - 2rem)); max-height: calc(100vh - 4rem); padding: 0;
+  color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 6px;
+  box-shadow: 0 10px 40px rgb(0 0 0 / 0.35);
+}
+.explain-modal[open] { display: flex; flex-direction: column; }
+.explain-modal::backdrop { background: rgb(0 0 0 / 0.35); }
+.explain-modal header {
+  display: flex; align-items: center; gap: 1rem; padding: 0.5rem 0.9rem;
+  border-bottom: 1px solid var(--border); background: var(--panel);
+}
+.explain-modal h2 { margin: 0; font-size: 0.95rem; }
+.explain-tools { margin-left: auto; display: flex; gap: 0.5rem; }
+.explain-tools button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.6rem; cursor: pointer; }
+.explain-line { margin: 0; padding: 0.5rem 0.9rem; border-bottom: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
+.explain-body { margin: 0; padding: 0.6rem 0.9rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.explain-body .error { color: var(--error); }

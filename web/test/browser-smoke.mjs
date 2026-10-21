@@ -93,6 +93,17 @@ check("enhanced: proof title", (await title("proof")) === "Proof (3) (3 unchecke
 const statuses = await page.$$eval(".pane-proof .row:not(.preamble) .status", (s) => s.map((x) => x.textContent).join(""));
 check("enhanced: proof statuses", statuses === "✗○○", statuses);
 check("enhanced: database rows", (await page.$$(".pane-database .pane-body .row")).length === 5);
+const outputBefore = await page.textContent(".plain-out");
+await page.hover(".pane-proof .row.rejected");
+await page.click(".pane-proof .row.rejected .row-action");
+check("enhanced: explain opens a modal", await until(async () => (await page.textContent(".explain-body")).includes("Line 3 is rejected")),
+  (await page.textContent(".explain-body")).slice(0, 80));
+check("enhanced: explain modal leaves Output alone", (await page.textContent(".plain-out")) === outputBefore);
+if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });
+await page.keyboard.press("Escape");
+check("enhanced: Esc closes the modal", await until(async () => !(await page.$eval(".explain-modal", (d) => d.open))));
+await command(":explain 3");
+check("enhanced: :explain still prints to Output", (await page.textContent(".plain-out")).endsWith("ConstraintId 1: @x1_or_x2 1 x1 1 x2 >= 1\n"));
 await page.fill(".db-filter", "@x3_imp");
 await sleep(100);
 const filtered = await page.$$eval(".pane-database .pane-body .row .text", (r) => r.map((x) => x.textContent));

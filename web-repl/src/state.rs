@@ -310,3 +310,17 @@ pub extern "C" fn vr_extras() -> i32 {
         set_result(json!({ "conclusion": conclusion, "objective": objective, "preserved": preserved }))
     })
 }
+
+/// `:explain <line>`'s output (`commands::explain::run`) as `{lines}`, or
+/// `null` without a session. Read-only; runs veripb.
+#[unsafe(no_mangle)]
+pub extern "C" fn vr_explain(line: usize) -> i32 {
+    STATE.with_borrow(|state| {
+        let Some(session) = &state.session else {
+            return set_result(Value::Null);
+        };
+        let mut lines = Lines(Vec::new());
+        veripb_repl::commands::explain::run(session, &line.to_string(), &mut lines);
+        set_result(json!({ "lines": lines.0 }))
+    })
+}

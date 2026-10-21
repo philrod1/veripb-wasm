@@ -24,7 +24,7 @@ patch series and applied into `work/`.
 | `repl-core/` | wrapper crate for the veripb-repl core; enables `getrandom`'s `wasm_js` backend |
 | `wasi-run/` | Node.js `node:wasi` runners for the WASI binary and WASI test binaries |
 | `bigint-probe/` | prints `malachite-bigint` and `i128` results, for diffing native against wasm |
-| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state`, `vr_preserved`, `vr_extras` (`:check` and `:objective` output, bounds, preserved set), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, plus `vr_toggle_breakpoint` and `vr_result_ptr` |
+| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state`, `vr_preserved`, `vr_explain` (`:explain <n>`'s output), `vr_extras` (`:check` and `:objective` output, bounds, preserved set), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, plus `vr_toggle_breakpoint` and `vr_result_ptr` |
 | `web-tui/` | the veripb-repl TUI as a `wasm32-wasip1` command, built against `work/crossterm` |
 | `web/` | browser page: mode menu, plain and classic modes, veripb in Web Workers |
 | `scripts/build-web.sh` | builds `web/pkg/` (generated, not tracked) |
@@ -229,8 +229,10 @@ Enhanced mode:
   the constraints derived by the last step are highlighted.
 - **Proof:** ✓ checked, ○ unchecked, ✗ rejected (hover for the message).
   Click the gutter to toggle a breakpoint. Click a line to put `:edit <n>`
-  in the command line (it is not run); hover a line for "explain"
-  (`:explain <n>`).
+  in the command line (it is not run). Hover a line for "explain": a modal
+  with `:explain <n>`'s output for that line, which leaves Output untouched
+  (Copy; Esc, Close or a click outside closes it). `:explain` typed at the
+  prompt prints to Output as usual.
 - **Output:** as in plain mode, with veripb's output folded.
 - **Transcript:** every line of the session, input included and nothing
   folded; Copy and Download (`transcript.txt`).
