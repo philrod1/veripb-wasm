@@ -26,6 +26,7 @@
   header { grid-area: head; padding: 0.5rem 1rem; border-bottom: 1px solid var(--border); }
   header h1 { font-size: 1rem; margin: 0; display: inline; }
   header span { color: var(--muted); margin-left: 0.75rem; }
+  #status { float: right; }
   #term { grid-area: term; display: flex; flex-direction: column; min-height: 0; }
   #out { flex: 1; margin: 0; padding: 0.75rem 1rem; overflow: auto; white-space: pre-wrap; word-break: break-word; }
   #out .echo { color: var(--echo); }
@@ -52,7 +53,7 @@
 </style>
 </head>
 <body>
-<header><h1>veripb-repl</h1><span>plain mode · veripb in WebAssembly · files stay in this tab</span></header>
+<header><h1>veripb-repl</h1><span>plain mode · veripb in WebAssembly · files stay in this tab</span><span id="status"></span></header>
 <main id="term">
   <pre id="out"><span class="note">Loading WebAssembly modules…</span>
 </pre>
@@ -81,11 +82,36 @@ let mode = null;
 const history = [];
 let historyPos = 0;
 
-function append(text, cls) {
+const statusText = document.getElementById("status");
+const isError = (line) => line.startsWith("Error") || line.startsWith("[host]");
+
+// Appends lines in one DOM update. `cls` styles every line; otherwise error
+// lines get the "error" style. Layout is read once per call.
+// The "Loading…" note is removed by the first output or prompt.
+let loading = true;
+function clearLoading() {
+  if (loading) out.textContent = "";
+  loading = false;
+}
+
+function append(lines, cls) {
+  clearLoading();
+  if (typeof lines === "string") lines = [lines];
   const atBottom = out.scrollHeight - out.scrollTop - out.clientHeight < 40;
-  const node = cls ? Object.assign(document.createElement("span"), { className: cls }) : null;
-  const textNode = document.createTextNode(text + "\n");
-  if (node) { node.appendChild(textNode); out.appendChild(node); } else { out.appendChild(textNode); }
+  const fragment = document.createDocumentFragment();
+  let plain = "";
+  const flushPlain = () => {
+    if (plain) fragment.appendChild(document.createTextNode(plain));
+    plain = "";
+  };
+  for (const line of lines) {
+    const style = cls ?? (isError(line) ? "error" : null);
+    if (!style) { plain += line + "\n"; continue; }
+    flushPlain();
+    fragment.appendChild(Object.assign(document.createElement("span"), { className: style, textContent: line + "\n" }));
+  }
+  flushPlain();
+  out.appendChild(fragment);
   if (atBottom) out.scrollTop = out.scrollHeight;
 }
 
@@ -97,11 +123,14 @@ function setReady(ready) {
 worker.onmessage = ({ data: message }) => {
   switch (message.type) {
     case "out":
-      append(message.text, message.text.startsWith("Error") || message.text.startsWith("[host]") ? "error" : null);
+      append(message.lines);
       break;
     case "mode":
-      if (mode === null) { out.textContent = ""; demosButton.disabled = false; }
+      if (mode === null) { clearLoading(); demosButton.disabled = false; }
       mode = message.mode;
+      if (message.veripbRuns !== undefined && message.ms > 0) {
+        statusText.textContent = `${message.ms.toFixed(0)} ms · ${message.veripbRuns} veripb run${message.veripbRuns === 1 ? "" : "s"}`;
+      }
       if (mode === MODE_QUIT || mode < 0) {
         append(mode === MODE_QUIT ? "Session ended. Reload the page to start again." : "Startup failed.", "note");
         prompt.textContent = "";
