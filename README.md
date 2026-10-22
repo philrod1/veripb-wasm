@@ -237,6 +237,8 @@ Enhanced mode:
   with `:explain <n>`'s output for that line, which leaves Output untouched
   (Copy; Esc, Close or a click outside closes it). `:explain` typed at the
   prompt prints to Output as usual.
+- **Debug keys:** in `:debug` mode, as in the TUI, Shift+↓ runs `:step`,
+  Shift+↑ `:back` and Esc `:done`; the typed text stays.
 - **Output:** as in plain mode, with veripb's output folded.
 - **Transcript:** every line of the session, input included and nothing
   folded; Copy and Download (`transcript.txt`).

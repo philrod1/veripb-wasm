@@ -86,6 +86,23 @@ export function mount(root, host) {
   });
   client.attach(view);
   client.watch(true);
+  // The TUI's debug-mode keys: Shift+↓ `:step`, Shift+↑ `:back`, Esc `:done`.
+  // Caught on the form, ahead of history and the suggestion strip; the
+  // typed text stays.
+  view.form.addEventListener("keydown", (event) => {
+    if (view.mode !== MODE_DEBUG || view.input.disabled || event.target !== view.input) return;
+    if (event.altKey || event.ctrlKey || event.metaKey) return;
+    const command = event.key === "Escape" ? ":done"
+      : event.shiftKey && event.key === "ArrowDown" ? ":step"
+      : event.shiftKey && event.key === "ArrowUp" ? ":back"
+      : null;
+    if (!command) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const typed = view.input.value;
+    view.submit(command);
+    view.input.value = typed;
+  }, { capture: true });
 
   // ---- Panes ----
   const formula = pane("formula", "Formula");
