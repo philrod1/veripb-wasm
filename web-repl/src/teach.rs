@@ -7,8 +7,9 @@
 //! `:explain`'s output).
 //!
 //! Result: `{title, blocks: [{kind: "p" | "note", text} | {kind: "steps",
-//! items: [text]}]}`. Text marks constraints and code with backticks, and
-//! links to a glossary entry (`glossary.rs`) as `[text](g:<id>)`.
+//! items: [text]}]}`. Text marks constraints and code with backticks, links
+//! to a glossary entry (`glossary.rs`) as `[text](g:<id>)`, and to a
+//! constraint as `[text](c:<id>)`.
 
 use std::collections::HashMap;
 
@@ -192,11 +193,11 @@ fn join_and(items: &[String]) -> String {
     }
 }
 
-/// `@label` (constraint 3), or constraint 3.
+/// `@label` (constraint 3), or constraint 3, linked to the constraint.
 fn constraint_name(labels: &HashMap<usize, String>, id: usize) -> String {
     match labels.get(&id) {
-        Some(label) => format!("`{label}` (constraint {id})"),
-        None => format!("constraint {id}"),
+        Some(label) => format!("`{label}` ([constraint {id}](c:{id}))"),
+        None => format!("[constraint {id}](c:{id})"),
     }
 }
 
@@ -466,7 +467,11 @@ fn rup(session: &Session, n: usize, idx: usize, line: &str) -> Option<Doc> {
     Some(doc)
 }
 
+/// Upper-cases the first letter, also inside a leading `[link](…)`.
 fn capitalize(text: &str) -> String {
+    if let Some(rest) = text.strip_prefix('[') {
+        return format!("[{}", capitalize(rest));
+    }
     let mut chars = text.chars();
     match chars.next() {
         Some(first) if first.is_lowercase() => first.to_uppercase().chain(chars).collect(),

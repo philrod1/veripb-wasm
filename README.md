@@ -256,6 +256,16 @@ Enhanced mode:
   unchecked assertion means. "Checker" shows `:explain <n>`'s output. The
   choice is remembered. Other rules, rejected lines and implication syntax
   (`==>`, `<==`) show the checker view only.
+- **Constraint refs:** labels (`@name`) and constraint IDs in the Formula
+  and Proof panes, the explain modal's line and its plain-English text are
+  dotted-underlined. Hover one to see the constraint (ID, core or derived,
+  labels, text); click to scroll the Database pane to it, which unzooms
+  and clears a filter that hides it. IDs are recognised where a rule takes
+  them (`modes/refs.js`): `pol` operands (not the scalar before `*`, `d`,
+  `c`, `m`, `n`), the hints after `:` of `rup`, `ia`, `i`, `e`,
+  `conclusion` and `qed`, `del`/`delc`/`deld`/`core id …`, and
+  `proofgoal <n>`. A negative ID is relative (`-1`: the newest constraint
+  at that point) and is described, not resolved.
 - **Debug keys:** in `:debug` mode, as in the TUI, Shift+↓ runs `:step`,
   Shift+↑ `:back` and Esc `:done`; the typed text stays.
 - **Output:** as in plain mode, with veripb's output folded.
@@ -347,6 +357,7 @@ web/test/compare.sh              # every web/test/scripts/*.txt: native veripb-r
 node web/test/transcript.mjs <files-dir> [<dump-dir>] < script.txt
 web/test/compare-tui.py          # veripb-repl's demos/tools/*.json: native TUI vs pkg/tui.wasm, screen by screen
 node web/test/state-check.mjs    # web-repl's JSON views vs the REPL's own :list, :show and :preserved output
+node web/test/refs-check.mjs     # which words of a proof line are constraint refs (modes/refs.js)
 node web/test/teach-check.mjs    # plain-English explanations: sample lines, and a sweep of veripb's correct instances
 CHROME=<chrome> [PLAYWRIGHT_CORE=<dir>] node web/test/browser-smoke.mjs [url]   # all three modes in a browser
 ```

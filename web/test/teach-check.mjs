@@ -38,8 +38,8 @@ function session(dir, base, edits = []) {
   return repl;
 }
 
-// Glossary links read as their text.
-const unlink = (t) => t.replace(/\[([^\]]+)\]\(g:[\w-]+\)/g, "$1");
+// Glossary and constraint links read as their text.
+const unlink = (t) => t.replace(/\[([^\]]+)\]\([gc]:[\w-]+\)/g, "$1");
 const text = (plain) => unlink(plain.blocks.map((b) => (b.kind === "steps" ? b.items.join("\n") : b.text)).join("\n"));
 const steps = (plain) => plain.blocks.find((b) => b.kind === "steps")?.items ?? [];
 

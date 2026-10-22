@@ -164,6 +164,16 @@ await page.click(".glossary-item.rule:text-is('pol')");
 check("enhanced: rule entries come from :help", (await page.textContent(".glossary-usage")) === "pol <reverse-polish sequence> ;");
 await page.click('.tab:has-text("Output")');
 check("enhanced: database grew", (await page.$$(".pane-database .pane-body .row")).length === 8);
+// Constraint refs: hover shows the constraint, click jumps to it.
+await page.fill(".plain-in", "");
+await page.hover('.pane-proof .row:not(.preamble) >> nth=0 >> .ref[data-ref="@x1_imp_x3"]');
+check("enhanced: hovering a label shows its constraint", await until(async () => (await page.textContent(".ref-tip")).includes("Constraint 2 · core")),
+  await page.textContent(".ref-tip"));
+await page.fill(".db-filter", "zzz");
+await page.click('.pane-proof .row:not(.preamble) >> nth=0 >> .ref[data-ref="@x1_imp_x3"]');
+check("enhanced: clicking a ref jumps to its Database row", await until(async () => !!(await page.$('.pane-database .row.jumped[data-id="2"]'))));
+check("enhanced: the jump clears a filter that hid it", (await page.inputValue(".db-filter")) === "");
+check("enhanced: clicking a ref doesn't prefill :edit", (await page.inputValue(".plain-in")) === "");
 
 // Tab completion (the TUI's completer).
 const strip = () => page.$$eval(".suggest:not([hidden]) .suggestion .left", (r) => r.map((x) => x.textContent));

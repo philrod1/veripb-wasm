@@ -11,6 +11,7 @@ import { OutputView, resolveCommand, setCommands } from "./output-view.js";
 import { applyStoredOrSystem, resetTheme, setPalettes, storedTheme, themeCommand, themeNames } from "./themes.js";
 import { connectReplWorker } from "./repl-client.js";
 import { splitter } from "./splitter.js";
+import { constraintRefs } from "./refs.js";
 
 const LAYOUT_KEY = "veripb-repl-enhanced-layout";
 const EXPLAIN_VIEW_KEY = "veripb-repl-enhanced-explain-view";
@@ -46,13 +47,31 @@ function loadLayout() {
   return { ...DEFAULT_LAYOUT };
 }
 
-/** Text with `@label` and variable tokens wrapped for styling (the TUI's rule). */
-function tokens(text, variables) {
+/** A span that refers to a constraint: `ref` is constraintRefs()'s `{kind, value}`. */
+function refSpan(text, ref) {
+  const span = el("span", { className: `ref ${ref.kind === "label" ? "tok-label" : "tok-id"}`, textContent: text });
+  span.dataset.refKind = ref.kind;
+  span.dataset.ref = String(ref.value);
+  return span;
+}
+
+/**
+ * Text with `@label` and variable tokens wrapped for styling (the TUI's rule).
+ * With `refs`, labels and constraint IDs (modes/refs.js) are hoverable refs.
+ */
+function tokens(text, variables, { refs = false } = {}) {
   const fragment = document.createDocumentFragment();
+  const found = refs ? constraintRefs(text.split(/\s+/).filter(Boolean)) : new Map();
+  let word = -1;
   for (const part of text.split(/(\s+)/)) {
     if (!part) continue;
+    if (/^\s+$/.test(part)) { fragment.append(part); continue; }
+    word += 1;
+    const ref = found.get(word);
+    const [, core, semis] = part.match(/^(.*?)(;*)$/);
     const bare = part.startsWith("~") ? part.slice(1) : part;
-    if (part.startsWith("@")) fragment.append(el("span", { className: "tok-label", textContent: part }));
+    if (ref) fragment.append(refSpan(core, ref), semis);
+    else if (part.startsWith("@")) fragment.append(el("span", { className: "tok-label", textContent: part }));
     else if (variables.has(bare)) fragment.append(el("span", { className: "tok-var", textContent: part }));
     else fragment.append(part);
   }
@@ -451,7 +470,7 @@ export function mount(root, host) {
   async function openExplain(line) {
     const mine = ++explainSeq;
     explainTitle.textContent = `Line ${line.n}`;
-    explainLine.replaceChildren(tokens(line.text, variables));
+    explainLine.replaceChildren(tokens(line.text, variables, { refs: true }));
     const rule = line.text.split(/\s+/).find((t) => t && !t.startsWith("@"));
     explainRuleId = `rule-${rule}`;
     explainRule.textContent = `? ${rule}`;
@@ -542,11 +561,93 @@ export function mount(root, host) {
   }
   glossarySearch.addEventListener("input", () => { if (glossary) renderGlossaryList(); });
 
+  // ---- Constraint refs: hover shows the constraint, click jumps to it ----
+  const refTip = el("div", { className: "ref-tip", hidden: true });
+  const lookup = (kind, value) => {
+    const entries = state?.database?.entries ?? [];
+    if (kind === "label") return entries.find((e) => e.labels.includes(value)) ?? null;
+    if (kind === "id") return entries.find((e) => e.id === Number(value)) ?? null;
+    return null;
+  };
+  function describeRef(target) {
+    const { refKind: kind, ref: value } = target.dataset;
+    if (kind === "relative") {
+      return [el("div", { className: "ref-tip-head", textContent: `${value}: relative ID` }),
+        el("div", { textContent: value === "-1" ? "The newest constraint at this point in the proof." : `${-value} back from the newest constraint at this point in the proof.` })];
+    }
+    const entry = lookup(kind, value);
+    if (!entry) {
+      return [el("div", { className: "ref-tip-head", textContent: kind === "label" ? value : `Constraint ${value}` }),
+        el("div", { className: "muted", textContent: kind === "label" ? "Not a label in the current database." : "Not in the current database (deleted, or not derived yet)." })];
+    }
+    return [
+      el("div", { className: "ref-tip-head" }, `Constraint ${entry.id} · ${entry.core ? "core" : "derived"}`,
+        ...entry.labels.map((l) => el("span", { className: "tok-label", textContent: ` ${l}` }))),
+      el("div", { className: "ref-tip-text" }, tokens(entry.text, variables)),
+      el("div", { className: "muted ref-tip-hint", textContent: "Click to show it in the Database pane." }),
+    ];
+  }
+  function showRefTip(target) {
+    const host = target.closest("dialog") ?? root;
+    if (refTip.parentNode !== host) host.append(refTip);
+    refTip.replaceChildren(...describeRef(target));
+    refTip.hidden = false;
+    const box = target.getBoundingClientRect();
+    const tip = refTip.getBoundingClientRect();
+    const left = Math.min(Math.max(8, box.left), innerWidth - tip.width - 8);
+    const top = box.bottom + 6 + tip.height < innerHeight ? box.bottom + 6 : box.top - tip.height - 6;
+    Object.assign(refTip.style, { left: `${left}px`, top: `${Math.max(8, top)}px` });
+  }
+  const hideRefTip = () => { refTip.hidden = true; };
+  root.addEventListener("mouseover", (event) => {
+    const target = event.target.closest?.(".ref");
+    if (target) showRefTip(target);
+    else if (!event.target.closest?.(".ref-tip")) hideRefTip();
+  });
+  root.addEventListener("mouseleave", hideRefTip);
+  // Capture: a ref inside a proof row must not also prefill `:edit`.
+  root.addEventListener("click", (event) => {
+    const target = event.target.closest?.(".ref");
+    if (!target) return;
+    event.preventDefault();
+    event.stopPropagation();
+    hideRefTip();
+    const entry = lookup(target.dataset.refKind, target.dataset.ref);
+    if (entry) jumpToConstraint(entry.id);
+  }, { capture: true });
+
+  /** Shows constraint `id` in the Database pane: unzooms and clears filters that hide it. */
+  function jumpToConstraint(id) {
+    if (explainDialog.open) explainDialog.close();
+    if (zoom && zoom.pane !== "database" && !(zoom.pane === "output" && zoom.level === "wide")) {
+      zoom = null;
+      applyLayout();
+    }
+    const find = () => database.body.querySelector(`.row[data-id="${id}"]`);
+    if (!find()) {
+      filter.value = "";
+      coreBox.checked = derivedBox.checked = true;
+      renderDatabase(true);
+    }
+    const row = find();
+    if (!row) return;
+    row.scrollIntoView({ block: "center" });
+    row.classList.remove("jumped");
+    void row.offsetWidth;
+    row.classList.add("jumped");
+  }
+
   // ---- Rendering ----
   // Text with `code` spans and [glossary links](g:<id>) (teach.rs and
   // glossary.rs markup).
-  const inline = (text) => text.split(/(`[^`]*`|\[[^\]]+\]\(g:[\w-]+\))/).filter(Boolean).map((part) => {
-    if (part.startsWith("`")) return el("code", { textContent: part.slice(1, -1) });
+  // [constraint 3](c:3) and `@label` spans are constraint refs.
+  const inline = (text) => text.split(/(`[^`]*`|\[[^\]]+\]\([gc]:[\w-]+\))/).filter(Boolean).map((part) => {
+    if (part.startsWith("`")) {
+      const code = part.slice(1, -1);
+      return /^@\S+$/.test(code) ? el("code", {}, refSpan(code, { kind: "label", value: code })) : el("code", { textContent: code });
+    }
+    const constraint = part.match(/^\[([^\]]+)\]\(c:(\d+)\)$/);
+    if (constraint) return refSpan(constraint[1], { kind: "id", value: Number(constraint[2]) });
     const link = part.match(/^\[([^\]]+)\]\(g:([\w-]+)\)$/);
     if (!link) return part;
     const a = el("a", { href: "#", className: "g-link", textContent: link[1], title: "Look it up in the Glossary" });
@@ -591,7 +692,7 @@ export function mount(root, host) {
     const shown = f.lines.filter(({ ids, text }) => matchesQuery(query, ids, text));
     formula.setTitle(shown.length === f.lines.length ? `Formula: ${f.name} (${f.count})` : `Formula: ${f.name} (${shown.length} of ${f.lines.length} lines)`);
     const rows = shown.map(({ ids, text }) =>
-      el("div", { className: "row" }, el("span", { className: "num", textContent: ids }), el("span", { className: "text" }, tokens(stripSemicolon(text), variables))));
+      el("div", { className: "row" }, el("span", { className: "num", textContent: ids }), el("span", { className: "text" }, tokens(stripSemicolon(text), variables, { refs: true }))));
     if (f.objective && !query) rows.unshift(el("div", { className: "row meta" }, el("span", { className: "num", textContent: "obj" }), el("span", { className: "text", textContent: stripSemicolon(f.objective) })));
     if (f.preserved && !query) rows.unshift(el("div", { className: "row meta" }, el("span", { className: "num", textContent: "pres" }), el("span", { className: "text", textContent: stripSemicolon(f.preserved) })));
     formula.body.replaceChildren(...rows);
@@ -618,12 +719,15 @@ export function mount(root, host) {
     });
     const lit = new Set(highlight);
     database.setTitle(shown.length === db.entries.length ? `Database (${db.entries.length})` : `Database (${shown.length} of ${db.entries.length})`);
-    database.body.replaceChildren(...shown.map((entry) =>
-      el("div", { className: `row ${entry.core ? "core" : "derived"}${lit.has(entry.id) ? " lit" : ""}`, title: entry.core ? "core" : "derived" },
+    database.body.replaceChildren(...shown.map((entry) => {
+      const row = el("div", { className: `row ${entry.core ? "core" : "derived"}${lit.has(entry.id) ? " lit" : ""}`, title: entry.core ? "core" : "derived" },
         el("span", { className: "num", textContent: entry.id }),
         el("span", { className: "text" },
           ...entry.labels.map((label) => el("span", { className: "tok-label", textContent: label + " " })),
-          tokens(entry.text, variables)))));
+          tokens(entry.text, variables)));
+      row.dataset.id = entry.id;
+      return row;
+    }));
   }
 
   function renderProof(force = false) {
@@ -660,7 +764,7 @@ export function mount(root, host) {
         bp,
         el("span", { className: "status", textContent: icon[line.status] }),
         el("span", { className: "num", textContent: line.n }),
-        el("span", { className: "text" }, tokens(line.text, variables)),
+        el("span", { className: "text" }, tokens(line.text, variables, { refs: true })),
         explain);
       row.addEventListener("click", () => { if (!getSelection().toString()) view.prefill(`:edit ${line.n}`); });
       rows.push(row);
