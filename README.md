@@ -225,6 +225,11 @@ Enhanced mode:
   substring of the row, labels included. The pane title shows "m of n"
   while filtering. Drag the splitters to resize
   (double-click resets); sizes and the open tab are remembered.
+- **Zoom:** as in the TUI, each pane header (and the tab bar, for the bottom
+  area) has ▭ and ⛶ buttons. A top pane's ▭ gives it the whole top row and ⛶
+  also shrinks the bottom area; the bottom area's ▭ squeezes the panes above
+  and ⛶ hides them. Click the pressed button again, or press Esc, to
+  restore. A zoomed layout follows `:edit` to Proof and `:formula` to Formula.
 - **Formula:** each line with its constraint ids; `@labels` and variables
   highlighted; objective and `preserved:` lines on top.
 - **Database:** the checked prefix's constraints with labels; a grey bar

@@ -181,6 +181,24 @@ await page.click('.tab:has-text("Transcript")');
 const transcript = await page.textContent(".transcript");
 check("enhanced: transcript has the unfolded trace", transcript.includes("line    3: @x3 rup 1 x3 >= 1") && transcript.includes("pbp> :verify"));
 
+// Zoom buttons (the TUI's ▭ and ⛶).
+const visible = (selector) => page.$eval(selector, (e) => e.offsetParent !== null);
+const height = (selector) => page.$eval(selector, (e) => e.getBoundingClientRect().height);
+const normalTop = await height(".enh-top");
+await page.click(".pane-proof .zoom-wide");
+check("enhanced: ▭ gives a pane the whole top row", (await visible(".pane-proof")) && !(await visible(".pane-formula")) && !(await visible(".pane-database")));
+await page.click(".pane-proof .zoom-full");
+check("enhanced: ⛶ also shrinks the bottom area", (await height(".enh-top")) > normalTop + 50, `${await height(".enh-top")} vs ${normalTop}`);
+await page.click(".pane-proof .zoom-full");
+check("enhanced: clicking the pressed button restores", (await visible(".pane-formula")) && Math.abs((await height(".enh-top")) - normalTop) < 2);
+await page.click(".tabs .zoom-wide");
+check("enhanced: bottom ▭ squeezes the panes above", (await visible(".pane-formula")) && (await height(".enh-top")) < normalTop - 50);
+await page.click(".tabs .zoom-full");
+check("enhanced: bottom ⛶ hides the panes above", !(await visible(".enh-top")));
+await page.focus(".plain-in");
+await page.press(".plain-in", "Escape");
+check("enhanced: Esc restores the layout", (await visible(".pane-proof")) && Math.abs((await height(".enh-top")) - normalTop) < 2);
+
 // Splitter: drag the first column boundary, then reload.
 const columns = () => page.$eval(".enh-top", (e) => e.style.gridTemplateColumns);
 const before = await columns();

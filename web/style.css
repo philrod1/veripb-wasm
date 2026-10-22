@@ -136,6 +136,17 @@ aside input[type=file] { display: none; }
 .splitter-y { cursor: row-resize; }
 .splitter:hover, .splitter.dragging { background: var(--accent); }
 .enh-bottom { display: flex; flex-direction: column; min-height: 0; }
+.enh-top[hidden], .pane[hidden], .splitter[hidden] { display: none; }
+.zoom-buttons { display: flex; gap: 2px; flex: none; }
+.pane-head .zoom-buttons { margin-left: auto; }
+.pane-head .pane-filter ~ .zoom-buttons { margin-left: 0; }
+.tabs .zoom-buttons { margin-left: auto; align-self: center; }
+.zoom {
+  font: inherit; line-height: 1; color: var(--muted); background: transparent; border: 1px solid var(--border);
+  border-radius: 3px; padding: 2px 3px; cursor: pointer; display: inline-flex;
+}
+.zoom:hover { color: var(--fg); border-color: var(--accent); }
+.zoom[aria-pressed="true"] { color: var(--bg); background: var(--accent); border-color: var(--accent); }
 .tabs { display: flex; gap: 0.25rem; padding: 0.3rem 0.6rem 0; border-bottom: 1px solid var(--border); background: var(--panel); }
 .tab {
   font: inherit; color: var(--muted); background: transparent; border: 1px solid transparent; border-bottom: none;

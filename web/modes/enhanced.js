@@ -17,7 +17,18 @@ const TAB_KEY = "veripb-repl-enhanced-tab";
 const DEFAULT_LAYOUT = { b1: 1 / 3, b2: 2 / 3, top: 0.58 };
 const MIN_COLUMN = 0.1;
 const MIN_ROW = 0.15;
+const MODE_EDIT = 1;
+const MODE_FORMULA = 2;
 const MODE_DEBUG = 3;
+// Zoomed sizes of the squeezed area: a header plus about three rows (top),
+// or the tab bar, about three output rows and the command line (bottom).
+const TOP_FLOOR = "6.5rem";
+// The TUI's [▭] and [⛶], drawn so they render without either glyph in the font.
+const ZOOM_ICONS = {
+  wide: '<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><rect x="1" y="3.5" width="10" height="5" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
+  full: '<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"><path d="M1 4V1h3M8 1h3v3M11 8v3H8M4 11H1V8" fill="none" stroke="currentColor" stroke-width="1.2"/></svg>',
+};
+const BOTTOM_FLOOR = "9rem";
 
 const el = (tag, props = {}, ...children) => {
   const node = Object.assign(document.createElement(tag), props);
@@ -159,10 +170,73 @@ export function mount(root, host) {
 
   // ---- Layout ----
   let layout = loadLayout();
+  // Zoom, as in the TUI: `{ pane, level }` or null; see zoomButtons below.
+  let zoom = null;
+  const topPanes = { formula, database, proof };
   function applyLayout() {
     const { b1, b2, top: t } = layout;
-    top.style.gridTemplateColumns = `${b1}fr 6px ${b2 - b1}fr 6px ${1 - b2}fr`;
-    root.style.gridTemplateRows = `${t}fr 6px ${1 - t}fr`;
+    const solo = zoom && zoom.pane !== "output" ? zoom.pane : null;
+    for (const [name, p] of Object.entries(topPanes)) p.section.hidden = !!solo && name !== solo;
+    split1.hidden = split2.hidden = !!solo;
+    top.style.gridTemplateColumns = solo ? "minmax(0, 1fr)" : `${b1}fr 6px ${b2 - b1}fr 6px ${1 - b2}fr`;
+    const outputFull = zoom?.pane === "output" && zoom.level === "full";
+    top.hidden = splitH.hidden = outputFull;
+    root.style.gridTemplateRows =
+      outputFull ? "minmax(0, 1fr)"
+      : zoom?.pane === "output" ? `${TOP_FLOOR} 6px minmax(0, 1fr)`
+      : solo && zoom.level === "full" ? `minmax(0, 1fr) 6px ${BOTTOM_FLOOR}`
+      : `${t}fr 6px ${1 - t}fr`;
+    for (const [name, buttons] of Object.entries(zoomButtons)) {
+      for (const [level, button] of Object.entries(buttons)) {
+        button.setAttribute("aria-pressed", String(zoom?.pane === name && zoom.level === level));
+      }
+    }
+  }
+  function toggleZoom(pane, level) {
+    zoom = zoom?.pane === pane && zoom.level === level ? null : { pane, level };
+    applyLayout();
+  }
+  // Header buttons: ▭ (wide) then ⛶ (full), as in the TUI. A top pane's
+  // wide takes the whole top row; full also shrinks the bottom area to a
+  // floor. The bottom area's wide squeezes the top panes to a floor; full
+  // hides them. Clicking the pressed button, or Esc, restores the layout.
+  const ZOOM_TITLES = {
+    top: { wide: "Take the whole top row", full: "Maximise" },
+    output: { wide: "Squeeze the panes above", full: "Maximise (hide the panes above)" },
+  };
+  const zoomButtons = {};
+  for (const [name, target] of [...Object.entries(topPanes).map(([n, p]) => [n, p.head]), ["output", tabBar]]) {
+    const titles = ZOOM_TITLES[name === "output" ? "output" : "top"];
+    const group = el("span", { className: "zoom-buttons" });
+    zoomButtons[name] = {};
+    for (const level of ["wide", "full"]) {
+      const button = el("button", { type: "button", className: `zoom zoom-${level}`, innerHTML: ZOOM_ICONS[level], title: titles[level] });
+      button.setAttribute("aria-label", `${name}: ${titles[level]}`);
+      button.addEventListener("click", () => toggleZoom(name, level));
+      zoomButtons[name][level] = button;
+      group.append(button);
+    }
+    target.append(group);
+  }
+  // Esc restores the layout when nothing else claims it (a dialog, debug
+  // mode, the suggestion strip, another input).
+  const escapeZoom = (event) => {
+    if (event.key !== "Escape" || !zoom || event.defaultPrevented || document.querySelector("dialog[open]")) return;
+    if (event.target instanceof HTMLInputElement && event.target !== view.input) return;
+    zoom = null;
+    applyLayout();
+  };
+  document.addEventListener("keydown", escapeZoom);
+  // A pane being edited is brought into view (the TUI retargets its zoom).
+  let lastMode = null;
+  function followMode(mode) {
+    if (mode === lastMode) return;
+    lastMode = mode;
+    const pane = mode === MODE_EDIT ? "proof" : mode === MODE_FORMULA ? "formula" : null;
+    if (pane && zoom && zoom.pane !== pane) {
+      zoom = { pane, level: zoom.level };
+      applyLayout();
+    }
   }
   function saveLayout() {
     try { localStorage.setItem(LAYOUT_KEY, JSON.stringify(layout)); } catch {}
@@ -184,7 +258,12 @@ export function mount(root, host) {
   });
   splitter(splitH, root, {
     axis: "y",
-    onMove: (f) => { layout.top = Math.min(Math.max(f, MIN_ROW), 1 - MIN_ROW); applyLayout(); saveLayout(); },
+    onMove: (f) => {
+      if (zoom && (zoom.pane === "output" || zoom.level === "full")) zoom = null;
+      layout.top = Math.min(Math.max(f, MIN_ROW), 1 - MIN_ROW);
+      applyLayout();
+      saveLayout();
+    },
     onReset: reset(["top"]),
   });
   applyLayout();
@@ -464,6 +543,7 @@ export function mount(root, host) {
 
   function update(next) {
     state = next;
+    if (state) followMode(state.mode);
     variables = new Set(state?.variables ?? []);
     renderFormula();
     renderDatabase();
@@ -484,6 +564,7 @@ export function mount(root, host) {
     focus: () => view.focus(),
     unmount() {
       client.terminate();
+      document.removeEventListener("keydown", escapeZoom);
       colorScheme.removeEventListener("change", followSystem);
       resetTheme();
       root.classList.remove("enhanced");
