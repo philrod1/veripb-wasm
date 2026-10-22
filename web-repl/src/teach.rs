@@ -7,7 +7,8 @@
 //! `:explain`'s output).
 //!
 //! Result: `{title, blocks: [{kind: "p" | "note", text} | {kind: "steps",
-//! items: [text]}]}`. Text marks constraints and code with backticks.
+//! items: [text]}]}`. Text marks constraints and code with backticks, and
+//! links to a glossary entry (`glossary.rs`) as `[text](g:<id>)`.
 
 use std::collections::HashMap;
 
@@ -56,7 +57,7 @@ impl Doc {
     /// The `~x` reading, when any shown constraint uses a negated literal.
     fn negation_note(&mut self, shown: &[&Pb]) {
         if shown.iter().any(|pb| pb.terms.iter().any(|(_, lit)| lit.neg)) {
-            self.note("`~x` means “not x”: it is 1 when x is 0, and 0 when x is 1.");
+            self.note("`~x` means “not x”: it is 1 when x is 0, and 0 when x is 1 (see [literals](g:variable)).");
         }
     }
 }
@@ -354,7 +355,7 @@ fn rup(session: &Session, n: usize, idx: usize, line: &str) -> Option<Doc> {
 
     let mut doc = Doc::new(format!("Line {n}: reverse unit propagation (rup)"));
     doc.p(
-        "Reverse unit propagation proves a constraint by contradiction. Suppose it is false, \
+        "[Reverse unit propagation](g:rup) proves a constraint by contradiction. Suppose it is false, \
          then follow the consequences one forced value at a time: whenever a constraint can only \
          be satisfied in one way, that value is forced. If this reaches a constraint that can no \
          longer be satisfied at all, the supposition was impossible, so the constraint holds.",
@@ -394,7 +395,7 @@ fn rup(session: &Session, n: usize, idx: usize, line: &str) -> Option<Doc> {
     let mut values: HashMap<String, bool> = HashMap::new();
     let mut steps = Vec::new();
     let mut shown: Vec<&Pb> = vec![&claim];
-    let suppose = format!("Suppose {} is false. Then its opposite holds: {}.", claim.code(), claim.negation().code());
+    let suppose = format!("Suppose {} is false. Then its [opposite](g:negation) holds: {}.", claim.code(), claim.negation().code());
     let needed = needed(&events);
     if !claim.is_contradiction() && needed.first().is_none_or(|e| e.constraint != 0) {
         steps.push(suppose.clone());
@@ -415,7 +416,7 @@ fn rup(session: &Session, n: usize, idx: usize, line: &str) -> Option<Doc> {
         };
         match &event.outcome {
             Propagation::Conflict { max } => steps.push(format!(
-                "{lead} {} This constraint can't be satisfied: a contradiction.",
+                "{lead} {} This constraint can't be satisfied: a [contradiction](g:contradiction).",
                 capitalize(&format!("{with}the left side can reach at most {max}, but it needs {}.", pb.rhs))
             )),
             Propagation::Forced { max, slack, lits } => {
@@ -511,9 +512,9 @@ fn pol(session: &Session, n: usize, line: &str) -> Option<Doc> {
 
     let mut doc = Doc::new(format!("Line {n}: cutting planes (pol)"));
     doc.p(
-        "This line uses cutting planes: it combines constraints with arithmetic steps that keep \
+        "This line uses [cutting planes](g:cutting-planes): it combines constraints with arithmetic steps that keep \
          every solution, so the result holds whenever the constraints it started from do. The \
-         steps are written in reverse Polish notation: the operands first, then the operation.",
+         steps are written in [reverse Polish notation](g:rpn): the operands first, then the operation.",
     );
 
     let mut stack: Vec<Item> = Vec::new();
@@ -542,7 +543,7 @@ fn pol(session: &Session, n: usize, line: &str) -> Option<Doc> {
                 Item::Constraint { name, text: top.clone() }
             } else {
                 steps.push(format!(
-                    "Take the literal axiom {}: it holds for any value of {}.",
+                    "Take the [literal axiom](g:literal-axiom) {}: it holds for any value of {}.",
                     pretty_text(&top),
                     operand.trim_start_matches('~')
                 ));
@@ -606,7 +607,7 @@ fn pol_step(op: &str, args: &[Item], result: &str, step_no: usize) -> String {
     let d = |i: usize| args.get(i).map(|a| describe(a, step_no)).unwrap_or_default();
     match (op, args) {
         ("+", [a, b]) => {
-            let mut text = format!("Add {} and {}: {result}.", d(0), d(1));
+            let mut text = format!("[Add](g:addition) {} and {}: {result}.", d(0), d(1));
             let (pa, pb) = (item_text(a).and_then(Pb::parse), item_text(b).and_then(Pb::parse));
             let (pa, pb) = match (pa, pb) {
                 (Some(pa), Some(pb)) => (pa, pb),
@@ -637,7 +638,7 @@ fn pol_step(op: &str, args: &[Item], result: &str, step_no: usize) -> String {
             format!("Multiply {} by {m} (every coefficient and the right-hand side): {result}.", d(0))
         }
         ("d" | "c", [a, Item::Number(m)]) => {
-            let mut text = format!("Divide {} by {m}, rounding up: {result}.", d(0));
+            let mut text = format!("[Divide](g:division) {} by {m}, rounding up: {result}.", d(0));
             if let Some(k) = item_text(a).and_then(Pb::parse).map(|pb| pb.rhs)
                 && k % m != 0
             {
@@ -653,16 +654,16 @@ fn pol_step(op: &str, args: &[Item], result: &str, step_no: usize) -> String {
             let k = item_text(a).and_then(Pb::parse).map(|pb| pb.rhs);
             match k {
                 Some(k) => format!(
-                    "Saturate {}: cap every coefficient at the right-hand side, {k}: {result}. \
+                    "[Saturate](g:saturation) {}: cap every coefficient at the right-hand side, {k}: {result}. \
                      A true literal with coefficient {k} or more satisfies the constraint on its \
                      own, so a bigger coefficient adds nothing.",
                     d(0)
                 ),
-                None => format!("Saturate {}: {result}.", d(0)),
+                None => format!("[Saturate](g:saturation) {}: {result}.", d(0)),
             }
         }
         ("w", [_, Item::Literal { text }]) => format!(
-            "Weaken {} by dropping {}: {result}. This assumes the worst, that {} helped as much \
+            "[Weaken](g:weakening) {} by dropping {}: {result}. This assumes the worst, that {} helped as much \
              as it could, so its coefficient comes off the right-hand side.",
             d(0),
             text.trim_start_matches('~'),
@@ -731,13 +732,13 @@ fn red(session: &Session, n: usize, idx: usize, line: &str) -> Option<Doc> {
     let mut doc = Doc::new(format!("Line {n}: redundance (red)"));
     let optimising = goals.iter().any(|g| g.category == "objective");
     doc.p(format!(
-        "Redundance-based strengthening adds a constraint C that need not follow from what we \
+        "[Redundance-based strengthening](g:redundance) adds a constraint C that need not follow from what we \
          already have. That is allowed when adding C can't lose every solution{}: any solution \
-         that breaks C can be repaired, using a substitution called the witness, into one that \
+         that breaks C can be repaired, using a substitution called the [witness](g:witness), into one that \
          satisfies C and every other constraint{}. A common use is breaking symmetry: of several \
          equivalent solutions, keep only one.",
         if optimising { ", nor the best one" } else { "" },
-        if optimising { ", and is no worse for the objective" } else { "" },
+        if optimising { ", and is no worse for the [objective](g:objective)" } else { "" },
     ));
 
     if witness.is_empty() {
@@ -762,7 +763,7 @@ fn red(session: &Session, n: usize, idx: usize, line: &str) -> Option<Doc> {
 
     if !goals.is_empty() {
         doc.p(format!(
-            "To check this, veripb assumes C is false (so {} holds) and asks for these proof goals:",
+            "To check this, veripb assumes C is false (so {} holds) and asks for these [proof goals](g:proof-goal):",
             claim.negation().code()
         ));
         let database = database_before(session, idx);
@@ -874,7 +875,7 @@ fn assertion(session: &Session, n: usize, line: &str) -> Option<Doc> {
         added_sentence(added_id(session, n), &labels)
     ));
     doc.p(
-        "An assertion is a placeholder: it lets you build and check the rest of a proof before \
+        "An [assertion](g:assertion) is a placeholder: it lets you build and check the rest of a proof before \
          this step is justified. A proof that still contains an `a` line is not a valid proof.",
     );
     doc.p(format!(

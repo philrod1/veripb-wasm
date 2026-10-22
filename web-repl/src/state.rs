@@ -255,6 +255,13 @@ pub extern "C" fn vr_commands() -> i32 {
     ))
 }
 
+/// The glossary (`glossary::glossary`): concepts, and the proof rules from
+/// `help::RULES`.
+#[unsafe(no_mangle)]
+pub extern "C" fn vr_glossary() -> i32 {
+    set_result(crate::glossary::glossary())
+}
+
 /// Collects output lines, for running a command's own reporting.
 struct Lines(Vec<String>);
 

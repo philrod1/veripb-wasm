@@ -9,6 +9,7 @@
 //! The mode handling matches `veripb_repl::plain::run`, except that errors
 //! are printed and the session continues.
 
+mod glossary;
 mod state;
 mod teach;
 

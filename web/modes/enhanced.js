@@ -14,6 +14,7 @@ import { splitter } from "./splitter.js";
 
 const LAYOUT_KEY = "veripb-repl-enhanced-layout";
 const EXPLAIN_VIEW_KEY = "veripb-repl-enhanced-explain-view";
+const GLOSSARY_KEY = "veripb-repl-enhanced-glossary-entry";
 const TAB_KEY = "veripb-repl-enhanced-tab";
 const DEFAULT_LAYOUT = { b1: 1 / 3, b2: 2 / 3, top: 0.58 };
 const MIN_COLUMN = 0.1;
@@ -155,10 +156,11 @@ export function mount(root, host) {
   const preservedPanel = el("div", { className: "tab-panel tab-preserved" });
   const extrasPanel = el("div", { className: "tab-panel tab-extras" });
   const outputPanel = el("div", { className: "tab-panel tab-output" }, view.out);
-  const panels = { output: outputPanel, transcript: transcriptPanel, preserved: preservedPanel, extras: extrasPanel };
+  const glossaryPanel = el("div", { className: "tab-panel tab-glossary" });
+  const panels = { output: outputPanel, transcript: transcriptPanel, preserved: preservedPanel, extras: extrasPanel, glossary: glossaryPanel };
   const tabButtons = {};
   const tabBar = el("div", { className: "tabs", role: "tablist" });
-  for (const [name, label] of [["output", "Output"], ["transcript", "Transcript"], ["preserved", "Preserved"], ["extras", "Extras"]]) {
+  for (const [name, label] of [["output", "Output"], ["transcript", "Transcript"], ["preserved", "Preserved"], ["extras", "Extras"], ["glossary", "Glossary"]]) {
     const button = el("button", { type: "button", className: "tab", textContent: label });
     button.setAttribute("role", "tab");
     button.addEventListener("click", () => selectTab(name));
@@ -285,6 +287,7 @@ export function mount(root, host) {
     }
     if (name === "preserved") refreshPreserved();
     if (name === "extras") refreshExtras();
+    if (name === "glossary") showGlossary();
     if (name === "output") outputPanel.querySelector(".plain-out")?.scrollTo(0, 1e9);
   }
   function appendTranscript(lines) {
@@ -430,9 +433,12 @@ export function mount(root, host) {
   }
   for (const [name, button] of Object.entries(viewButtons)) button.addEventListener("click", () => showExplainView(name, true));
   const explainCopy = el("button", { type: "button", textContent: "Copy" });
+  const explainRule = el("button", { type: "button", className: "explain-rule", hidden: true });
+  let explainRuleId = null;
+  explainRule.addEventListener("click", () => openGlossary(explainRuleId));
   const explainClose = el("button", { type: "button", textContent: "Close", autofocus: true });
   const explainDialog = el("dialog", { className: "explain-modal" },
-    el("header", {}, explainTitle, viewSwitch, el("div", { className: "explain-tools" }, explainCopy, explainClose)),
+    el("header", {}, explainTitle, viewSwitch, el("div", { className: "explain-tools" }, explainRule, explainCopy, explainClose)),
     explainLine, plainBody, explainBody);
   root.append(explainDialog);
   let explainSeq = 0;
@@ -446,6 +452,11 @@ export function mount(root, host) {
     const mine = ++explainSeq;
     explainTitle.textContent = `Line ${line.n}`;
     explainLine.replaceChildren(tokens(line.text, variables));
+    const rule = line.text.split(/\s+/).find((t) => t && !t.startsWith("@"));
+    explainRuleId = `rule-${rule}`;
+    explainRule.textContent = `? ${rule}`;
+    explainRule.title = `Look up ${rule} in the Glossary`;
+    explainRule.hidden = !glossary?.has(explainRuleId);
     explainBody.replaceChildren(el("span", { className: "muted", textContent: "Explaining…" }));
     hasPlain = false;
     showExplainView(explainView);
@@ -463,9 +474,85 @@ export function mount(root, host) {
     showExplainView(explainView);
   }
 
+  // ---- Glossary tab (web-repl/src/glossary.rs) ----
+  const glossarySearch = el("input", { type: "search", className: "glossary-search", placeholder: "search the glossary" });
+  glossarySearch.setAttribute("aria-label", "Search the glossary");
+  const glossaryList = el("nav", { className: "glossary-list" });
+  const glossaryEntry = el("article", { className: "glossary-entry" });
+  glossaryPanel.append(el("div", { className: "glossary-side" }, glossarySearch, glossaryList), glossaryEntry);
+  let glossary = null;
+  const glossaryReady = client.glossary().then((entries) => {
+    glossary = new Map((entries ?? []).map((entry) => [entry.id, entry]));
+    return glossary;
+  });
+  let glossaryCurrent = null;
+  try { glossaryCurrent = localStorage.getItem(GLOSSARY_KEY); } catch {}
+  const flat = (entry) => [entry.term, entry.usage, ...(entry.body ?? []), entry.example, ...(entry.details ?? [])]
+    .filter(Boolean).join(" ").replace(/\]\(g:[\w-]+\)/g, "").toLowerCase();
+  function renderGlossaryList() {
+    const query = glossarySearch.value.trim().toLowerCase();
+    const groups = [["concept", "Concepts"], ["rule", "Proof rules"]];
+    glossaryList.replaceChildren(...groups.flatMap(([group, heading]) => {
+      const entries = [...glossary.values()].filter((e) => e.group === group && (!query || flat(e).includes(query)));
+      if (!entries.length) return [];
+      return [el("h3", { textContent: heading }), ...entries.map((entry) => {
+        const item = el("a", { href: "#", className: `glossary-item${entry.group === "rule" ? " rule" : ""}`, textContent: entry.term });
+        if (entry.id === glossaryCurrent) item.setAttribute("aria-current", "true");
+        item.addEventListener("click", (event) => { event.preventDefault(); openGlossary(entry.id); });
+        return item;
+      })];
+    }));
+    if (!glossaryList.children.length) glossaryList.append(el("p", { className: "muted", textContent: "No matches." }));
+  }
+  function renderGlossaryEntry() {
+    const entry = glossary.get(glossaryCurrent) ?? glossary.values().next().value;
+    if (!entry) return glossaryEntry.replaceChildren(el("p", { className: "muted", textContent: "No glossary." }));
+    glossaryCurrent = entry.id;
+    const parts = [el("h2", {}, entry.group === "rule" ? el("code", { textContent: entry.term }) : entry.term,
+      entry.group === "rule" ? el("span", { className: "glossary-tag", textContent: "proof rule" }) : "")];
+    if (entry.usage) parts.push(el("pre", { className: "glossary-usage", textContent: entry.usage }));
+    for (const text of entry.body ?? []) parts.push(el("p", {}, ...inline(text)));
+    if (entry.example) parts.push(el("p", { className: "glossary-example" }, el("strong", { textContent: "Example: " }), ...inline(entry.example)));
+    if (entry.details?.length) parts.push(el("pre", { className: "glossary-details", textContent: entry.details.join("\n") }));
+    const see = (entry.see ?? []).filter((id) => glossary.has(id));
+    if (see.length) {
+      const links = see.flatMap((id, i) => [i ? ", " : "", ...inline(`[${glossary.get(id).term}](g:${id})`)]);
+      parts.push(el("p", { className: "glossary-see" }, el("strong", { textContent: "See also: " }), ...links));
+    }
+    glossaryEntry.replaceChildren(...parts);
+    glossaryEntry.scrollTo(0, 0);
+  }
+  async function showGlossary() {
+    if (!glossary) await glossaryReady;
+    renderGlossaryList();
+    renderGlossaryEntry();
+  }
+  /** Shows entry `id` in the Glossary tab (closing the explain modal). */
+  async function openGlossary(id) {
+    await glossaryReady;
+    if (explainDialog.open) explainDialog.close();
+    glossaryCurrent = glossary.has(id) ? id : glossaryCurrent;
+    try { localStorage.setItem(GLOSSARY_KEY, glossaryCurrent); } catch {}
+    if (glossarySearch.value && !flat(glossary.get(glossaryCurrent) ?? {}).includes(glossarySearch.value.trim().toLowerCase())) {
+      glossarySearch.value = "";
+    }
+    if (activeTab !== "glossary") selectTab("glossary");
+    else showGlossary();
+    glossaryList.querySelector('[aria-current="true"]')?.scrollIntoView({ block: "nearest" });
+  }
+  glossarySearch.addEventListener("input", () => { if (glossary) renderGlossaryList(); });
+
   // ---- Rendering ----
-  // Text with `code` spans (teach.rs's markup).
-  const inline = (text) => text.split("`").map((part, i) => (i % 2 ? el("code", { textContent: part }) : part));
+  // Text with `code` spans and [glossary links](g:<id>) (teach.rs and
+  // glossary.rs markup).
+  const inline = (text) => text.split(/(`[^`]*`|\[[^\]]+\]\(g:[\w-]+\))/).filter(Boolean).map((part) => {
+    if (part.startsWith("`")) return el("code", { textContent: part.slice(1, -1) });
+    const link = part.match(/^\[([^\]]+)\]\(g:([\w-]+)\)$/);
+    if (!link) return part;
+    const a = el("a", { href: "#", className: "g-link", textContent: link[1], title: "Look it up in the Glossary" });
+    a.addEventListener("click", (event) => { event.preventDefault(); openGlossary(link[2]); });
+    return a;
+  });
   const renderBlock = (block) =>
     block.kind === "steps" ? el("ol", {}, ...block.items.map((item) => el("li", {}, ...inline(item))))
     : el("p", { className: block.kind === "note" ? "note" : "" }, ...inline(block.text));

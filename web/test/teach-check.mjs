@@ -3,7 +3,8 @@
 //   - content: sample rup, pol, red and a lines give the expected steps
 //   - sweep: every checked rup, pol, red and a line of veripb's correct
 //     version-3 instances gets one (implication syntax excepted), and each
-//     rup replay reaches its conflict
+//     rup replay reaches its conflict, and its glossary links exist
+//   - glossary: concepts and rules, every link and see-also exists
 //
 // Usage: node web/test/teach-check.mjs   (after scripts/build-web.sh)
 // Exit status 1 on any failure.
@@ -37,7 +38,9 @@ function session(dir, base, edits = []) {
   return repl;
 }
 
-const text = (plain) => plain.blocks.map((b) => (b.kind === "steps" ? b.items.join("\n") : b.text)).join("\n");
+// Glossary links read as their text.
+const unlink = (t) => t.replace(/\[([^\]]+)\]\(g:[\w-]+\)/g, "$1");
+const text = (plain) => unlink(plain.blocks.map((b) => (b.kind === "steps" ? b.items.join("\n") : b.text)).join("\n"));
 const steps = (plain) => plain.blocks.find((b) => b.kind === "steps")?.items ?? [];
 
 // ---- Content ----
@@ -82,12 +85,26 @@ content(objective, 4, "symmetry with objective 4", { title: "redundance", phrase
 const assertion = session(instances, "assertion_rule");
 content(assertion, 5, "assertion 5", { title: "assertion", phrases: ["without any proof", "`:deassert 5`"] });
 
+// ---- Glossary ----
+
+const glossary = chain.glossary();
+const ids = new Set(glossary.map((e) => e.id));
+const linkIds = (value) => [...JSON.stringify(value).matchAll(/\]\(g:([\w-]+)\)/g)].map((m) => m[1]);
+const concepts = glossary.filter((e) => e.group === "concept");
+const rules = glossary.filter((e) => e.group === "rule");
+check(`glossary: ${concepts.length} concepts, ${rules.length} rules`, concepts.length >= 20 && ["rup", "pol", "red", "a"].every((r) => ids.has(`rule-${r}`)));
+check("glossary: rule entries carry :help's usage", rules.find((e) => e.term === "pol")?.usage?.startsWith("pol "));
+const broken = glossary.flatMap((e) => [...linkIds([e.body, e.example]), ...e.see].filter((id) => !ids.has(id)).map((id) => `${e.id} -> ${id}`));
+check("glossary: every link and see-also exists", !broken.length, broken.join(", "));
+check("glossary: ids are unique", ids.size === glossary.length);
+
 // ---- Sweep ----
 
 const RULES = new Set(["rup", "pol", "red", "a"]);
 let lines = 0;
 const missing = [];
 const unfinished = [];
+const badLinks = new Set();
 for (const name of readdirSync(instances).filter((f) => f.endsWith(".pbp")).sort()) {
   const base = name.slice(0, -4);
   if (!existsSync(join(instances, `${base}.opb`))) continue;
@@ -99,10 +116,12 @@ for (const name of readdirSync(instances).filter((f) => f.endsWith(".pbp")).sort
     const plain = repl.explain(line.n)?.plain;
     if (!plain) missing.push(`${base}:${line.n} ${line.text}`);
     else if (text(plain).includes("did not reach")) unfinished.push(`${base}:${line.n} ${line.text}`);
+    for (const id of linkIds(plain ?? {})) if (!ids.has(id)) badLinks.add(id);
   }
 }
 check(`sweep: ${lines} lines explained`, !missing.length, missing.slice(0, 5).join("; "));
 check("sweep: every rup replay reaches its conflict", !unfinished.length, unfinished.slice(0, 5).join("; "));
+check("sweep: every glossary link in an explanation exists", !badLinks.size, [...badLinks].join(", "));
 
 console.log(`${checks} checks, ${failures} failures`);
 process.exit(failures ? 1 : 0);

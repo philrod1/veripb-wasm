@@ -6,7 +6,7 @@
 //                 | {type: "watch", on}          post session state after every line
 //                 | {type: "state", id} | {type: "preserved", id}
 //                 | {type: "breakpoint", index} toggle; posts state if watching
-//                 | {type: "query", id, kind: "complete" | "themes" | "commands" | "extras" | "explain", text?, line?}
+//                 | {type: "query", id, kind: "complete" | "themes" | "commands" | "glossary" | "extras" | "explain", text?, line?}
 // Worker -> page: {type: "out", lines, trace} | {type: "mode", mode, ms, veripbRuns}
 //                 | {type: "files", files} | {type: "file", id, data}
 //                 | {type: "dump", id, files: [[name, data], ...]} | {type: "fatal", text}
@@ -108,6 +108,7 @@ onmessage = ({ data: message }) => {
           const result = message.kind === "complete" ? repl.complete(message.text)
             : message.kind === "themes" ? repl.themes()
             : message.kind === "commands" ? repl.commands()
+            : message.kind === "glossary" ? repl.glossary()
             : message.kind === "extras" ? repl.extras()
             : message.kind === "explain" ? repl.explain(message.line)
             : null;

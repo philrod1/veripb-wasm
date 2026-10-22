@@ -149,7 +149,20 @@ check("enhanced: plain-English steps", (await page.$$(".explain-plain:not([hidde
 await page.click(".explain-view:has-text('Checker')");
 check("enhanced: Checker shows :explain's output", (await page.isVisible(".explain-body")) && (await page.textContent(".explain-body")).includes("Line 3 needed:"));
 await page.click(".explain-view:has-text('Plain English')");
-await page.keyboard.press("Escape");
+check("enhanced: explain offers the rule's glossary entry", (await page.textContent(".explain-rule")) === "? rup");
+await page.click(".explain-plain .g-link:has-text('Reverse unit propagation')");
+const glossaryTitle = () => page.textContent(".glossary-entry h2");
+check("enhanced: a link opens the Glossary entry", await until(async () => (await page.isVisible(".tab-glossary")) && (await glossaryTitle()) === "Reverse unit propagation (RUP)"));
+check("enhanced: following a link closes the modal", !(await page.$eval(".explain-modal", (d) => d.open)));
+await page.fill(".glossary-search", "witness");
+const glossaryItems = await page.$$eval(".glossary-item", (items) => items.map((i) => i.textContent));
+check("enhanced: glossary search", glossaryItems.includes("Witness") && !glossaryItems.includes("Slack"), glossaryItems.join(", "));
+await page.click(".glossary-item:has-text('Witness')");
+check("enhanced: glossary entry", (await glossaryTitle()) === "Witness" && (await page.textContent(".glossary-see")).includes("Redundance-based strengthening"));
+await page.fill(".glossary-search", "");
+await page.click(".glossary-item.rule:text-is('pol')");
+check("enhanced: rule entries come from :help", (await page.textContent(".glossary-usage")) === "pol <reverse-polish sequence> ;");
+await page.click('.tab:has-text("Output")');
 check("enhanced: database grew", (await page.$$(".pane-database .pane-body .row")).length === 8);
 
 // Tab completion (the TUI's completer).
