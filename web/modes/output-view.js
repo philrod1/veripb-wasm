@@ -98,6 +98,12 @@ export class OutputView {
     return !this.input.disabled;
   }
 
+  /** Runs `text` as if typed, or notes that the REPL is busy. */
+  run(text) {
+    if (this.ready()) this.submit(text);
+    else this.append(`Busy: ${text} not run. Try again when the prompt returns.`, "note");
+  }
+
   setReady(ready) {
     this.input.disabled = !ready;
     if (ready) this.input.focus();

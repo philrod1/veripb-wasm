@@ -62,23 +62,49 @@ async function switchTo(name) {
   });
 }
 
+// Formula and proof files: their badge, and the command a double-click runs.
+const FILE_KINDS = [
+  { pattern: /\.opb$/i, badge: "F", title: "Formula (.opb)", command: ":load" },
+  { pattern: /\.pbp$/i, badge: "P", title: "Proof (.pbp)", command: ":source" },
+];
+
 function renderFiles(list) {
   fileList.replaceChildren(...list.map(({ name, size }) => {
     const item = document.createElement("li");
-    const link = Object.assign(document.createElement("a"), { href: "#", textContent: name, title: `Download ${name}` });
-    link.addEventListener("click", async (event) => {
-      event.preventDefault();
+    const kind = FILE_KINDS.find((k) => k.pattern.test(name));
+    const badge = Object.assign(document.createElement("span"), {
+      className: `file-kind${kind ? ` kind-${kind.badge.toLowerCase()}` : ""}`, textContent: kind?.badge ?? "",
+      title: kind?.title ?? "",
+    });
+    badge.setAttribute("aria-hidden", "true");
+    const label = Object.assign(document.createElement("button"), {
+      type: "button", className: "file-name", textContent: name,
+      title: `${name}, ${size} B${kind ? `. Double-click (or Enter) to run ${kind.command} ${name}` : ""}`,
+    });
+    if (kind) {
+      const run = () => {
+        current.run(`${kind.command} ${name}`);
+        current.focus();
+      };
+      label.addEventListener("dblclick", run);
+      label.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); run(); } });
+    }
+    const save = Object.assign(document.createElement("button"), {
+      type: "button", className: "file-action", textContent: "↓", title: `Download ${name}`,
+    });
+    save.setAttribute("aria-label", `Download ${name}`);
+    save.addEventListener("click", async () => {
       const data = await current.getFile(name);
       if (data) download(name, data);
     });
     const remove = Object.assign(document.createElement("button"), {
-      type: "button", className: "delete", textContent: "×", title: `Delete ${name}`,
+      type: "button", className: "file-action delete", textContent: "×", title: `Delete ${name}`,
     });
     remove.setAttribute("aria-label", `Delete ${name}`);
     remove.addEventListener("click", () => {
       if (confirm(`Delete ${name}? Files exist only in this tab, so it cannot be recovered.`)) current.deleteFile(name);
     });
-    item.append(link, Object.assign(document.createElement("span"), { textContent: `${size} B` }), remove);
+    item.append(badge, label, save, remove);
     return item;
   }));
 }
@@ -112,12 +138,16 @@ document.getElementById("upload").addEventListener("change", async (event) => {
   current.focus();
 });
 
-document.getElementById("demos").addEventListener("click", async () => {
-  const names = await (await fetch("pkg/demos/index.json")).json();
-  for (const name of names) current.putFile(name, new Uint8Array(await (await fetch(`pkg/demos/${name}`)).arrayBuffer()));
-  current.note(`Loaded demo files: ${names.join(", ")}. Try :instance two-of-three`);
+// A file set from pkg/<dir>/ (veripb-repl's demos/files or examples).
+async function loadSet(dir, what, hint) {
+  const names = await (await fetch(`pkg/${dir}/index.json`)).json();
+  for (const name of names) current.putFile(name, new Uint8Array(await (await fetch(`pkg/${dir}/${name}`)).arrayBuffer()));
+  current.note(`Loaded ${what} files: ${names.join(", ")}. ${hint}`);
   current.focus();
-});
+}
+document.getElementById("demos").addEventListener("click", () => loadSet("demos", "demo", "Try :instance two-of-three"));
+document.getElementById("examples").addEventListener("click", () =>
+  loadSet("examples", "example", "Double-click a file to :load or :source it."));
 
 // Files dropped anywhere on the page are added (base names only).
 const dropOverlay = document.getElementById("drop-overlay");

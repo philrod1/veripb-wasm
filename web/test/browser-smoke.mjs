@@ -35,7 +35,8 @@ const page = await browser.newPage({ viewport: { width: 1400, height: 900 } });
 const errors = [];
 page.on("pageerror", (e) => errors.push(String(e)));
 page.on("dialog", (d) => d.accept());
-const fileNames = () => page.$$eval("#files a", (as) => as.map((a) => a.textContent));
+const fileNames = () => page.$$eval("#files .file-name", (as) => as.map((a) => a.textContent));
+const fileRow = (name) => page.locator("#files li", { has: page.locator(".file-name", { hasText: new RegExp(`^${name.replace(/\./g, "\\.")}$`) }) });
 const ready = (selector = ".plain-in") => until(async () => !!(await page.$(`${selector}:not([disabled])`)));
 async function command(text) {
   await page.fill(".plain-in", text);
@@ -78,6 +79,10 @@ check("classic: files carried over", (await fileNames()).includes("two-of-three.
 await page.click(".classic-term");
 await page.keyboard.type(":instance two-of-three\n:verify\n", { delay: 5 });
 check("classic: :verify", await until(async () => (await screen()).includes("Verified 4 line")));
+await page.click("#examples");
+check("classic: example files loaded", await until(async () => (await fileNames()).includes("tiny_unsat.opb")));
+await fileRow("tiny_unsat.opb").locator(".file-name").dblclick();
+check("classic: double-click :load", await until(async () => (await screen()).includes("from tiny_unsat.opb")));
 
 // ---- Enhanced ----
 await page.selectOption("#mode", "enhanced");
@@ -190,6 +195,20 @@ await command(":theme light");
 await page.click('.tab:has-text("Transcript")');
 const transcript = await page.textContent(".transcript");
 check("enhanced: transcript has the unfolded trace", transcript.includes("line    3: @x3 rup 1 x3 >= 1") && transcript.includes("pbp> :verify"));
+
+// Files panel: badges, double-click to :load / :source.
+check("files: F and P badges", (await fileRow("tiny_unsat.opb").locator(".file-kind").textContent()) === "F"
+  && (await fileRow("tiny_unsat.pbp").locator(".file-kind").textContent()) === "P");
+await fileRow("tiny_unsat.opb").locator(".file-name").dblclick();
+await sleep(50);
+await ready();
+check("files: double-click an .opb runs :load", await until(async () => (await title("formula")).startsWith("Formula: tiny_unsat.opb")), await title("formula"));
+await fileRow("tiny_unsat.pbp").locator(".file-name").dblclick();
+await sleep(50);
+await ready();
+check("files: double-click a .pbp runs :source", await until(async () => (await page.textContent(".plain-out")).includes("pbp> :source tiny_unsat.pbp")));
+check("files: the command is in history", (await page.press(".plain-in", "ArrowUp"), await page.inputValue(".plain-in")) === ":source tiny_unsat.pbp");
+await page.fill(".plain-in", "");
 
 // Zoom buttons (the TUI's ▭ and ⛶).
 const visible = (selector) => page.$eval(selector, (e) => e.offsetParent !== null);

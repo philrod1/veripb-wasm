@@ -34,6 +34,7 @@ function mountUnavailable(root, host) {
     deleteFile(name) { files.delete(name); list(); },
     getFile: async (name) => files.get(name) ?? null,
     snapshot: async () => files,
+    run: (command) => host.setStatus(`Classic mode is unavailable here: ${command} not run.`),
     note: (text) => host.setStatus(text),
     focus() {},
     unmount() {},
@@ -129,6 +130,8 @@ export async function mount(root, host) {
       new Promise((resolve) => mail(MAIL_DUMP, "", undefined, resolve)),
       new Promise((resolve) => setTimeout(() => resolve(host.files), SNAPSHOT_TIMEOUT_MS)),
     ]),
+    // Typed at the TUI prompt: Ctrl+E Ctrl+U clears the line first.
+    run: (command) => channel.writeInput(`\x05\x15${command}\r`),
     note: (text) => host.setStatus(text),
     focus: () => term.focus(),
     unmount() {

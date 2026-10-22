@@ -170,8 +170,14 @@ session is not (`:save` it first).
 
 Files panel (left; "Files" in the header hides and shows it, remembered):
 - **Load demo files:** copies veripb-repl's `demos/files` into `/`.
+- **Load example files:** copies veripb-repl's `examples` into `/`.
 - **Upload:** adds local files.
-- **Download:** click a file name.
+- **Badges:** F marks a formula (`.opb`), P a proof (`.pbp`). Hover a name for its size.
+- **Use a file:** double-click its name (or focus it and press Enter) to run
+  `:load <name>` for a formula or `:source <name>` for a proof, as if typed
+  at the prompt. In classic mode the command is typed at the TUI's prompt,
+  replacing what is there.
+- **Download:** ↓ next to a file.
 - **Delete:** × next to a file, after a confirmation.
 - **Drag and drop:** files dropped anywhere on the page are added, in every
   mode (base names only).

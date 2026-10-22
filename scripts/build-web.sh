@@ -36,6 +36,10 @@ cp "$out/veripb.wasm" "$pkg/veripb.wasm"
 cp "$out/web_repl.wasm" "$pkg/repl.wasm"
 cp "$out/web-tui.wasm" "$pkg/tui.wasm"
 cp "$root/work/veripb-repl/demos/files/"* "$pkg/demos/"
-(cd "$pkg/demos" && ls | grep -v '^index.json$' | sed 's/.*/"&"/' | paste -sd, - | sed 's/.*/[&]/') > "$pkg/demos/index.json"
+mkdir -p "$pkg/examples"
+cp "$root/work/veripb-repl/examples/"* "$pkg/examples/"
+for set in demos examples; do
+    (cd "$pkg/$set" && ls | grep -v '^index.json$' | sed 's/.*/"&"/' | paste -sd, - | sed 's/.*/[&]/') > "$pkg/$set/index.json"
+done
 
 ls -l "$pkg" "$pkg/demos"

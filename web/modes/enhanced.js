@@ -600,6 +600,7 @@ export function mount(root, host) {
     deleteFile: client.deleteFile,
     getFile: client.getFile,
     snapshot: client.snapshot,
+    run: (command) => view.run(command),
     note: (text) => view.append(text, "note"),
     focus: () => view.focus(),
     unmount() {
