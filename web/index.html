@@ -1,29 +1,33 @@
 <!doctype html>
 <html lang="en">
+
 <head>
-<meta charset="utf-8">
-<meta name="color-scheme" content="light dark">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>veripb-repl web</title>
-<link rel="stylesheet" href="style.css">
+  <meta charset="utf-8">
+  <meta name="color-scheme" content="light dark">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>veripb-repl web</title>
+  <link rel="stylesheet" href="style.css">
 </head>
+
 <body>
-<header>
-  <button id="files-toggle" type="button" aria-controls="files-panel" aria-pressed="true" title="Show or hide the files panel">Files</button>
-  <h1>veripb-repl</h1>
-  <label>mode <select id="mode" aria-label="Interface mode"></select></label>
-  <span class="about">veripb in WebAssembly · files stay in this tab</span>
-  <span id="status"></span>
-</header>
-<main id="mode-root"></main>
-<aside id="files-panel">
-  <h2>Files</h2>
-  <button id="demos" type="button">Load demo files</button>
-  <label class="button" for="upload">Upload .opb / .pbp…</label>
-  <input id="upload" type="file" multiple accept=".opb,.pbp,.txt">
-  <ul id="files"></ul>
-</aside>
-<div id="drop-overlay" hidden>Drop files to add them</div>
-<script type="module" src="shell.js"></script>
+  <header>
+    <button id="files-toggle" type="button" aria-controls="files-panel" aria-pressed="true"
+      title="Show or hide the files panel">Files</button>
+    <h1>veripb-repl</h1>
+    <label>mode <select id="mode" aria-label="Interface mode"></select></label>
+    <span class="about">VeriPB REPL in WebAssembly</span>
+    <span id="status"></span>
+  </header>
+  <main id="mode-root"></main>
+  <aside id="files-panel">
+    <h2>Files</h2>
+    <button id="demos" type="button">Load demo files</button>
+    <label class="button" for="upload">Upload .opb / .pbp…</label>
+    <input id="upload" type="file" multiple accept=".opb,.pbp,.txt">
+    <ul id="files"></ul>
+  </aside>
+  <div id="drop-overlay" hidden>Drop files to add them</div>
+  <script type="module" src="shell.js"></script>
 </body>
+
 </html>
