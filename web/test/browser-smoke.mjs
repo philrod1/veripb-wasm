@@ -174,6 +174,12 @@ await page.click('.pane-proof .row:not(.preamble) >> nth=0 >> .ref[data-ref="@x1
 check("enhanced: clicking a ref jumps to its Database row", await until(async () => !!(await page.$('.pane-database .row.jumped[data-id="2"]'))));
 check("enhanced: the jump clears a filter that hid it", (await page.inputValue(".db-filter")) === "");
 check("enhanced: clicking a ref doesn't prefill :edit", (await page.inputValue(".plain-in")) === "");
+// Links: a curve per formula line and per proof line to its Database row.
+await page.check(".links-toggle input");
+check("enhanced: links draw a curve per line", await until(async () => (await page.$$(".links-layer path")).length === 8), String((await page.$$(".links-layer path")).length));
+check("enhanced: links widen the gutters", (await page.$eval(".enh-top", (e) => e.style.gridTemplateColumns)).includes("56px"));
+await page.uncheck(".links-toggle input");
+check("enhanced: links off removes them", !(await page.$(".links-layer")) && !(await page.$eval(".enh-top", (e) => e.style.gridTemplateColumns)).includes("56px"));
 
 // Tab completion (the TUI's completer).
 const strip = () => page.$$eval(".suggest:not([hidden]) .suggestion .left", (r) => r.map((x) => x.textContent));

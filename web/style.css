@@ -148,6 +148,18 @@ aside input[type=file] { display: none; }
 .splitter:hover, .splitter.dragging { background: var(--accent); }
 .enh-bottom { display: flex; flex-direction: column; min-height: 0; }
 .enh-top[hidden], .pane[hidden], .splitter[hidden] { display: none; }
+.enh-top { position: relative; }
+.enh-top.linked .splitter-x { background: linear-gradient(var(--border), var(--border)) center / 2px 100% no-repeat; }
+.enh-top.linked .splitter-x:hover, .enh-top.linked .splitter-x.dragging { background-image: linear-gradient(var(--accent), var(--accent)); }
+.links-layer { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 2; }
+.links-layer .link { fill: none; stroke-width: 1.4; opacity: 0.75; transition: opacity 0.1s; }
+.links-layer .link.core { stroke: var(--echo); }
+.links-layer .link.derived { stroke: var(--accent); }
+.links-layer .link.off { stroke-dasharray: 3 3; opacity: 0.35; }
+.links-layer.has-hot .link { opacity: 0.12; }
+.links-layer.has-hot .link.hot { opacity: 1; stroke-width: 2.4; }
+.tabs .links-toggle { margin-left: auto; align-self: center; display: flex; align-items: center; gap: 0.3rem; color: var(--muted); cursor: pointer; }
+.tabs .links-toggle + .zoom-buttons { margin-left: 0.6rem; }
 .zoom-buttons { display: flex; gap: 2px; flex: none; }
 .pane-head .zoom-buttons { margin-left: auto; }
 .pane-head .pane-filter ~ .zoom-buttons { margin-left: 0; }

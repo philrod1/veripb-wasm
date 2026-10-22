@@ -90,6 +90,7 @@ export function connectReplWorker(host, { what = "REPL", onState } = {}) {
     themes: () => request({ type: "query", kind: "themes" }),
     commands: () => request({ type: "query", kind: "commands" }),
     glossary: () => request({ type: "query", kind: "glossary" }),
+    lineIds: () => request({ type: "query", kind: "lineIds" }),
     extras: () => request({ type: "query", kind: "extras" }),
     explain: (line) => request({ type: "query", kind: "explain", line }),
     putFile,

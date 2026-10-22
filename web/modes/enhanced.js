@@ -12,10 +12,15 @@ import { applyStoredOrSystem, resetTheme, setPalettes, storedTheme, themeCommand
 import { connectReplWorker } from "./repl-client.js";
 import { splitter } from "./splitter.js";
 import { constraintRefs } from "./refs.js";
+import { createLinks } from "./links.js";
 
 const LAYOUT_KEY = "veripb-repl-enhanced-layout";
 const EXPLAIN_VIEW_KEY = "veripb-repl-enhanced-explain-view";
 const GLOSSARY_KEY = "veripb-repl-enhanced-glossary-entry";
+const LINKS_KEY = "veripb-repl-enhanced-links";
+// Gutter between the top panes: a splitter, or a channel for the links.
+const GAP = "6px";
+const LINK_GAP = "56px";
 const TAB_KEY = "veripb-repl-enhanced-tab";
 const DEFAULT_LAYOUT = { b1: 1 / 3, b2: 2 / 3, top: 0.58 };
 const MIN_COLUMN = 0.1;
@@ -200,7 +205,9 @@ export function mount(root, host) {
     const solo = zoom && zoom.pane !== "output" ? zoom.pane : null;
     for (const [name, p] of Object.entries(topPanes)) p.section.hidden = !!solo && name !== solo;
     split1.hidden = split2.hidden = !!solo;
-    top.style.gridTemplateColumns = solo ? "minmax(0, 1fr)" : `${b1}fr 6px ${b2 - b1}fr 6px ${1 - b2}fr`;
+    const gap = links ? LINK_GAP : GAP;
+    top.classList.toggle("linked", !!links);
+    top.style.gridTemplateColumns = solo ? "minmax(0, 1fr)" : `${b1}fr ${gap} ${b2 - b1}fr ${gap} ${1 - b2}fr`;
     const outputFull = zoom?.pane === "output" && zoom.level === "full";
     top.hidden = splitH.hidden = outputFull;
     root.style.gridTemplateRows =
@@ -240,6 +247,28 @@ export function mount(root, host) {
     }
     target.append(group);
   }
+  // Links: curves from formula and proof lines to the Database rows they
+  // created (modes/links.js), with the line IDs from vr_line_ids.
+  let links = null;
+  const linksBox = el("input", { type: "checkbox" });
+  const linksToggle = el("label", { className: "links-toggle", title: "Draw a curve from each formula and proof line to the Database rows it created" }, linksBox, "Links");
+  tabBar.insertBefore(linksToggle, zoomButtons.output.wide.parentNode);
+  const refreshLineIds = () => {
+    if (links && state?.proof) client.lineIds().then((map) => links?.setLineIds(map));
+  };
+  function setLinks(on) {
+    linksBox.checked = on;
+    try { localStorage.setItem(LINKS_KEY, on ? "1" : "0"); } catch {}
+    if (on && !links) {
+      links = createLinks({ top, formula, database, proof });
+      refreshLineIds();
+    } else if (!on && links) {
+      links.destroy();
+      links = null;
+    }
+    applyLayout();
+  }
+  linksBox.addEventListener("change", () => setLinks(linksBox.checked));
   // Esc restores the layout when nothing else claims it (a dialog, debug
   // mode, the suggestion strip, another input).
   const escapeZoom = (event) => {
@@ -691,8 +720,11 @@ export function mount(root, host) {
     }
     const shown = f.lines.filter(({ ids, text }) => matchesQuery(query, ids, text));
     formula.setTitle(shown.length === f.lines.length ? `Formula: ${f.name} (${f.count})` : `Formula: ${f.name} (${shown.length} of ${f.lines.length} lines)`);
-    const rows = shown.map(({ ids, text }) =>
-      el("div", { className: "row" }, el("span", { className: "num", textContent: ids }), el("span", { className: "text" }, tokens(stripSemicolon(text), variables, { refs: true }))));
+    const rows = shown.map(({ ids, text }) => {
+      const row = el("div", { className: "row" }, el("span", { className: "num", textContent: ids }), el("span", { className: "text" }, tokens(stripSemicolon(text), variables, { refs: true })));
+      row.dataset.ids = ids;
+      return row;
+    });
     if (f.objective && !query) rows.unshift(el("div", { className: "row meta" }, el("span", { className: "num", textContent: "obj" }), el("span", { className: "text", textContent: stripSemicolon(f.objective) })));
     if (f.preserved && !query) rows.unshift(el("div", { className: "row meta" }, el("span", { className: "num", textContent: "pres" }), el("span", { className: "text", textContent: stripSemicolon(f.preserved) })));
     formula.body.replaceChildren(...rows);
@@ -766,6 +798,7 @@ export function mount(root, host) {
         el("span", { className: "num", textContent: line.n }),
         el("span", { className: "text" }, tokens(line.text, variables, { refs: true })),
         explain);
+      row.dataset.n = line.n;
       row.addEventListener("click", () => { if (!getSelection().toString()) view.prefill(`:edit ${line.n}`); });
       rows.push(row);
     }
@@ -779,12 +812,14 @@ export function mount(root, host) {
     renderFormula();
     renderDatabase();
     renderProof();
+    refreshLineIds();
     if (activeTab === "preserved") refreshPreserved();
     if (activeTab === "extras") refreshExtras();
   }
 
   update(null);
   selectTab(activeTab);
+  try { if (localStorage.getItem(LINKS_KEY) === "1") setLinks(true); } catch {}
 
   return {
     putFile: client.putFile,
@@ -796,6 +831,7 @@ export function mount(root, host) {
     focus: () => view.focus(),
     unmount() {
       client.terminate();
+      links?.destroy();
       document.removeEventListener("keydown", escapeZoom);
       colorScheme.removeEventListener("change", followSystem);
       resetTheme();

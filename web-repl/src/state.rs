@@ -9,7 +9,8 @@ use std::cell::RefCell;
 
 use crossterm::style::Color;
 use serde_json::{Value, json};
-use veripb_repl::checker::parse::{formula_line_constraints, rule_keyword};
+use veripb_repl::checker::parse::{constraint_ids_by_line, formula_line_constraints, rule_keyword};
+use veripb_repl::checker::{self, CheckOutcome};
 use veripb_repl::commands::{debug, edit, formula, help};
 use veripb_repl::session::Session;
 use veripb_repl::tui::complete;
@@ -253,6 +254,47 @@ pub extern "C" fn vr_commands() -> i32 {
             .map(|t| json!({ "name": t.name, "usage": t.usage, "summary": t.summary }))
             .collect(),
     ))
+}
+
+thread_local! {
+    /// `vr_line_ids`'s last result, for the proof text it traced.
+    static LINE_IDS: RefCell<Option<(String, Value)>> = const { RefCell::new(None) };
+}
+
+/// The constraint IDs each checked proof line derived, from a traced run of
+/// the checked lines: `{"<display line>": [id, ...]}`, `{error}`, or `null`
+/// without a session. Cached until the checked proof text changes.
+#[unsafe(no_mangle)]
+pub extern "C" fn vr_line_ids() -> i32 {
+    STATE.with_borrow(|state| {
+        let Some(session) = &state.session else {
+            return set_result(Value::Null);
+        };
+        let checked = session.checked_len;
+        let text = session.preamble_and_lines(&session.buffer[..checked]);
+        if let Some(value) = LINE_IDS.with_borrow(|c| c.as_ref().filter(|(t, _)| *t == text).map(|(_, v)| v.clone())) {
+            return set_result(value);
+        }
+        let first = session.preamble_lines().len() + 1;
+        let value = if checked == 0 {
+            json!({})
+        } else {
+            let traced = session.formula_temp_file().and_then(|formula| {
+                checker::check(formula.path(), &text, Some((first, first + checked - 1)))
+            });
+            match traced {
+                Ok(CheckOutcome::Accepted { trace } | CheckOutcome::Rejected { trace, .. }) => Value::Object(
+                    constraint_ids_by_line(&trace)
+                        .into_iter()
+                        .map(|(line, ids)| (line.to_string(), json!(ids)))
+                        .collect(),
+                ),
+                Err(err) => json!({ "error": format!("{err:#}") }),
+            }
+        };
+        LINE_IDS.with_borrow_mut(|c| *c = Some((text, value.clone())));
+        set_result(value)
+    })
 }
 
 /// The glossary (`glossary::glossary`): concepts, and the proof rules from
