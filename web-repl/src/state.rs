@@ -306,7 +306,8 @@ pub extern "C" fn vr_extras() -> i32 {
     })
 }
 
-/// `:explain <line>`'s output (`commands::explain::run`) as `{lines}`, or
+/// `:explain <line>`'s output (`commands::explain::run`) as `{lines, plain}`,
+/// with `plain` the plain-English explanation (`teach::explain`) or `null`; or
 /// `null` without a session. Read-only; runs veripb.
 #[unsafe(no_mangle)]
 pub extern "C" fn vr_explain(line: usize) -> i32 {
@@ -316,6 +317,6 @@ pub extern "C" fn vr_explain(line: usize) -> i32 {
         };
         let mut lines = Lines(Vec::new());
         veripb_repl::commands::explain::run(session, &line.to_string(), &mut lines);
-        set_result(json!({ "lines": lines.0 }))
+        set_result(json!({ "lines": lines.0, "plain": crate::teach::explain(session, line) }))
     })
 }

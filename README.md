@@ -24,7 +24,7 @@ patch series and applied into `work/`.
 | `repl-core/` | wrapper crate for the veripb-repl core; enables `getrandom`'s `wasm_js` backend |
 | `wasi-run/` | Node.js `node:wasi` runners for the WASI binary and WASI test binaries |
 | `bigint-probe/` | prints `malachite-bigint` and `i128` results, for diffing native against wasm |
-| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state`, `vr_preserved`, `vr_explain` (`:explain <n>`'s output), `vr_extras` (`:check` and `:objective` output, bounds), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, plus `vr_toggle_breakpoint` and `vr_result_ptr` |
+| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state`, `vr_preserved`, `vr_explain` (`:explain <n>`'s output, plus the plain-English explanation from `src/teach.rs`), `vr_extras` (`:check` and `:objective` output, bounds), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, plus `vr_toggle_breakpoint` and `vr_result_ptr` |
 | `web-tui/` | the veripb-repl TUI as a `wasm32-wasip1` command, built against `work/crossterm` |
 | `web/` | browser page: mode menu, plain and classic modes, veripb in Web Workers |
 | `scripts/build-web.sh` | builds `web/pkg/` (generated, not tracked) |
@@ -61,6 +61,7 @@ Trees in `work/`:
 |---|---|
 | `0001-checker-run-veripb-through-a-host-import-on-WASI` | On `target_os = "wasi"`, `checker::invoke::run` calls the host import `veripb_host.run_veripb` instead of spawning `veripb`; veripb's stdout and stderr are read from `/.tmp/.veripb-stdout` and `/.tmp/.veripb-stderr`. |
 | `0002-Make-completion-themes-and-mode-vocabularies-public` | Visibility only: `tui::complete` and `tui::theme` become `pub mod`; `formula::MODE_VOCABULARY`, `debug::MODE_VOCABULARY` and `edit::READONLY_DURING_EDIT` become `pub`. |
+| `0003-Make-the-session-s-proof-prefix-helpers-public` | Visibility only: `Session::preamble_and_lines` and `Session::formula_temp_file` become `pub`, for checker queries on a proof prefix. |
 
 `patches/crossterm/`:
 
@@ -239,9 +240,16 @@ Enhanced mode:
 - **Proof:** ✓ checked, ○ unchecked, ✗ rejected (hover for the message).
   Click the gutter to toggle a breakpoint. Click a line to put `:edit <n>`
   in the command line (it is not run). Hover a line for "explain": a modal
-  with `:explain <n>`'s output for that line, which leaves Output untouched
-  (Copy; Esc, Close or a click outside closes it). `:explain` typed at the
-  prompt prints to Output as usual.
+  for that line, which leaves Output untouched (Copy; Esc, Close or a click
+  outside closes it). `:explain` typed at the prompt prints to Output as usual.
+- **Explain modal:** for a checked `rup`, `pol`, `red` or `a` line, "Plain
+  English" explains the rule and then the line step by step, written for
+  students: for `rup`, the forced values that lead to the contradiction;
+  for `pol`, each cutting-planes operation and why it is sound; for `red`,
+  the witness and each proof goal with how it was proved; for `a`, what an
+  unchecked assertion means. "Checker" shows `:explain <n>`'s output. The
+  choice is remembered. Other rules, rejected lines and implication syntax
+  (`==>`, `<==`) show the checker view only.
 - **Debug keys:** in `:debug` mode, as in the TUI, Shift+↓ runs `:step`,
   Shift+↑ `:back` and Esc `:done`; the typed text stays.
 - **Output:** as in plain mode, with veripb's output folded.
@@ -326,6 +334,7 @@ web/test/compare.sh              # every web/test/scripts/*.txt: native veripb-r
 node web/test/transcript.mjs <files-dir> [<dump-dir>] < script.txt
 web/test/compare-tui.py          # veripb-repl's demos/tools/*.json: native TUI vs pkg/tui.wasm, screen by screen
 node web/test/state-check.mjs    # web-repl's JSON views vs the REPL's own :list, :show and :preserved output
+node web/test/teach-check.mjs    # plain-English explanations: sample lines, and a sweep of veripb's correct instances
 CHROME=<chrome> [PLAYWRIGHT_CORE=<dir>] node web/test/browser-smoke.mjs [url]   # all three modes in a browser
 ```
 
@@ -336,6 +345,11 @@ prompt:
 
 It also checks `vr_preserved()` against `:preserved` on veripb's
 `add_preserved_var*` test instances.
+
+`teach-check.mjs` checks the plain-English explanations of sample `rup`,
+`pol`, `red` and `a` lines, then explains every checked line of those rules
+in veripb's `tests/instances/correct/version3` and fails if one has no
+explanation or a `rup` replay does not reach its conflict.
 
 `browser-smoke.mjs` needs the `playwright-core` npm package and a Chrome or
 `chrome-headless-shell` executable, and a running `scripts/serve.py`

@@ -13,6 +13,7 @@ import { connectReplWorker } from "./repl-client.js";
 import { splitter } from "./splitter.js";
 
 const LAYOUT_KEY = "veripb-repl-enhanced-layout";
+const EXPLAIN_VIEW_KEY = "veripb-repl-enhanced-explain-view";
 const TAB_KEY = "veripb-repl-enhanced-tab";
 const DEFAULT_LAYOUT = { b1: 1 / 3, b2: 2 / 3, top: 0.58 };
 const MIN_COLUMN = 0.1;
@@ -406,32 +407,71 @@ export function mount(root, host) {
   const explainTitle = el("h2");
   const explainLine = el("pre", { className: "explain-line" });
   const explainBody = el("pre", { className: "explain-body" });
+  const plainBody = el("div", { className: "explain-plain" });
+  const viewButtons = {
+    plain: el("button", { type: "button", className: "explain-view", textContent: "Plain English" }),
+    checker: el("button", { type: "button", className: "explain-view", textContent: "Checker" }),
+  };
+  const viewSwitch = el("div", { className: "explain-views", role: "group" }, viewButtons.plain, viewButtons.checker);
+  viewSwitch.setAttribute("aria-label", "Explanation view");
+  let explainView = "plain";
+  try { explainView = localStorage.getItem(EXPLAIN_VIEW_KEY) || "plain"; } catch {}
+  let hasPlain = false;
+  function showExplainView(name, remember = false) {
+    if (remember) {
+      explainView = name;
+      try { localStorage.setItem(EXPLAIN_VIEW_KEY, name); } catch {}
+    }
+    const plain = hasPlain && name === "plain";
+    plainBody.hidden = !plain;
+    explainBody.hidden = plain;
+    viewSwitch.hidden = !hasPlain;
+    for (const [key, button] of Object.entries(viewButtons)) button.setAttribute("aria-pressed", String(key === (plain ? "plain" : "checker")));
+  }
+  for (const [name, button] of Object.entries(viewButtons)) button.addEventListener("click", () => showExplainView(name, true));
   const explainCopy = el("button", { type: "button", textContent: "Copy" });
   const explainClose = el("button", { type: "button", textContent: "Close", autofocus: true });
   const explainDialog = el("dialog", { className: "explain-modal" },
-    el("header", {}, explainTitle, el("div", { className: "explain-tools" }, explainCopy, explainClose)),
-    explainLine, explainBody);
+    el("header", {}, explainTitle, viewSwitch, el("div", { className: "explain-tools" }, explainCopy, explainClose)),
+    explainLine, plainBody, explainBody);
   root.append(explainDialog);
   let explainSeq = 0;
   explainClose.addEventListener("click", () => explainDialog.close());
   explainDialog.addEventListener("click", (event) => { if (event.target === explainDialog) explainDialog.close(); });
   explainDialog.addEventListener("close", () => view.focus());
-  explainCopy.addEventListener("click", () => navigator.clipboard?.writeText(explainBody.textContent));
+  explainCopy.addEventListener("click", () =>
+    navigator.clipboard?.writeText(plainBody.hidden ? explainBody.textContent : plainText(plainBody)));
 
   async function openExplain(line) {
     const mine = ++explainSeq;
     explainTitle.textContent = `Line ${line.n}`;
     explainLine.replaceChildren(tokens(line.text, variables));
     explainBody.replaceChildren(el("span", { className: "muted", textContent: "Explaining…" }));
+    hasPlain = false;
+    showExplainView(explainView);
     if (!explainDialog.open) explainDialog.showModal();
     const result = await client.explain(line.n);
     if (mine !== explainSeq) return;
     const lines = result?.lines ?? ["No formula loaded."];
     explainBody.replaceChildren(...lines.map((text) =>
       el("span", { className: /^(Error|.*still fails)/.test(text) ? "error" : "", textContent: text + "\n" })));
+    hasPlain = !!result?.plain;
+    if (hasPlain) {
+      explainTitle.textContent = result.plain.title;
+      plainBody.replaceChildren(...result.plain.blocks.map(renderBlock));
+    }
+    showExplainView(explainView);
   }
 
   // ---- Rendering ----
+  // Text with `code` spans (teach.rs's markup).
+  const inline = (text) => text.split("`").map((part, i) => (i % 2 ? el("code", { textContent: part }) : part));
+  const renderBlock = (block) =>
+    block.kind === "steps" ? el("ol", {}, ...block.items.map((item) => el("li", {}, ...inline(item))))
+    : el("p", { className: block.kind === "note" ? "note" : "" }, ...inline(block.text));
+  const plainText = (node) => [...node.children].map((child) =>
+    child.tagName === "OL" ? [...child.children].map((li, i) => `${i + 1}. ${li.textContent}`).join("\n") : child.textContent).join("\n\n");
+
   const placeholder = (text) => el("div", { className: "pane-empty", textContent: text });
   const changed = (key, value) => {
     const json = JSON.stringify(value);

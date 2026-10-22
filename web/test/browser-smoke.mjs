@@ -99,6 +99,7 @@ await page.click(".pane-proof .row.rejected .row-action");
 check("enhanced: explain opens a modal", await until(async () => (await page.textContent(".explain-body")).includes("Line 3 is rejected")),
   (await page.textContent(".explain-body")).slice(0, 80));
 check("enhanced: explain modal leaves Output alone", (await page.textContent(".plain-out")) === outputBefore);
+check("enhanced: a rejected line has no plain-English view", await page.$eval(".explain-views", (e) => e.hidden));
 if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });
 await page.keyboard.press("Escape");
 check("enhanced: Esc closes the modal", await until(async () => !(await page.$eval(".explain-modal", (d) => d.open))));
@@ -135,6 +136,15 @@ await command("@x3 rup 1 x3 >= 1 : @x1_or_x2 @x1_imp_x3 @x2_imp_x3 ;");
 await command(":verify");
 const fixed = await page.$$eval(".pane-proof .row:not(.preamble) .status", (s) => s.map((x) => x.textContent).join(""));
 check("enhanced: after fix all checked", fixed === "✓✓✓", fixed);
+await page.hover(".pane-proof .row:not(.preamble) >> nth=0");
+await page.click(".pane-proof .row:not(.preamble) >> nth=0 >> .row-action");
+check("enhanced: explain shows plain English first", await until(async () => (await page.textContent(".explain-plain")).includes("Suppose x3 ≥ 1 is false")),
+  (await page.textContent(".explain-plain")).slice(0, 80));
+check("enhanced: plain-English steps", (await page.$$(".explain-plain:not([hidden]) li")).length === 4);
+await page.click(".explain-view:has-text('Checker')");
+check("enhanced: Checker shows :explain's output", (await page.isVisible(".explain-body")) && (await page.textContent(".explain-body")).includes("Line 3 needed:"));
+await page.click(".explain-view:has-text('Plain English')");
+await page.keyboard.press("Escape");
 check("enhanced: database grew", (await page.$$(".pane-database .pane-body .row")).length === 8);
 
 // Tab completion (the TUI's completer).

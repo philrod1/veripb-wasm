@@ -10,6 +10,7 @@
 //! are printed and the session continues.
 
 mod state;
+mod teach;
 
 use std::cell::RefCell;
 use std::path::Path;

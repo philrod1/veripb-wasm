@@ -1,0 +1,33 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Phil Rodgers <philip.rodgers@glasgow.ac.uk>
+Date: Thu, 22 Oct 2026 11:22:11 +0000
+Subject: [PATCH 3/3] Make the session's proof-prefix helpers public
+
+preamble_and_lines and formula_temp_file become pub, so a frontend can
+run checker queries (such as show_database) on a prefix of the proof.
+---
+ src/session.rs | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/session.rs b/src/session.rs
+index 5dcce0a..6004d57 100644
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -265,7 +265,7 @@ impl Session {
+ 
+     /// Returns the preamble followed by `lines`, newline-terminated, ready
+     /// for [`checker::check`] and friends.
+-    fn preamble_and_lines(&self, lines: &[String]) -> String {
++    pub fn preamble_and_lines(&self, lines: &[String]) -> String {
+         let mut text = String::new();
+         for line in self.preamble_lines() {
+             text.push_str(&line);
+@@ -279,7 +279,7 @@ impl Session {
+     }
+ 
+     /// Writes the current formula to a fresh temp `.opb` file.
+-    fn formula_temp_file(&self) -> anyhow::Result<tempfile::NamedTempFile> {
++    pub fn formula_temp_file(&self) -> anyhow::Result<tempfile::NamedTempFile> {
+         write_formula_temp_file(&self.formula, &self.objective, &self.preserved)
+     }
+ 

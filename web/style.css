@@ -210,6 +210,19 @@ aside input[type=file] { display: none; }
 .explain-modal h2 { margin: 0; font-size: 0.95rem; }
 .explain-tools { margin-left: auto; display: flex; gap: 0.5rem; }
 .explain-tools button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.6rem; cursor: pointer; }
+.explain-views { display: flex; }
+.explain-views[hidden] { display: none; }
+.explain-view { font: inherit; color: var(--muted); background: var(--bg); border: 1px solid var(--border); padding: 0 0.6rem; cursor: pointer; }
+.explain-view:first-child { border-radius: 4px 0 0 4px; }
+.explain-view:last-child { border-radius: 0 4px 4px 0; border-left: none; }
+.explain-view[aria-pressed="true"] { color: var(--bg); background: var(--accent); border-color: var(--accent); }
+.explain-plain { padding: 0.25rem 1.2rem 0.75rem; overflow: auto; font-family: system-ui, sans-serif; line-height: 1.55; }
+.explain-plain[hidden], .explain-body[hidden] { display: none; }
+.explain-plain p { margin: 0.6rem 0; }
+.explain-plain ol { margin: 0.6rem 0; padding-left: 1.6rem; }
+.explain-plain li { margin: 0.35rem 0; }
+.explain-plain code { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 0.92em; padding: 0 0.2em; border-radius: 3px; background: var(--panel); }
+.explain-plain .note { color: var(--muted); font-size: 0.92em; }
 .explain-line { margin: 0; padding: 0.5rem 0.9rem; border-bottom: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
 .explain-body { margin: 0; padding: 0.6rem 0.9rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .explain-body .error { color: var(--error); }
