@@ -403,6 +403,7 @@ node web/test/transcript.mjs <files-dir> [<dump-dir>] < script.txt
 web/test/compare-tui.py          # veripb-repl's demos/tools/*.json: native TUI vs pkg/tui.wasm, screen by screen
 node web/test/state-check.mjs    # web-repl's JSON views vs the REPL's own :list, :show and :preserved output
 node --max-old-space-size=6000 web/test/large-check.mjs   # opt-in, ~7 GB RAM: a 1.1M-line proof through the views
+node web/test/host-check.mjs     # host.js's fixes to the WASI shim's in-memory files (linear-time writes)
 node web/test/refs-check.mjs     # which words of a proof line are constraint refs (modes/refs.js)
 node web/test/teach-check.mjs    # plain-English explanations: sample lines, and a sweep of veripb's correct instances
 CHROME=<chrome> [PLAYWRIGHT_CORE=<dir>] node web/test/browser-smoke.mjs [url]   # all three modes in a browser

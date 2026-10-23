@@ -77,6 +77,7 @@ run() {
 run node "$root/web/test/state-check.mjs"
 run node "$root/web/test/teach-check.mjs"
 run node "$root/web/test/refs-check.mjs"
+run node "$root/web/test/host-check.mjs"
 if [ -z "${SKIP_PARITY:-}" ]; then
     run "$root/web/test/compare.sh"
     run python3 "$root/web/test/compare-tui.py"

@@ -12,7 +12,39 @@ import {
   OpenFile,
   PreopenDirectory,
   ConsoleStdout,
+  wasi as wasiDefs,
 } from "./vendor/browser_wasi_shim/index.js";
+
+// The shim grows a file to exactly fit each write, copying it every time, so
+// n bytes written in small pieces cost O(n²): veripb writing a 178 MB trace a
+// line at a time took minutes. Grow the storage geometrically instead; a
+// file's `data` stays a view of exactly its size, so the rest of the shim is
+// unchanged.
+function reserve(file, size) {
+  if (size <= file.data.byteLength) return;
+  const { buffer, byteOffset } = file.data;
+  if (byteOffset === 0 && size <= buffer.byteLength) {
+    file.data = new Uint8Array(buffer, 0, size);
+    return;
+  }
+  const grown = new Uint8Array(Math.max(size, 2 * file.data.byteLength, 4096));
+  grown.set(file.data);
+  file.data = grown.subarray(0, size);
+}
+OpenFile.prototype.fd_write = function (data) {
+  if (this.file.readonly) return { ret: wasiDefs.ERRNO_BADF, nwritten: 0 };
+  const at = Number(this.file_pos);
+  reserve(this.file, at + data.byteLength);
+  this.file.data.set(data, at);
+  this.file_pos += BigInt(data.byteLength);
+  return { ret: 0, nwritten: data.byteLength };
+};
+OpenFile.prototype.fd_pwrite = function (data, offset) {
+  if (this.file.readonly) return { ret: wasiDefs.ERRNO_BADF, nwritten: 0 };
+  reserve(this.file, Number(offset) + data.byteLength);
+  this.file.data.set(data, Number(offset));
+  return { ret: 0, nwritten: data.byteLength };
+};
 
 /** Prompt text for each mode returned by vr_init / vr_line. */
 export const PROMPTS = ["pbp> ", "edit> ", "opb> ", "debug> "];
@@ -53,7 +85,11 @@ export function deleteFile(root, name) {
 /** Returns the bytes of root file `name`, or null. */
 export function readFile(root, name) {
   const entry = root.get(name);
-  return entry instanceof File ? entry.data : null;
+  if (!(entry instanceof File)) return null;
+  // A file with spare capacity (see reserve): copy just its bytes, since
+  // posting a view would copy its whole buffer.
+  const { data } = entry;
+  return data.byteLength === data.buffer.byteLength ? data : data.slice();
 }
 
 /** Names and sizes of the regular files in the root directory. */
