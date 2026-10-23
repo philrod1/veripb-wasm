@@ -7,7 +7,7 @@
 //
 // Implements the mode interface described in modes/plain.js.
 
-import { OutputView, resolveCommand, setCommands } from "./output-view.js";
+import { OutputView, PROMPTS, resolveCommand, setCommands } from "./output-view.js";
 import { applyStoredOrSystem, resetTheme, setPalettes, storedTheme, themeCommand, themeNames } from "./themes.js";
 import { connectReplWorker } from "./repl-client.js";
 import { splitter } from "./splitter.js";
@@ -25,6 +25,7 @@ const TAB_KEY = "veripb-repl-enhanced-tab";
 const DEFAULT_LAYOUT = { b1: 1 / 3, b2: 2 / 3, top: 0.58 };
 const MIN_COLUMN = 0.1;
 const MIN_ROW = 0.15;
+const MODE_PBP = 0;
 const MODE_EDIT = 1;
 const MODE_FORMULA = 2;
 const MODE_DEBUG = 3;
@@ -120,6 +121,17 @@ export function mount(root, host) {
       client.line(text);
     },
     onTranscript: (lines) => appendTranscript(lines),
+    // Entering edit mode, the REPL prints `Line <n>: <text>` for the line to
+    // retype: start the input with that text, to change in place.
+    onMode: (mode) => {
+      if (mode !== MODE_EDIT || view.input.value) return;
+      for (let i = view.transcript.length - 1; i >= 0; i--) {
+        const line = view.transcript[i];
+        if (Object.values(PROMPTS).some((prompt) => line.startsWith(prompt))) break;
+        const retype = line.match(/^Line \d+: (.*)$/);
+        if (retype) return view.prefill(retype[1]);
+      }
+    },
   });
   client.attach(view);
   client.watch(true);
@@ -619,7 +631,7 @@ export function mount(root, host) {
       el("div", { className: "ref-tip-head" }, `Constraint ${entry.id} · ${entry.core ? "core" : "derived"}`,
         ...entry.labels.map((l) => el("span", { className: "tok-label", textContent: ` ${l}` }))),
       el("div", { className: "ref-tip-text" }, tokens(entry.text, variables)),
-      el("div", { className: "muted ref-tip-hint", textContent: "Click to show it in the Database pane." }),
+      el("div", { className: "muted ref-tip-hint", textContent: `${jumpNeedsKey(target) ? `${JUMP_KEY}+click` : "Click"} to show it in the Database pane.` }),
     ];
   }
   function showRefTip(target) {
@@ -640,10 +652,14 @@ export function mount(root, host) {
     else if (!event.target.closest?.(".ref-tip")) hideRefTip();
   });
   root.addEventListener("mouseleave", hideRefTip);
-  // Capture: a ref inside a proof row must not also prefill `:edit`.
+  // In the Proof pane a click on a line edits it, so a ref there jumps on
+  // Ctrl+click (⌘+click); elsewhere a plain click jumps. Capture: a jump
+  // must not also prefill `:edit`.
+  const JUMP_KEY = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl";
+  const jumpNeedsKey = (target) => !!target.closest(".pane-proof");
   root.addEventListener("click", (event) => {
     const target = event.target.closest?.(".ref");
-    if (!target) return;
+    if (!target || (jumpNeedsKey(target) && !event.ctrlKey && !event.metaKey)) return;
     event.preventDefault();
     event.stopPropagation();
     hideRefTip();
@@ -797,15 +813,16 @@ export function mount(root, host) {
       });
       const row = el("div", {
         className: `row ${line.status}${line.n === p.debugLine ? " debug-current" : ""}${line.assertion ? " assertion" : ""}`,
-        title: line.status === "rejected" ? p.rejected?.message ?? "rejected" : `click: :edit ${line.n}`,
       },
         bp,
-        el("span", { className: "status", textContent: icon[line.status] }),
-        el("span", { className: "num", textContent: line.n }),
+        el("span", { className: "status", textContent: icon[line.status], title: line.status === "rejected" ? p.rejected?.message ?? "rejected" : line.status }),
+        el("span", { className: "num", textContent: line.n, title: `Click the line to put :edit ${line.n} in the command line` }),
         el("span", { className: "text" }, tokens(line.text, variables, { refs: true })),
         explain);
       row.dataset.n = line.n;
-      row.addEventListener("click", () => { if (!getSelection().toString()) view.prefill(`:edit ${line.n}`); });
+      row.addEventListener("click", () => {
+        if (view.mode === MODE_PBP && !getSelection().toString()) view.prefill(`:edit ${line.n}`);
+      });
       rows.push(row);
     }
     proof.body.replaceChildren(...rows);

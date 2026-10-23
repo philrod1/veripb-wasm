@@ -37,9 +37,12 @@ export class OutputView {
    * `setMode`. `complete(text)`, if given, returns (a promise of) the REPL's
    * completion result `{candidates: [{line, left, right}], selected, common}`
    * and turns on the suggestion strip and Tab completion (`suggest`).
+   * `onMode(mode)`, if given, runs after each `setMode` that leaves the
+   * input ready.
    */
-  constructor({ onSubmit, onTranscript, complete } = {}) {
+  constructor({ onSubmit, onTranscript, onMode, complete } = {}) {
     this.onSubmit = onSubmit;
+    this.onMode = onMode;
     this.onTranscript = onTranscript;
     this.transcript = [];
     this.mode = null;
@@ -321,6 +324,7 @@ export class OutputView {
     } else {
       this.prompt.textContent = PROMPTS[mode];
       this.setReady(true);
+      this.onMode?.(mode);
     }
   }
 }

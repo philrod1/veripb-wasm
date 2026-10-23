@@ -169,11 +169,22 @@ await page.fill(".plain-in", "");
 await page.hover('.pane-proof .row:not(.preamble) >> nth=0 >> .ref[data-ref="@x1_imp_x3"]');
 check("enhanced: hovering a label shows its constraint", await until(async () => (await page.textContent(".ref-tip")).includes("Constraint 2 · core")),
   await page.textContent(".ref-tip"));
+check("enhanced: the proof row has no title to cover the tooltip", !(await page.$eval(".pane-proof .row:not(.preamble)", (r) => r.title)));
 await page.fill(".db-filter", "zzz");
-await page.click('.pane-proof .row:not(.preamble) >> nth=0 >> .ref[data-ref="@x1_imp_x3"]');
-check("enhanced: clicking a ref jumps to its Database row", await until(async () => !!(await page.$('.pane-database .row.jumped[data-id="2"]'))));
+await page.click('.pane-proof .row:not(.preamble) >> nth=0 >> .ref[data-ref="@x1_imp_x3"]', { modifiers: ["ControlOrMeta"] });
+check("enhanced: Ctrl/⌘+click on a proof ref jumps to its Database row", await until(async () => !!(await page.$('.pane-database .row.jumped[data-id="2"]'))));
 check("enhanced: the jump clears a filter that hid it", (await page.inputValue(".db-filter")) === "");
-check("enhanced: clicking a ref doesn't prefill :edit", (await page.inputValue(".plain-in")) === "");
+check("enhanced: Ctrl/⌘+click doesn't prefill :edit", (await page.inputValue(".plain-in")) === "");
+await page.click('.pane-proof .row:not(.preamble) >> nth=0 >> .ref[data-ref="@x1_imp_x3"]');
+check("enhanced: a plain click on a proof ref still prefills :edit", (await page.inputValue(".plain-in")) === ":edit 3");
+await page.click('.pane-formula .ref[data-ref="@x1_imp_x3"]');
+check("enhanced: a plain click on a formula ref jumps", (await page.inputValue(".plain-in")) === ":edit 3"
+  && await until(async () => !!(await page.$('.pane-database .row.jumped[data-id="2"]'))));
+await command(":edit 3");
+check("enhanced: :edit starts the input with the line's text", (await page.inputValue(".plain-in")) === "@x3 rup 1 x3 >= 1 : @x1_or_x2 @x1_imp_x3 @x2_imp_x3 ;",
+  await page.inputValue(".plain-in"));
+await command(":cancel");
+await page.fill(".plain-in", "");
 // Links: a curve per formula line and per proof line to its Database row.
 await page.selectOption(".links-toggle select", "all");
 check("enhanced: links draw a curve per line", await until(async () => (await page.$$(".links-layer path")).length === 8), String((await page.$$(".links-layer path")).length));

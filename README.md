@@ -244,9 +244,11 @@ Enhanced mode:
   marks core constraints, a blue bar derived ones. The filter matches an id,
   label or text (see Filters); the core/derived boxes hide either kind. During `:debug`,
   the constraints derived by the last step are highlighted.
-- **Proof:** ✓ checked, ○ unchecked, ✗ rejected (hover for the message).
-  Click the gutter to toggle a breakpoint. Click a line to put `:edit <n>`
-  in the command line (it is not run). Hover a line for "explain": a modal
+- **Proof:** ✓ checked, ○ unchecked, ✗ rejected (hover the ✗ for the
+  message). Click the gutter to toggle a breakpoint. Click a line to put
+  `:edit <n>` in the command line (it is not run). In edit mode the input
+  starts with the text of the line being edited (the REPL's `Line <n>:`
+  echo), to change in place. Hover a line for "explain": a modal
   for that line, which leaves Output untouched (Copy; Esc, Close or a click
   outside closes it). `:explain` typed at the prompt prints to Output as usual.
 - **Explain modal:** for a checked `rup`, `pol`, `red` or `a` line, "Plain
@@ -260,8 +262,9 @@ Enhanced mode:
 - **Constraint refs:** labels (`@name`) and constraint IDs in the Formula
   and Proof panes, the explain modal's line and its plain-English text are
   dotted-underlined. Hover one to see the constraint (ID, core or derived,
-  labels, text); click to scroll the Database pane to it, which unzooms
-  and clears a filter that hides it. IDs are recognised where a rule takes
+  labels, text). Click one to scroll the Database pane to it, which unzooms
+  and clears a filter that hides it; in the Proof pane, where a click
+  edits the line, use Ctrl+click (⌘+click on a Mac). IDs are recognised where a rule takes
   them (`modes/refs.js`): `pol` operands (not the scalar before `*`, `d`,
   `c`, `m`, `n`), the hints after `:` of `rup`, `ia`, `i`, `e`,
   `conclusion` and `qed`, `del`/`delc`/`deld`/`core id …`, and
