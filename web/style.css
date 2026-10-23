@@ -158,7 +158,9 @@ aside input[type=file] { display: none; }
 .links-layer .link.off { stroke-dasharray: 3 3; opacity: 0.35; }
 .links-layer.has-hot .link { opacity: 0.12; }
 .links-layer.has-hot .link.hot { opacity: 1; stroke-width: 2.4; }
-.tabs .links-toggle { margin-left: auto; align-self: center; display: flex; align-items: center; gap: 0.3rem; color: var(--muted); cursor: pointer; }
+.links-layer.hover-only .link:not(.hot) { display: none; }
+.tabs .links-toggle { margin-left: auto; align-self: center; display: flex; align-items: center; gap: 0.3rem; color: var(--muted); }
+.tabs .links-toggle select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.2rem; }
 .tabs .links-toggle + .zoom-buttons { margin-left: 0.6rem; }
 .zoom-buttons { display: flex; gap: 2px; flex: none; }
 .pane-head .zoom-buttons { margin-left: auto; }

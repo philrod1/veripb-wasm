@@ -175,10 +175,15 @@ check("enhanced: clicking a ref jumps to its Database row", await until(async ()
 check("enhanced: the jump clears a filter that hid it", (await page.inputValue(".db-filter")) === "");
 check("enhanced: clicking a ref doesn't prefill :edit", (await page.inputValue(".plain-in")) === "");
 // Links: a curve per formula line and per proof line to its Database row.
-await page.check(".links-toggle input");
+await page.selectOption(".links-toggle select", "all");
 check("enhanced: links draw a curve per line", await until(async () => (await page.$$(".links-layer path")).length === 8), String((await page.$$(".links-layer path")).length));
 check("enhanced: links widen the gutters", (await page.$eval(".enh-top", (e) => e.style.gridTemplateColumns)).includes("56px"));
-await page.uncheck(".links-toggle input");
+await page.selectOption(".links-toggle select", "hover");
+const shownLinks = () => page.$$eval(".links-layer path", (ps) => ps.filter((p) => getComputedStyle(p).display !== "none").length);
+check("enhanced: hovered-row links hide the rest", await until(async () => (await shownLinks()) === 0), String(await shownLinks()));
+await page.hover('.pane-proof .row[data-n="3"] .num');
+check("enhanced: hovered-row links show that row's curve", await until(async () => (await shownLinks()) === 1), String(await shownLinks()));
+await page.selectOption(".links-toggle select", "off");
 check("enhanced: links off removes them", !(await page.$(".links-layer")) && !(await page.$eval(".enh-top", (e) => e.style.gridTemplateColumns)).includes("56px"));
 
 // Tab completion (the TUI's completer).

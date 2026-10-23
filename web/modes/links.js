@@ -1,13 +1,14 @@
 // Links: Bézier curves from each formula and proof line to the Database
 // rows it created, drawn in the gutters between the panes.
 //
-// createLinks({ top, formula, database, proof }) -> { setLineIds(map), redraw(), destroy() }
+// createLinks({ top, formula, database, proof }) -> { setLineIds(map), setHoverOnly(on), redraw(), destroy() }
 //   top: the panes' grid; formula/database/proof: panes ({ section, body }).
 //   Formula rows carry data-ids ("3" or "1-2"), proof rows data-n (display
 //   line), Database rows data-id. setLineIds takes vr_line_ids' map
 //   ({"<line>": [id, ...]}).
 // A curve whose row is scrolled out of view is drawn dashed to the pane's
-// edge; hovering a row highlights its curves.
+// edge; hovering a row highlights its curves. With setHoverOnly(true), only
+// the hovered row's curves are shown.
 
 const SVG = "http://www.w3.org/2000/svg";
 
@@ -113,6 +114,9 @@ export function createLinks({ top, formula, database, proof }) {
   redraw();
 
   return {
+    setHoverOnly(on) {
+      svg.classList.toggle("hover-only", on);
+    },
     setLineIds(map) {
       lineIds = map && !map.error ? map : {};
       redraw();

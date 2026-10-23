@@ -186,6 +186,7 @@ Files panel (left; "Files" in the header hides and shows it, remembered):
 scripts/prepare.sh
 scripts/build-web.sh
 scripts/serve.py [port] [address]      # default 8000 127.0.0.1; then open http://localhost:8000
+scripts/deploy.sh [dir]                # on a web server: submodules, prepare, build, copy web/ to dir (default /var/www/html)
 ```
 
 `serve.py` sends `Cross-Origin-Opener-Policy: same-origin` and
@@ -266,9 +267,11 @@ Enhanced mode:
   `conclusion` and `qed`, `del`/`delc`/`deld`/`core id …`, and
   `proofgoal <n>`. A negative ID is relative (`-1`: the newest constraint
   at that point) and is described, not resolved.
-- **Links** (checkbox in the tab bar, remembered): a curve from each
-  formula line and each checked proof line to the Database rows it created,
-  while they are still there. The gutters between the top panes widen to
+- **Links** (in the tab bar: off, hovered row or all; remembered, off by
+  default): a curve from each formula line and each checked proof line to
+  the Database rows it created, while they are still there. "Hovered row"
+  draws only the curves of the row under the pointer, in any of the three
+  panes. The gutters between the top panes widen to
   carry them. A curve to a row scrolled out of view is dashed to the pane's
   edge; hovering a row highlights its curves. The proof lines' IDs come from
   `vr_line_ids`, one traced veripb run per change to the checked proof,

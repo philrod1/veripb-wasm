@@ -249,26 +249,32 @@ export function mount(root, host) {
   }
   // Links: curves from formula and proof lines to the Database rows they
   // created (modes/links.js), with the line IDs from vr_line_ids.
+  // Off, the hovered row's curves only, or every curve.
   let links = null;
-  const linksBox = el("input", { type: "checkbox" });
-  const linksToggle = el("label", { className: "links-toggle", title: "Draw a curve from each formula and proof line to the Database rows it created" }, linksBox, "Links");
+  const linksBox = el("select", {},
+    el("option", { value: "off", textContent: "off" }),
+    el("option", { value: "hover", textContent: "hovered row" }),
+    el("option", { value: "all", textContent: "all" }));
+  const linksToggle = el("label", { className: "links-toggle", title: "Curves from each formula and proof line to the Database rows it created" }, "Links", linksBox);
   tabBar.insertBefore(linksToggle, zoomButtons.output.wide.parentNode);
   const refreshLineIds = () => {
     if (links && state?.proof) client.lineIds().then((map) => links?.setLineIds(map));
   };
-  function setLinks(on) {
-    linksBox.checked = on;
-    try { localStorage.setItem(LINKS_KEY, on ? "1" : "0"); } catch {}
-    if (on && !links) {
+  function setLinks(mode) {
+    if (!["off", "hover", "all"].includes(mode)) mode = "off";
+    linksBox.value = mode;
+    try { localStorage.setItem(LINKS_KEY, mode); } catch {}
+    if (mode !== "off" && !links) {
       links = createLinks({ top, formula, database, proof });
       refreshLineIds();
-    } else if (!on && links) {
+    } else if (mode === "off" && links) {
       links.destroy();
       links = null;
     }
+    links?.setHoverOnly(mode === "hover");
     applyLayout();
   }
-  linksBox.addEventListener("change", () => setLinks(linksBox.checked));
+  linksBox.addEventListener("change", () => setLinks(linksBox.value));
   // Esc restores the layout when nothing else claims it (a dialog, debug
   // mode, the suggestion strip, another input).
   const escapeZoom = (event) => {
@@ -819,7 +825,7 @@ export function mount(root, host) {
 
   update(null);
   selectTab(activeTab);
-  try { if (localStorage.getItem(LINKS_KEY) === "1") setLinks(true); } catch {}
+  try { setLinks(localStorage.getItem(LINKS_KEY)); } catch {}
 
   return {
     putFile: client.putFile,
