@@ -78,7 +78,7 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
   function runVeripb(ptr, len) {
     try {
       onRun?.();
-      const bytes = new Uint8Array(memory().buffer, ptr, len);
+      const bytes = new Uint8Array(memory().buffer, ptr >>> 0, len >>> 0);
       const args = decoder.decode(bytes).split("\0").slice(0, -1);
       // Regular files, not terminals: veripb then writes no colour codes,
       // as with the pipes a native subprocess gets.
@@ -113,19 +113,28 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
  * `stderr` as given (shim Fds), the root directory preopened as "/".
  */
 export function createWasi(args, { stdout, stderr, root, env = [] }) {
-  return new WASI(args, [...ENV, ...env], [
+  const wasi = new WASI(args, [...ENV, ...env], [
     new OpenFile(new File([])),
     stdout,
     stderr,
     new PreopenDirectory("/", root),
   ], WASI_OPTIONS);
+  // WebAssembly passes i32 arguments to JavaScript as signed numbers, so an
+  // address above 2 GiB arrives negative and the shim's DataView and
+  // Uint8Array calls throw. No WASI i32 argument is negative by meaning
+  // (addresses, lengths, descriptors, flags), so read each as unsigned; i64
+  // arguments arrive as BigInts and pass through.
+  for (const [name, fn] of Object.entries(wasi.wasiImport)) {
+    wasi.wasiImport[name] = (...argv) => fn(...argv.map((a) => (typeof a === "number" ? a >>> 0 : a)));
+  }
+  return wasi;
 }
 
 /**
  * Instantiates the REPL (plain and enhanced modes) and returns
  * { mode, line(text) -> mode, state(), preserved(), toggleBreakpoint(index),
  *   complete(text), themes(), commands(), glossary(), extras(), explain(line), lineIds(),
- *   bufferEdit({op, index, text?, after?}), stats }.
+ *   bufferEdit({op, index, text?, after?}), memoryBytes(), stats }.
  * `state()` and `preserved()` return the parsed JSON of web-repl's
  * `vr_state` / `vr_preserved` (web-repl/src/state.rs).
  * `onLine(text)` receives every output line (stdout and stderr).
@@ -158,7 +167,7 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
 
   function line(text) {
     const bytes = encoder.encode(text);
-    const ptr = repl.exports.vr_alloc(bytes.length);
+    const ptr = repl.exports.vr_alloc(bytes.length) >>> 0;
     new Uint8Array(repl.exports.memory.buffer, ptr, bytes.length).set(bytes);
     const next = repl.exports.vr_line(ptr, bytes.length);
     repl.exports.vr_free(ptr, bytes.length);
@@ -167,7 +176,7 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
 
   const decoder = new TextDecoder();
   function result(len) {
-    const bytes = new Uint8Array(repl.exports.memory.buffer, repl.exports.vr_result_ptr(), len);
+    const bytes = new Uint8Array(repl.exports.memory.buffer, repl.exports.vr_result_ptr() >>> 0, len >>> 0);
     return JSON.parse(decoder.decode(bytes));
   }
 
@@ -179,7 +188,7 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
     toggleBreakpoint: (index) => repl.exports.vr_toggle_breakpoint(index) === 1,
     complete(text) {
       const bytes = encoder.encode(text);
-      const ptr = repl.exports.vr_alloc(bytes.length);
+      const ptr = repl.exports.vr_alloc(bytes.length) >>> 0;
       new Uint8Array(repl.exports.memory.buffer, ptr, bytes.length).set(bytes);
       const len = repl.exports.vr_complete(ptr, bytes.length);
       repl.exports.vr_free(ptr, bytes.length);
@@ -191,7 +200,7 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
     lineIds: () => result(repl.exports.vr_line_ids()),
     bufferEdit(edit) {
       const bytes = encoder.encode(JSON.stringify(edit));
-      const ptr = repl.exports.vr_alloc(bytes.length);
+      const ptr = repl.exports.vr_alloc(bytes.length) >>> 0;
       new Uint8Array(repl.exports.memory.buffer, ptr, bytes.length).set(bytes);
       const len = repl.exports.vr_buffer_edit(ptr, bytes.length);
       repl.exports.vr_free(ptr, bytes.length);
@@ -199,6 +208,7 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
     },
     extras: () => result(repl.exports.vr_extras()),
     explain: (line) => result(repl.exports.vr_explain(line)),
+    memoryBytes: () => repl.exports.memory.buffer.byteLength,
     stats,
   };
 }

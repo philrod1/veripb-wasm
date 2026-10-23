@@ -104,7 +104,7 @@ async function run(args) {
       for (;;) {
         const seq = channel.seq();
         if (channel.takeResized()) return RESIZED;
-        const n = channel.readInput(new Uint8Array(memory().buffer, ptr, len), len);
+        const n = channel.readInput(new Uint8Array(memory().buffer, ptr >>> 0, len), len);
         if (n > 0) return n;
         const mail = channel.takeMail();
         if (mail) {
