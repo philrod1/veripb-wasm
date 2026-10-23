@@ -91,6 +91,7 @@ export function connectReplWorker(host, { what = "REPL", onState } = {}) {
     commands: () => request({ type: "query", kind: "commands" }),
     glossary: () => request({ type: "query", kind: "glossary" }),
     lineIds: () => request({ type: "query", kind: "lineIds" }),
+    edit: (edit) => request({ type: "query", kind: "edit", edit }),
     extras: () => request({ type: "query", kind: "extras" }),
     explain: (line) => request({ type: "query", kind: "explain", line }),
     putFile,

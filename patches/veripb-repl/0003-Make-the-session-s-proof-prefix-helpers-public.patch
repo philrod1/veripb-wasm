@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Phil Rodgers <philip.rodgers@glasgow.ac.uk>
 Date: Thu, 22 Oct 2026 11:22:11 +0000
-Subject: [PATCH 3/3] Make the session's proof-prefix helpers public
+Subject: [PATCH 3/4] Make the session's proof-prefix helpers public
 
 preamble_and_lines and formula_temp_file become pub, so a frontend can
 run checker queries (such as show_database) on a prefix of the proof.

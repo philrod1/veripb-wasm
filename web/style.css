@@ -127,6 +127,11 @@ aside input[type=file] { display: none; }
 .pane-proof .row.rejected { background: var(--error-bg); }
 .pane-proof .row.rejected .status { color: var(--fg); font-weight: 700; }
 .pane-proof .row.checked .status { color: var(--ok); }
+.pane-body:focus { outline: none; }
+.pane-proof .row.vim-line { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.vim-cursor { background: var(--accent); color: var(--bg); }
+.pane-body:not(:focus) .vim-cursor { background: transparent; color: inherit; outline: 1px solid var(--accent); }
+.vim-input { width: 100%; font: inherit; color: var(--fg); background: var(--bg); border: none; outline: 1px solid var(--accent); padding: 0; margin: 0; }
 .pane-proof .row.debug-current { outline: 1px solid var(--cursor-accent); outline-offset: -1px; }
 .pane-proof .status { width: 1.2ch; flex: none; text-align: center; color: var(--muted); }
 .pane-proof .gutter {

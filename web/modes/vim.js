@@ -1,0 +1,283 @@
+// Vim-style editing of the Proof pane: the TUI's key set (veripb-repl's
+// tui/mod.rs, `VimState` and the `vim_*` methods), with each commit sent to
+// the session as one undoable edit (web-repl's vr_buffer_edit).
+//
+// createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFocus }) -> vim
+//   edit({op, index, text?, after?}) -> Promise<{ok} | {error}>
+//   toggleBreakpoint(index); note(text): a line in Output; render(): redraw
+//   the Proof pane; toPrompt(text): focus the command line with `text`;
+//   onFocus(): put keyboard focus on the Proof pane.
+// vim: { active, line, col, mode ("normal" | "insert"), input,
+//        sync(lines), startEdit(line), startInsert(n), doubleClick(line),
+//        click(line, col), key(event) -> handled, exit() }
+//   Lines are display lines: buffer index i is line i + 3 (two preamble lines).
+//   sync(lines) takes the proof's lines ({n, index, text}) after each state
+//   update; while edits are in flight the local copy stays authoritative.
+//   input is the <input> to place on the cursor line in Insert mode.
+
+const FIRST = 3;
+const EDITING = "Editing — hjkl/arrows to move, i/a/o/O to insert, x to delete a char, dd a line, Esc to leave.";
+
+const clampCol = (col, len) => Math.max(0, Math.min(col, len - 1));
+
+export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFocus }) {
+  let buffer = [];
+  let inFlight = 0;
+  let queue = Promise.resolve();
+  const input = Object.assign(document.createElement("input"), { className: "vim-input", spellcheck: false });
+  input.setAttribute("aria-label", "Proof line (Insert mode)");
+  const vim = { active: false, line: FIRST, col: 0, mode: "normal", pendingD: false, input };
+
+  const maxLine = () => FIRST + buffer.length - 1;
+  const text = (line) => buffer[line - FIRST] ?? "";
+  const index = (line) => line - FIRST;
+  const editable = (line) => line >= FIRST && line <= maxLine();
+
+  // Sends one edit, applying it to the local copy at once so further keys
+  // see it before the session's new state arrives.
+  function commit(op, apply) {
+    apply();
+    inFlight += 1;
+    queue = queue.then(() => edit(op)).then((result) => {
+      if (result?.error) note(`Error: ${result.error}`);
+    }).finally(() => { inFlight -= 1; });
+  }
+
+  function start(line) {
+    Object.assign(vim, { active: true, line, col: 0, mode: "normal", pendingD: false });
+    onFocus();
+    render();
+  }
+
+  function enterInsert(after) {
+    const len = text(vim.line).length;
+    if (after) vim.col = Math.min(vim.col + 1, len);
+    vim.mode = "insert";
+    input.value = text(vim.line);
+    render();
+    input.focus();
+    input.setSelectionRange(vim.col, vim.col);
+  }
+
+  function commitInsert() {
+    const caret = input.selectionStart ?? input.value.length;
+    const value = input.value;
+    const i = index(vim.line);
+    if (buffer[i] !== value) commit({ op: "set", index: i, text: value }, () => { buffer[i] = value; });
+    vim.mode = "normal";
+    vim.col = clampCol(caret, value.length);
+    onFocus();
+    render();
+  }
+
+  // Insert mode: move to another line, committing this one if it changed.
+  function insertMoveTo(line, col) {
+    if (line === vim.line || !editable(line)) return;
+    const i = index(vim.line);
+    const value = input.value;
+    if (buffer[i] !== value) commit({ op: "set", index: i, text: value }, () => { buffer[i] = value; });
+    vim.line = line;
+    vim.col = Math.min(col, text(line).length);
+    input.value = text(line);
+    render();
+    input.focus();
+    input.setSelectionRange(vim.col, vim.col);
+  }
+
+  function insertNewline() {
+    const caret = input.selectionStart ?? input.value.length;
+    const before = input.value.slice(0, caret);
+    const after = input.value.slice(caret);
+    const i = index(vim.line);
+    commit({ op: "split", index: i, text: before, after }, () => { buffer.splice(i, 1, before, after); });
+    vim.line += 1;
+    vim.col = 0;
+    input.value = after;
+    render();
+    input.focus();
+    input.setSelectionRange(0, 0);
+  }
+
+  function openLine(below) {
+    if (!editable(vim.line)) return note(`Error: line ${vim.line} is the synthesized preamble or past the end of the proof — nowhere to open a new line there.`);
+    const at = index(vim.line) + (below ? 1 : 0);
+    commit({ op: "insert", index: at, text: "" }, () => { buffer.splice(at, 0, ""); });
+    vim.line = at + FIRST;
+    vim.col = 0;
+    enterInsert(false);
+  }
+
+  function deleteChar() {
+    const i = index(vim.line);
+    const current = text(vim.line);
+    if (vim.col >= current.length) return;
+    const next = current.slice(0, vim.col) + current.slice(vim.col + 1);
+    commit({ op: "set", index: i, text: next }, () => { buffer[i] = next; });
+    vim.col = clampCol(vim.col, next.length);
+    render();
+  }
+
+  function deleteLine() {
+    const i = index(vim.line);
+    commit({ op: "delete", index: i }, () => { buffer.splice(i, 1); });
+    if (!buffer.length) {
+      vim.active = false;
+      note("Left the editor — no proof lines left to edit.");
+      toPrompt("");
+      return render();
+    }
+    vim.line = Math.max(FIRST, Math.min(vim.line, maxLine()));
+    vim.col = clampCol(vim.col, text(vim.line).length);
+    render();
+  }
+
+  function wordLeft() {
+    const t = text(vim.line);
+    let i = Math.min(vim.col, t.length);
+    while (i > 0 && /\s/.test(t[i - 1])) i -= 1;
+    while (i > 0 && !/\s/.test(t[i - 1])) i -= 1;
+    vim.col = i;
+  }
+
+  function wordRight() {
+    const t = text(vim.line);
+    let i = Math.min(vim.col, t.length);
+    while (i < t.length && !/\s/.test(t[i])) i += 1;
+    while (i < t.length && /\s/.test(t[i])) i += 1;
+    vim.col = clampCol(i, t.length);
+  }
+
+  function moveVertical(delta) {
+    vim.line = Math.max(FIRST, Math.min(vim.line + delta, maxLine()));
+    vim.col = clampCol(vim.col, text(vim.line).length);
+  }
+
+  /** Normal mode: one key. Returns whether it was handled (and so swallowed). */
+  function normalKey(event) {
+    const { key } = event;
+    const word = event.ctrlKey || event.altKey;
+    if (event.metaKey || (event.ctrlKey && !["ArrowLeft", "ArrowRight"].includes(key))) return false;
+    if (key !== "d") vim.pendingD = false;
+    switch (key) {
+      case "ArrowLeft": if (word) wordLeft(); else vim.col = Math.max(0, vim.col - 1); break;
+      case "ArrowRight": if (word) wordRight(); else vim.col = clampCol(vim.col + 1, text(vim.line).length); break;
+      case "h": vim.col = Math.max(0, vim.col - 1); break;
+      case "l": vim.col = clampCol(vim.col + 1, text(vim.line).length); break;
+      case "k": case "ArrowUp": moveVertical(-1); break;
+      case "j": case "ArrowDown": moveVertical(1); break;
+      case "i": return enterInsert(false), true;
+      case "a": return enterInsert(true), true;
+      case "o": return openLine(true), true;
+      case "O": return openLine(false), true;
+      case "x": return deleteChar(), true;
+      case "b": toggleBreakpoint(index(vim.line)); return true;
+      case "d":
+        if (vim.pendingD) { vim.pendingD = false; deleteLine(); } else vim.pendingD = true;
+        return true;
+      case ":":
+        vim.active = false;
+        render();
+        toPrompt(":");
+        return true;
+      case "Escape":
+        vim.active = false;
+        note("Left the editor.");
+        render();
+        toPrompt("");
+        return true;
+      default:
+        // Normal mode types nothing; other printable keys are no-ops.
+        return key.length === 1;
+    }
+    render();
+    return true;
+  }
+
+  input.addEventListener("keydown", (event) => {
+    if (!vim.active || vim.mode !== "insert") return;
+    const caret = input.selectionStart;
+    const collapsed = caret === input.selectionEnd;
+    let handled = true;
+    if (event.key === "Escape") commitInsert();
+    else if (event.key === "Enter") insertNewline();
+    else if (event.key === "ArrowUp") insertMoveTo(Math.max(FIRST, vim.line - 1), caret);
+    else if (event.key === "ArrowDown") insertMoveTo(Math.min(maxLine(), vim.line + 1), caret);
+    else if (event.key === "ArrowLeft" && collapsed && caret === 0 && vim.line > FIRST && !event.shiftKey) insertMoveTo(vim.line - 1, text(vim.line - 1).length);
+    else if (event.key === "ArrowRight" && collapsed && caret === input.value.length && vim.line < maxLine() && !event.shiftKey) insertMoveTo(vim.line + 1, 0);
+    else handled = false;
+    if (handled) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  });
+
+  return Object.assign(vim, {
+    sync(lines) {
+      if (inFlight) return;
+      buffer = (lines ?? []).map((l) => l.text);
+      if (!vim.active) return;
+      if (!buffer.length) {
+        vim.active = false;
+        note("Left the editor — no proof lines left to edit.");
+        return;
+      }
+      if (vim.mode === "normal") {
+        vim.line = Math.max(FIRST, Math.min(vim.line, maxLine()));
+        vim.col = clampCol(vim.col, text(vim.line).length);
+      }
+    },
+    /** `:edit [<n>[-<m>]]`: Normal mode on `n` (default: the last line). */
+    startEdit(arg) {
+      if (!buffer.length) return note("Error: no proof lines yet to edit.");
+      const m = arg.trim().match(/^(\d+)(?:-\d+)?$/);
+      if (arg.trim() && !m) return note("Error: usage :edit [<n>] | :edit <n>-<m>");
+      const line = m ? Number(m[1]) : maxLine();
+      if (!editable(line)) return note(`Error: line ${line} is the synthesized preamble or past the end of the proof.`);
+      start(line);
+      note(EDITING);
+    },
+    /** `:insert <n>`: a blank line before `n` (or at the end), in Insert mode. */
+    startInsert(arg) {
+      const n = Number(arg.trim());
+      if (!/^\d+$/.test(arg.trim())) return note("Error: usage :insert <n>");
+      const end = FIRST + buffer.length;
+      if (n !== end && !editable(n)) {
+        return note(`Error: line ${n} is the synthesized preamble or past the end of the proof — nowhere to insert there. Use :insert ${end} to add lines at the end, or just type them normally.`);
+      }
+      const at = n - FIRST;
+      commit({ op: "insert", index: at, text: "" }, () => { buffer.splice(at, 0, ""); });
+      start(n);
+      note("Inserting — type the new line, then Esc once you're satisfied.");
+      enterInsert(false);
+    },
+    /** Double-click: enter Normal mode on `line`, or move there (not mid-insert). */
+    doubleClick(line) {
+      if (!editable(line)) return;
+      if (vim.active && vim.mode === "insert") return;
+      if (vim.active) {
+        vim.line = line;
+        vim.col = 0;
+        onFocus();
+        render();
+      } else {
+        start(line);
+        note(EDITING);
+      }
+    },
+    /** A click in Normal mode: put the cursor there. */
+    click(line, col) {
+      if (!vim.active || vim.mode !== "normal" || !editable(line)) return;
+      vim.line = line;
+      vim.col = clampCol(col, text(line).length);
+      onFocus();
+      render();
+    },
+    key: normalKey,
+    exit() {
+      if (!vim.active) return;
+      if (vim.mode === "insert") commitInsert();
+      vim.active = false;
+      render();
+    },
+  });
+}

@@ -137,7 +137,12 @@ check("enhanced: breakpoint toggle", await until(async () => !!(await page.$(".p
 await page.click(".pane-proof .row.rejected .text");
 check("enhanced: clicking a line prefills :edit", (await page.inputValue(".plain-in")) === ":edit 3");
 await command(":edit 3");
-await command("@x3 rup 1 x3 >= 1 : @x1_or_x2 @x1_imp_x3 @x2_imp_x3 ;");
+await page.keyboard.press("i");
+await page.keyboard.press("ControlOrMeta+a");
+await page.keyboard.type("@x3 rup 1 x3 >= 1 : @x1_or_x2 @x1_imp_x3 @x2_imp_x3 ;");
+await page.keyboard.press("Escape");
+await page.keyboard.press("Escape");
+await sleep(200);
 await command(":verify");
 const fixed = await page.$$eval(".pane-proof .row:not(.preamble) .status", (s) => s.map((x) => x.textContent).join(""));
 check("enhanced: after fix all checked", fixed === "✓✓✓", fixed);
@@ -180,11 +185,46 @@ check("enhanced: a plain click on a proof ref still prefills :edit", (await page
 await page.click('.pane-formula .ref[data-ref="@x1_imp_x3"]');
 check("enhanced: a plain click on a formula ref jumps", (await page.inputValue(".plain-in")) === ":edit 3"
   && await until(async () => !!(await page.$('.pane-database .row.jumped[data-id="2"]'))));
-await command(":edit 3");
-check("enhanced: :edit starts the input with the line's text", (await page.inputValue(".plain-in")) === "@x3 rup 1 x3 >= 1 : @x1_or_x2 @x1_imp_x3 @x2_imp_x3 ;",
-  await page.inputValue(".plain-in"));
-await command(":cancel");
+
+// Vim-style editing of the Proof pane (the TUI's key set).
+const proofText = (n) => page.$eval(`.pane-proof .row[data-n="${n}"] .text`, (e) => e.querySelector("input")?.value ?? e.textContent).catch(() => null);
+const original5 = await proofText(5);
+await page.dblclick('.pane-proof .row[data-n="5"] .num');
+check("vim: double-click opens Normal mode", await until(async () => (await title("proof")).includes("-- NORMAL --")), await title("proof"));
+await page.keyboard.press("x");
+check("vim: x deletes the character under the cursor", await until(async () => (await proofText(5)) === original5.slice(1)), await proofText(5));
+await page.keyboard.press("i");
+check("vim: i enters Insert mode", await until(async () => (await title("proof")).includes("-- INSERT --")));
+await page.keyboard.type("@");
+await page.keyboard.press("Escape");
+check("vim: Esc commits the line", await until(async () => (await proofText(5)) === original5 && (await title("proof")).includes("-- NORMAL --")), await proofText(5));
+await page.keyboard.press("O");
+await page.keyboard.type("rup 1 x1 1 ~x1 >= 1 ;");
+await page.keyboard.press("Escape");
+check("vim: O opens a line above", await until(async () => (await proofText(5)) === "rup 1 x1 1 ~x1 >= 1 ;" && (await proofText(6)) === original5),
+  `${await proofText(5)} / ${await proofText(6)}`);
+await page.keyboard.press("i");
+await page.keyboard.press("End");
+await page.keyboard.press("Enter");
+await page.keyboard.type("rup >= 1 ;");
+await page.keyboard.press("Escape");
+check("vim: Enter in Insert splits the line", await until(async () => (await proofText(6)) === "rup >= 1 ;" && (await proofText(7)) === original5),
+  `${await proofText(6)} / ${await proofText(7)}`);
+await page.keyboard.press("d");
+await page.keyboard.press("d");
+check("vim: dd deletes the line", await until(async () => (await proofText(6)) === original5 && (await proofText(7)) === null), await proofText(6));
+await page.keyboard.press("Escape");
+check("vim: Esc in Normal mode leaves the editor", await until(async () => !(await title("proof")).includes("--")));
+await command(":undo 7");
+check("vim: each commit is one :undo action", await until(async () => (await proofText(5)) === original5 && (await proofText(6)) === null),
+  `${await proofText(5)} / ${await proofText(6)}`);
+await command(":edit 4");
+check("vim: :edit opens Normal mode on the line", await until(async () => (await title("proof")).includes("-- NORMAL --")
+  && !!(await page.$('.pane-proof .row.vim-line[data-n="4"]'))));
+await page.keyboard.press(":");
+check("vim: : goes to the prompt", (await page.inputValue(".plain-in")) === ":" && !(await title("proof")).includes("--"));
 await page.fill(".plain-in", "");
+
 // Links: a curve per formula line and per proof line to its Database row.
 await page.selectOption(".links-toggle select", "all");
 check("enhanced: links draw a curve per line", await until(async () => (await page.$$(".links-layer path")).length === 8), String((await page.$$(".links-layer path")).length));

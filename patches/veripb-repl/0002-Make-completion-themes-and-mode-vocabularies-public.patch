@@ -1,7 +1,7 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Phil Rodgers <philip.rodgers@glasgow.ac.uk>
 Date: Wed, 21 Oct 2026 14:42:48 +0000
-Subject: [PATCH 2/3] Make completion, themes and mode vocabularies public
+Subject: [PATCH 2/4] Make completion, themes and mode vocabularies public
 
 Visibility only, so a frontend outside the crate can use them:
 `tui::complete` and `tui::theme` become `pub mod`; the `:formula` and

@@ -13,6 +13,7 @@ import { connectReplWorker } from "./repl-client.js";
 import { splitter } from "./splitter.js";
 import { constraintRefs } from "./refs.js";
 import { createLinks } from "./links.js";
+import { createVim } from "./vim.js";
 
 const LAYOUT_KEY = "veripb-repl-enhanced-layout";
 const EXPLAIN_VIEW_KEY = "veripb-repl-enhanced-explain-view";
@@ -113,9 +114,19 @@ export function mount(root, host) {
     complete: (text) => client.complete(text),
     // `:theme` recolours this page (the REPL itself answers "TUI only").
     onSubmit: (text) => {
-      if (resolveCommand(text) === "theme") {
+      const command = resolveCommand(text);
+      const args = text.trim().replace(/^:\S+\s*/, "");
+      if (command === "theme") {
         view.append(themeCommand(text.trim().replace(/^:\S+/, "")));
         view.setMode(view.mode);
+        return;
+      }
+      // As in the TUI, `:edit` and `:insert` open the Vim-style editor.
+      if (view.mode === MODE_PBP && (command === "edit" || command === "insert")) {
+        view.setMode(view.mode);
+        if (!state?.proof) return view.append("No formula loaded — use :load <formula.opb> first.");
+        if (command === "edit") vim.startEdit(args);
+        else vim.startInsert(args);
         return;
       }
       client.line(text);
@@ -157,6 +168,29 @@ export function mount(root, host) {
   const formula = pane("formula", "Formula");
   const database = pane("database", "Database");
   const proof = pane("proof", "Proof");
+  proof.body.tabIndex = -1;
+  // Vim-style editing of the Proof pane (modes/vim.js).
+  const vim = createVim({
+    edit: (edit) => client.edit(edit),
+    toggleBreakpoint: (index) => client.toggleBreakpoint(index),
+    note: (text) => view.append(text),
+    render: () => renderProof(true),
+    toPrompt: (text) => view.prefill(text),
+    onFocus: () => {
+      if (zoom && zoom.pane !== "proof") {
+        zoom = { pane: "proof", level: zoom.level };
+        applyLayout();
+      }
+      proof.body.focus({ preventScroll: true });
+    },
+  });
+  proof.body.addEventListener("keydown", (event) => {
+    if (!vim.active || vim.mode !== "normal" || event.target !== proof.body) return;
+    if (vim.key(event)) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+  });
 
   // Filter boxes: a number matches that id (formula, database) or line
   // (proof); anything else is a case-insensitive substring of the text.
@@ -787,7 +821,7 @@ export function mount(root, host) {
   function renderProof(force = false) {
     const p = state?.proof ?? null;
     const query = proofFilter.value.trim().toLowerCase();
-    if (!changed("proof", [p, state?.mode, [...variables], query]) && !force) return;
+    if (!changed("proof", [p, state?.mode, [...variables], query, vim.active && [vim.line, vim.col, vim.mode]]) && !force) return;
     if (!p) {
       proof.setTitle("Proof");
       proof.body.replaceChildren(placeholder("No formula loaded."));
@@ -795,7 +829,9 @@ export function mount(root, host) {
     }
     const shown = p.lines.filter((line) => matchesQuery(query, line.n, line.text));
     const count = shown.length === p.lines.length ? `${p.lines.length}` : `${shown.length} of ${p.lines.length}`;
-    proof.setTitle(`Proof (${count})${p.unchecked ? ` (${p.unchecked} unchecked)` : ""}`);
+    proof.setTitle(`Proof (${count})${p.unchecked ? ` (${p.unchecked} unchecked)` : ""}${vim.active ? (vim.mode === "insert" ? " -- INSERT --" : " -- NORMAL --") : ""}`);
+    const typing = document.activeElement === vim.input;
+    const selection = typing ? [vim.input.selectionStart, vim.input.selectionEnd] : null;
     const rows = (query ? [] : p.preamble).map((text, i) =>
       el("div", { className: "row preamble" }, el("span", { className: "gutter" }), el("span", { className: "status" }),
         el("span", { className: "num", textContent: i + 1 }), el("span", { className: "text", textContent: text })));
@@ -817,19 +853,53 @@ export function mount(root, host) {
         bp,
         el("span", { className: "status", textContent: icon[line.status], title: line.status === "rejected" ? p.rejected?.message ?? "rejected" : line.status }),
         el("span", { className: "num", textContent: line.n, title: `Click the line to put :edit ${line.n} in the command line` }),
-        el("span", { className: "text" }, tokens(line.text, variables, { refs: true })),
+        lineText(line),
         explain);
       row.dataset.n = line.n;
-      row.addEventListener("click", () => {
+      if (vim.active && line.n === vim.line) row.classList.add("vim-line");
+      row.addEventListener("click", (event) => {
+        if (vim.active) return vim.click(line.n, clickColumn(row, event));
         if (view.mode === MODE_PBP && !getSelection().toString()) view.prefill(`:edit ${line.n}`);
+      });
+      row.addEventListener("dblclick", () => {
+        if (view.mode !== MODE_PBP) return;
+        if (view.input.value === `:edit ${line.n}`) view.prefill("");
+        getSelection().removeAllRanges();
+        vim.doubleClick(line.n);
       });
       rows.push(row);
     }
     proof.body.replaceChildren(...rows);
+    if (vim.active) proof.body.querySelector(".vim-line")?.scrollIntoView({ block: "nearest" });
+    if (selection) {
+      vim.input.focus({ preventScroll: true });
+      vim.input.setSelectionRange(...selection);
+    }
+  }
+
+  // A proof line's text: tokens, or on the Vim cursor line the cursor (Normal)
+  // or the Insert-mode input.
+  function lineText(line) {
+    if (!vim.active || line.n !== vim.line) return el("span", { className: "text" }, tokens(line.text, variables, { refs: true }));
+    if (vim.mode === "insert") return el("span", { className: "text" }, vim.input);
+    const t = line.text;
+    return el("span", { className: "text" }, tokens(t.slice(0, vim.col), variables),
+      el("span", { className: "vim-cursor", textContent: t[vim.col] ?? " " }), tokens(t.slice(vim.col + 1), variables));
+  }
+  // The character column of a click within a row's text.
+  function clickColumn(row, event) {
+    const textNode = row.querySelector(".text");
+    const caret = document.caretRangeFromPoint?.(event.clientX, event.clientY);
+    if (!textNode || !caret || !textNode.contains(caret.startContainer)) return 0;
+    const range = document.createRange();
+    range.setStart(textNode, 0);
+    range.setEnd(caret.startContainer, caret.startOffset);
+    return range.toString().length;
   }
 
   function update(next) {
     state = next;
+    vim.sync(state?.proof?.lines);
     if (state) followMode(state.mode);
     variables = new Set(state?.variables ?? []);
     renderFormula();

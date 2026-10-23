@@ -124,7 +124,8 @@ export function createWasi(args, { stdout, stderr, root, env = [] }) {
 /**
  * Instantiates the REPL (plain and enhanced modes) and returns
  * { mode, line(text) -> mode, state(), preserved(), toggleBreakpoint(index),
- *   complete(text), themes(), commands(), glossary(), extras(), explain(line), lineIds(), stats }.
+ *   complete(text), themes(), commands(), glossary(), extras(), explain(line), lineIds(),
+ *   bufferEdit({op, index, text?, after?}), stats }.
  * `state()` and `preserved()` return the parsed JSON of web-repl's
  * `vr_state` / `vr_preserved` (web-repl/src/state.rs).
  * `onLine(text)` receives every output line (stdout and stderr).
@@ -188,6 +189,14 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
     commands: () => result(repl.exports.vr_commands()),
     glossary: () => result(repl.exports.vr_glossary()),
     lineIds: () => result(repl.exports.vr_line_ids()),
+    bufferEdit(edit) {
+      const bytes = encoder.encode(JSON.stringify(edit));
+      const ptr = repl.exports.vr_alloc(bytes.length);
+      new Uint8Array(repl.exports.memory.buffer, ptr, bytes.length).set(bytes);
+      const len = repl.exports.vr_buffer_edit(ptr, bytes.length);
+      repl.exports.vr_free(ptr, bytes.length);
+      return result(len);
+    },
     extras: () => result(repl.exports.vr_extras()),
     explain: (line) => result(repl.exports.vr_explain(line)),
     stats,

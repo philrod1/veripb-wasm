@@ -24,7 +24,7 @@ patch series and applied into `work/`.
 | `repl-core/` | wrapper crate for the veripb-repl core; enables `getrandom`'s `wasm_js` backend |
 | `wasi-run/` | Node.js `node:wasi` runners for the WASI binary and WASI test binaries |
 | `bigint-probe/` | prints `malachite-bigint` and `i128` results, for diffing native against wasm |
-| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state`, `vr_preserved`, `vr_explain` (`:explain <n>`'s output, plus the plain-English explanation from `src/teach.rs`), `vr_extras` (`:check` and `:objective` output, bounds), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, `vr_glossary` (concepts plus `help::RULES`), `vr_line_ids` (the constraint IDs each checked proof line derived), plus `vr_toggle_breakpoint` and `vr_result_ptr` |
+| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state`, `vr_preserved`, `vr_explain` (`:explain <n>`'s output, plus the plain-English explanation from `src/teach.rs`), `vr_extras` (`:check` and `:objective` output, bounds), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, `vr_glossary` (concepts plus `help::RULES`), `vr_line_ids` (the constraint IDs each checked proof line derived), `vr_buffer_edit` (one undoable proof-line edit), plus `vr_toggle_breakpoint` and `vr_result_ptr` |
 | `web-tui/` | the veripb-repl TUI as a `wasm32-wasip1` command, built against `work/crossterm` |
 | `web/` | browser page: mode menu, plain and classic modes, veripb in Web Workers |
 | `scripts/build-web.sh` | builds `web/pkg/` (generated, not tracked) |
@@ -62,6 +62,7 @@ Trees in `work/`:
 | `0001-checker-run-veripb-through-a-host-import-on-WASI` | On `target_os = "wasi"`, `checker::invoke::run` calls the host import `veripb_host.run_veripb` instead of spawning `veripb`; veripb's stdout and stderr are read from `/.tmp/.veripb-stdout` and `/.tmp/.veripb-stderr`. |
 | `0002-Make-completion-themes-and-mode-vocabularies-public` | Visibility only: `tui::complete` and `tui::theme` become `pub mod`; `formula::MODE_VOCABULARY`, `debug::MODE_VOCABULARY` and `edit::READONLY_DURING_EDIT` become `pub`. |
 | `0003-Make-the-session-s-proof-prefix-helpers-public` | Visibility only: `Session::preamble_and_lines` and `Session::formula_temp_file` become `pub`, for checker queries on a proof prefix. |
+| `0004-Make-the-session-s-undo-snapshots-public` | Visibility only: `Snapshot`, `Session::snapshot`, `Session::push_undo` and `Session::generation` become `pub`, so a frontend can record a buffer edit as one undoable action. |
 
 `patches/crossterm/`:
 
@@ -246,9 +247,23 @@ Enhanced mode:
   the constraints derived by the last step are highlighted.
 - **Proof:** ✓ checked, ○ unchecked, ✗ rejected (hover the ✗ for the
   message). Click the gutter to toggle a breakpoint. Click a line to put
-  `:edit <n>` in the command line (it is not run). In edit mode the input
-  starts with the text of the line being edited (the REPL's `Line <n>:`
-  echo), to change in place. Hover a line for "explain": a modal
+  `:edit <n>` in the command line (it is not run). In the REPL's own edit
+  mode (`:deassert`), the input starts with the text of the line being
+  edited (the REPL's `Line <n>:` echo), to change in place.
+- **Vim-style editing** (the TUI's key set, `modes/vim.js`): double-click a
+  proof line, or run `:edit [<n>]` (default: the last line) or `:insert
+  <n>`, to edit the Proof pane in place; the pane title shows `-- NORMAL --`
+  or `-- INSERT --`.
+  - Normal: `h`/`l`/←/→ and `j`/`k`/↑/↓ move, Ctrl/Alt+←/→ by word; `i`/`a`
+    insert at/after the cursor, `o`/`O` open a line below/above; `x` deletes
+    a character, `dd` the line; `b` toggles a breakpoint; `:` goes to the
+    prompt; Esc leaves. A click moves the cursor; double-click another line
+    to move there.
+  - Insert: type to edit the line; Enter splits it; ↑/↓, and ←/→ at either
+    end, move to the neighbouring line; Esc returns to Normal.
+  - Each commit (`x`, `dd`, `o`/`O`, Enter, and leaving or moving off a
+    changed line) is one `:undo` action and marks the line and those after
+    it unchecked, as in the TUI (`vr_buffer_edit`). Hover a line for "explain": a modal
   for that line, which leaves Output untouched (Copy; Esc, Close or a click
   outside closes it). `:explain` typed at the prompt prints to Output as usual.
 - **Explain modal:** for a checked `rup`, `pol`, `red` or `a` line, "Plain

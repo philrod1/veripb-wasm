@@ -256,6 +256,60 @@ pub extern "C" fn vr_commands() -> i32 {
     ))
 }
 
+/// One edit to the proof buffer, recorded as one undoable action, as the
+/// TUI's Vim mode records each commit. `json` is `{op, index, text?,
+/// after?}`, with `index` a buffer index:
+///   set: line `index` becomes `text` (no-op, and no undo entry, if equal)
+///   insert: `text` becomes a new line before `index` (`index` = buffer
+///     length appends)
+///   delete: line `index` is removed
+///   split: line `index` becomes `text` and `after` is inserted after it
+/// Returns `{ok: true}` or `{error}`; `null` without a session.
+///
+/// # Safety
+/// `ptr` must point to `len` readable bytes.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn vr_buffer_edit(ptr: *const u8, len: usize) -> i32 {
+    let bytes = unsafe { std::slice::from_raw_parts(ptr, len) };
+    let Ok(edit) = serde_json::from_slice::<Value>(bytes) else {
+        return set_result(json!({ "error": "malformed edit" }));
+    };
+    let text = edit["text"].as_str().unwrap_or("");
+    let after = edit["after"].as_str().unwrap_or("");
+    let Some(index) = edit["index"].as_u64().map(|i| i as usize) else {
+        return set_result(json!({ "error": "edit without an index" }));
+    };
+    STATE.with_borrow_mut(|state| {
+        let Some(session) = state.session.as_mut() else {
+            return set_result(Value::Null);
+        };
+        let in_buffer = index < session.buffer.len();
+        let result = match edit["op"].as_str() {
+            Some("set") if in_buffer && session.buffer[index] == text => Ok(()),
+            Some("set" | "delete" | "split") if !in_buffer => Err(anyhow::anyhow!("no proof line at buffer index {index}")),
+            Some("insert") if index > session.buffer.len() => Err(anyhow::anyhow!("no proof line at buffer index {index}")),
+            Some(op @ ("set" | "insert" | "delete" | "split")) => {
+                let (generation, snapshot) = (session.generation, session.snapshot());
+                let result = match op {
+                    "set" => session.set_line(index, text),
+                    "insert" => session.insert_line(index, text),
+                    "delete" => session.delete_line(index),
+                    _ => session.set_line(index, text).and_then(|()| session.insert_line(index + 1, after)),
+                };
+                if session.generation != generation {
+                    session.push_undo(snapshot);
+                }
+                result
+            }
+            _ => Err(anyhow::anyhow!("unknown edit")),
+        };
+        set_result(match result {
+            Ok(()) => json!({ "ok": true }),
+            Err(err) => json!({ "error": format!("{err:#}") }),
+        })
+    })
+}
+
 thread_local! {
     /// `vr_line_ids`'s last result, for the proof text it traced.
     static LINE_IDS: RefCell<Option<(String, Value)>> = const { RefCell::new(None) };

@@ -6,7 +6,7 @@
 //                 | {type: "watch", on}          post session state after every line
 //                 | {type: "state", id} | {type: "preserved", id}
 //                 | {type: "breakpoint", index} toggle; posts state if watching
-//                 | {type: "query", id, kind: "complete" | "themes" | "commands" | "glossary" | "extras" | "explain" | "lineIds", text?, line?}
+//                 | {type: "query", id, kind: "complete" | "themes" | "commands" | "glossary" | "extras" | "explain" | "lineIds" | "edit", text?, line?, edit?}
 // Worker -> page: {type: "out", lines, trace} | {type: "mode", mode, ms, veripbRuns}
 //                 | {type: "files", files} | {type: "file", id, data}
 //                 | {type: "dump", id, files: [[name, data], ...]} | {type: "fatal", text}
@@ -112,8 +112,11 @@ onmessage = ({ data: message }) => {
             : message.kind === "lineIds" ? repl.lineIds()
             : message.kind === "extras" ? repl.extras()
             : message.kind === "explain" ? repl.explain(message.line)
+            : message.kind === "edit" ? repl.bufferEdit(message.edit)
             : null;
           post({ type: "query", id: message.id, result });
+          // An edit changes the buffer: send the new state after the result.
+          if (message.kind === "edit" && watching) postState();
         });
         break;
       case "breakpoint":
