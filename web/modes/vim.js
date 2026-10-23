@@ -1,6 +1,8 @@
 // Vim-style editing of the Proof pane: the TUI's key set (veripb-repl's
 // tui/mod.rs, `VimState` and the `vim_*` methods), with each commit sent to
-// the session as one undoable edit (web-repl's vr_buffer_edit).
+// the session as one undoable edit (web-repl's vr_buffer_edit). Beyond the
+// TUI: in Insert mode, Backspace at a line's start and Delete at its end
+// join it with the neighbouring line (the reverse of Enter's split).
 //
 // createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFocus }) -> vim
 //   edit({op, index, text?, after?}) -> Promise<{ok} | {error}>
@@ -96,6 +98,21 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
     render();
     input.focus();
     input.setSelectionRange(0, 0);
+  }
+
+  // Insert mode: join line `upper` and the line after it, the caret at the seam.
+  function joinLines(upper) {
+    const i = index(upper);
+    const first = upper === vim.line ? input.value : text(upper);
+    const second = upper === vim.line ? text(upper + 1) : input.value;
+    const merged = first + second;
+    commit({ op: "join", index: i, text: merged }, () => { buffer.splice(i, 2, merged); });
+    vim.line = upper;
+    vim.col = first.length;
+    input.value = merged;
+    render();
+    input.focus();
+    input.setSelectionRange(vim.col, vim.col);
   }
 
   function openLine(below) {
@@ -200,6 +217,8 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
     let handled = true;
     if (event.key === "Escape") commitInsert();
     else if (event.key === "Enter") insertNewline();
+    else if (event.key === "Backspace" && collapsed && caret === 0 && vim.line > FIRST) joinLines(vim.line - 1);
+    else if (event.key === "Delete" && collapsed && caret === input.value.length && vim.line < maxLine()) joinLines(vim.line);
     else if (event.key === "ArrowUp") insertMoveTo(Math.max(FIRST, vim.line - 1), caret);
     else if (event.key === "ArrowDown") insertMoveTo(Math.min(maxLine(), vim.line + 1), caret);
     else if (event.key === "ArrowLeft" && collapsed && caret === 0 && vim.line > FIRST && !event.shiftKey) insertMoveTo(vim.line - 1, text(vim.line - 1).length);

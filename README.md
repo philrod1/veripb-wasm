@@ -265,9 +265,11 @@ Enhanced mode:
     a character, `dd` the line; `b` toggles a breakpoint; `:` goes to the
     prompt; Esc leaves. A click moves the cursor; double-click another line
     to move there.
-  - Insert: type to edit the line; Enter splits it; ↑/↓, and ←/→ at either
-    end, move to the neighbouring line; Esc returns to Normal.
-  - Each commit (`x`, `dd`, `o`/`O`, Enter, and leaving or moving off a
+  - Insert: type to edit the line; Enter splits it; Backspace at its start
+    joins it to the line above, Delete at its end pulls up the line below
+    (not in the TUI); ↑/↓, and ←/→ at either end, move to the neighbouring
+    line; Esc returns to Normal.
+  - Each commit (`x`, `dd`, `o`/`O`, Enter, a join, and leaving or moving off a
     changed line) is one `:undo` action and marks the line and those after
     it unchecked, as in the TUI (`vr_buffer_edit`). Hover a line for "explain": a modal
   for that line, which leaves Output untouched (Copy; Esc, Close or a click

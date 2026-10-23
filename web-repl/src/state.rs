@@ -264,6 +264,7 @@ pub extern "C" fn vr_commands() -> i32 {
 ///     length appends)
 ///   delete: line `index` is removed
 ///   split: line `index` becomes `text` and `after` is inserted after it
+///   join: line `index` becomes `text` and line `index + 1` is removed
 /// Returns `{ok: true}` or `{error}`; `null` without a session.
 ///
 /// # Safety
@@ -287,13 +288,15 @@ pub unsafe extern "C" fn vr_buffer_edit(ptr: *const u8, len: usize) -> i32 {
         let result = match edit["op"].as_str() {
             Some("set") if in_buffer && session.buffer[index] == text => Ok(()),
             Some("set" | "delete" | "split") if !in_buffer => Err(anyhow::anyhow!("no proof line at buffer index {index}")),
+            Some("join") if index + 1 >= session.buffer.len() => Err(anyhow::anyhow!("no proof line after buffer index {index}")),
             Some("insert") if index > session.buffer.len() => Err(anyhow::anyhow!("no proof line at buffer index {index}")),
-            Some(op @ ("set" | "insert" | "delete" | "split")) => {
+            Some(op @ ("set" | "insert" | "delete" | "split" | "join")) => {
                 let (generation, snapshot) = (session.generation, session.snapshot());
                 let result = match op {
                     "set" => session.set_line(index, text),
                     "insert" => session.insert_line(index, text),
                     "delete" => session.delete_line(index),
+                    "join" => session.set_line(index, text).and_then(|()| session.delete_line(index + 1)),
                     _ => session.set_line(index, text).and_then(|()| session.insert_line(index + 1, after)),
                 };
                 if session.generation != generation {

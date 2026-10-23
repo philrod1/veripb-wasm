@@ -210,12 +210,29 @@ await page.keyboard.type("rup >= 1 ;");
 await page.keyboard.press("Escape");
 check("vim: Enter in Insert splits the line", await until(async () => (await proofText(6)) === "rup >= 1 ;" && (await proofText(7)) === original5),
   `${await proofText(6)} / ${await proofText(7)}`);
+await page.keyboard.press("i");
+await page.keyboard.press("Home");
+await page.keyboard.press("Backspace");
+check("vim: Backspace at a line's start joins it to the line above", await until(async () => (await proofText(5)) === "rup 1 x1 1 ~x1 >= 1 ;rup >= 1 ;" && (await proofText(6)) === original5),
+  `${await proofText(5)} / ${await proofText(6)}`);
+await page.keyboard.press("Enter");
+check("vim: Enter splits it again at the seam", await until(async () => (await proofText(5)) === "rup 1 x1 1 ~x1 >= 1 ;" && (await proofText(6)) === "rup >= 1 ;"),
+  `${await proofText(5)} / ${await proofText(6)}`);
+await page.keyboard.press("ArrowUp");
+await page.keyboard.press("End");
+await page.keyboard.press("Delete");
+check("vim: Delete at a line's end pulls up the line below", await until(async () => (await proofText(5)) === "rup 1 x1 1 ~x1 >= 1 ;rup >= 1 ;" && (await proofText(6)) === original5),
+  `${await proofText(5)} / ${await proofText(6)}`);
+await page.keyboard.press("Enter");
+await page.keyboard.press("Escape");
+check("vim: Enter splits it back", await until(async () => (await proofText(6)) === "rup >= 1 ;" && (await proofText(7)) === original5),
+  `${await proofText(6)} / ${await proofText(7)}`);
 await page.keyboard.press("d");
 await page.keyboard.press("d");
 check("vim: dd deletes the line", await until(async () => (await proofText(6)) === original5 && (await proofText(7)) === null), await proofText(6));
 await page.keyboard.press("Escape");
 check("vim: Esc in Normal mode leaves the editor", await until(async () => !(await title("proof")).includes("--")));
-await command(":undo 7");
+await command(":undo 11");
 check("vim: each commit is one :undo action", await until(async () => (await proofText(5)) === original5 && (await proofText(6)) === null),
   `${await proofText(5)} / ${await proofText(6)}`);
 await command(":edit 4");
