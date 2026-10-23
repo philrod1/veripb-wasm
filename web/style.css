@@ -107,7 +107,10 @@ aside input[type=file] { display: none; }
   background: var(--panel); color: var(--muted); white-space: nowrap; overflow: hidden;
 }
 .pane-title-text { flex: none; color: var(--fg); font-weight: 600; }
-.pane-body { flex: 1; overflow: auto; padding: 0.25rem 0; }
+.pane-body { flex: 1; overflow: auto; padding: 0.25rem 0; position: relative; }
+/* Virtual lists (modes/vlist.js): a sizer for every row, a window of rows. */
+.vlist-sizer { position: relative; min-width: 100%; width: max-content; }
+.vlist-window { position: absolute; top: 0; left: 0; min-width: 100%; will-change: transform; }
 .pane-empty { padding: 0.75rem; color: var(--muted); white-space: normal; }
 .pane .row { display: flex; gap: 0.5rem; padding: 0 0.6rem; white-space: pre; line-height: 1.5; }
 .pane .row .num { color: var(--muted); min-width: 2.5ch; text-align: right; flex: none; }

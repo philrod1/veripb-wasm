@@ -24,7 +24,7 @@ patch series and applied into `work/`.
 | `repl-core/` | wrapper crate for the veripb-repl core; enables `getrandom`'s `wasm_js` backend |
 | `wasi-run/` | Node.js `node:wasi` runners for the WASI binary and WASI test binaries |
 | `bigint-probe/` | prints `malachite-bigint` and `i128` results, for diffing native against wasm |
-| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state`, `vr_preserved`, `vr_explain` (`:explain <n>`'s output, plus the plain-English explanation from `src/teach.rs`), `vr_extras` (`:check` and `:objective` output, bounds), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, `vr_glossary` (concepts plus `help::RULES`), `vr_line_ids` (the constraint IDs each checked proof line derived), `vr_buffer_edit` (one undoable proof-line edit), plus `vr_toggle_breakpoint` and `vr_result_ptr` |
+| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state` (a session summary), `vr_view` (a window of a pane's rows, filtered; `src/views.rs`), `vr_find` (one constraint by label or ID), `vr_preserved`, `vr_explain` (`:explain <n>`'s output, plus the plain-English explanation from `src/teach.rs`), `vr_extras` (`:check` and `:objective` output, bounds), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, `vr_glossary` (concepts plus `help::RULES`), `vr_line_ids` (the constraint IDs checked proof lines in a range derived), `vr_buffer_edit` (one undoable proof-line edit), plus `vr_toggle_breakpoint` and `vr_result_ptr` |
 | `web-tui/` | the veripb-repl TUI as a `wasm32-wasip1` command, built against `work/crossterm` |
 | `web/` | browser page: mode menu, plain and classic modes, veripb in Web Workers |
 | `scripts/build-web.sh` | builds `web/pkg/` (generated, not tracked) |
@@ -234,7 +234,9 @@ Classic mode:
 
 Enhanced mode:
 - **Panes:** Formula | Database | Proof on top; Output, Transcript,
-  Preserved and Extras tabs and the command line below.
+  Preserved and Extras tabs and the command line below. Each top pane draws
+  only the rows on screen plus a screen either side, fetched from the REPL
+  as you scroll, so proofs of a million lines and more stay responsive.
 - **Filters:** each top pane has a filter box. A number matches that id
   (Formula, Database) or proof line; other text matches a case-insensitive
   substring of the row, labels included. The pane title shows "m of n"
@@ -362,8 +364,15 @@ How it works:
   - `modes/output-view.js` is the output pane and command line, shared by
     both modes.
   - Enhanced mode asks the worker to watch the session. After every command
-    the worker then also posts `vr_state()`'s JSON, which `modes/enhanced.js`
-    renders.
+    the worker then also posts `vr_state()`'s summary (counts, mode,
+    breakpoints, the rejected line, a `generation` that changes with the
+    session). Each top pane is a virtual list (`modes/vlist.js`) that asks for
+    the rows it shows with `vr_view(pane, start, count, filter)`, in chunks of
+    200, kept until the session or filter changes; filtering runs in the REPL
+    (`src/views.rs`). Tooltips and jumps look a constraint up with
+    `vr_find`; Links asks `vr_line_ids` for the lines on screen; the Vim
+    editor reads lines from the Proof pane's rows, plus its own edits until
+    a fetch includes them.
 - **Classic mode:**
   - **Startup:** `modes/classic.js` starts `classic-worker.js`, which runs
     `pkg/tui.wasm` until the TUI exits.
@@ -393,7 +402,7 @@ web/test/compare.sh              # every web/test/scripts/*.txt: native veripb-r
 node web/test/transcript.mjs <files-dir> [<dump-dir>] < script.txt
 web/test/compare-tui.py          # veripb-repl's demos/tools/*.json: native TUI vs pkg/tui.wasm, screen by screen
 node web/test/state-check.mjs    # web-repl's JSON views vs the REPL's own :list, :show and :preserved output
-node --max-old-space-size=6000 web/test/large-check.mjs   # opt-in, ~7 GB RAM: a 1M-line proof, memory past 2 GiB
+node --max-old-space-size=6000 web/test/large-check.mjs   # opt-in, ~7 GB RAM: a 1.1M-line proof through the views
 node web/test/refs-check.mjs     # which words of a proof line are constraint refs (modes/refs.js)
 node web/test/teach-check.mjs    # plain-English explanations: sample lines, and a sweep of veripb's correct instances
 CHROME=<chrome> [PLAYWRIGHT_CORE=<dir>] node web/test/browser-smoke.mjs [url]   # all three modes in a browser

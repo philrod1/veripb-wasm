@@ -9,13 +9,20 @@
 //   toggleBreakpoint(index); note(text): a line in Output; render(): redraw
 //   the Proof pane; toPrompt(text): focus the command line with `text`;
 //   onFocus(): put keyboard focus on the Proof pane.
-// vim: { active, line, col, mode ("normal" | "insert"), input,
-//        sync(lines), startEdit(line), startInsert(n), doubleClick(line),
-//        click(line, col), key(event) -> handled, exit() }
+// vim: { active, line, col, mode ("normal" | "insert"), input, text(line),
+//        sync(base, generation), startEdit(line), startInsert(n),
+//        doubleClick(line), click(line, col), key(event) -> handled, settle(),
+//        exit() }
 //   Lines are display lines: buffer index i is line i + 3 (two preamble lines).
-//   sync(lines) takes the proof's lines ({n, index, text}) after each state
-//   update; while edits are in flight the local copy stays authoritative.
-//   input is the <input> to place on the cursor line in Insert mode.
+//   sync({count, get(index) -> text | undefined}, generation) gives the
+//   session's lines as last fetched (`get` may only know the lines near the
+//   cursor) and the session generation they are from. Edits not yet in them
+//   are kept in a log and applied on top, so further keys see each edit at
+//   once; an edit leaves the log when a fetch at or after its generation
+//   arrives.
+//   input is the <input> to place on the cursor line in Insert mode; call
+//   settle() after each draw of the Proof pane, to focus it when it was asked
+//   for before its row was drawn.
 
 const FIRST = 3;
 const EDITING = "Editing — hjkl/arrows to move, i/a/o/O to insert, x to delete a char, dd a line, Esc to leave.";
@@ -23,26 +30,56 @@ const EDITING = "Editing — hjkl/arrows to move, i/a/o/O to insert, x to delete
 const clampCol = (col, len) => Math.max(0, Math.min(col, len - 1));
 
 export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFocus }) {
-  let buffer = [];
-  let inFlight = 0;
+  let base = { count: 0, get: () => undefined };
+  // Edits not yet in `base`, oldest first: {op, index, text, after, generation}.
+  let log = [];
   let queue = Promise.resolve();
+  const DELTA = { insert: 1, split: 1, delete: -1, join: -1, set: 0 };
+  // Buffer index `i`'s text: through the log, newest edit first, to `base`.
+  function get(i) {
+    for (let k = log.length - 1; k >= 0; k--) {
+      const e = log[k];
+      if (e.op === "set" && i === e.index) return e.text;
+      if (e.op === "insert") { if (i === e.index) return e.text; if (i > e.index) i -= 1; }
+      if (e.op === "delete" && i >= e.index) i += 1;
+      if (e.op === "split") { if (i === e.index) return e.text; if (i === e.index + 1) return e.after; if (i > e.index + 1) i -= 1; }
+      if (e.op === "join") { if (i === e.index) return e.text; if (i > e.index) i += 1; }
+    }
+    return base.get(i) ?? "";
+  }
+  const length = () => log.reduce((n, e) => n + DELTA[e.op], base.count);
   const input = Object.assign(document.createElement("input"), { className: "vim-input", spellcheck: false });
   input.setAttribute("aria-label", "Proof line (Insert mode)");
   const vim = { active: false, line: FIRST, col: 0, mode: "normal", pendingD: false, input };
 
-  const maxLine = () => FIRST + buffer.length - 1;
-  const text = (line) => buffer[line - FIRST] ?? "";
+  const maxLine = () => FIRST + length() - 1;
+  const text = (line) => get(line - FIRST);
   const index = (line) => line - FIRST;
   const editable = (line) => line >= FIRST && line <= maxLine();
 
-  // Sends one edit, applying it to the local copy at once so further keys
-  // see it before the session's new state arrives.
-  function commit(op, apply) {
-    apply();
-    inFlight += 1;
+  // Sends one edit, logging it so further keys see it before the session's
+  // new lines arrive.
+  function commit(op) {
+    const entry = { ...op, generation: undefined };
+    log.push(entry);
     queue = queue.then(() => edit(op)).then((result) => {
+      entry.generation = result?.generation ?? -1;
       if (result?.error) note(`Error: ${result.error}`);
-    }).finally(() => { inFlight -= 1; });
+    });
+  }
+
+  // Focuses the Insert-mode input with the caret at `caret`, now if its row
+  // is drawn, else when settle() finds it drawn.
+  let pendingCaret = null;
+  function focusInput(caret) {
+    pendingCaret = caret;
+    settle();
+  }
+  function settle() {
+    if (pendingCaret == null || !vim.active || vim.mode !== "insert" || !input.isConnected) return;
+    input.focus({ preventScroll: true });
+    input.setSelectionRange(pendingCaret, pendingCaret);
+    pendingCaret = null;
   }
 
   function start(line) {
@@ -57,15 +94,14 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
     vim.mode = "insert";
     input.value = text(vim.line);
     render();
-    input.focus();
-    input.setSelectionRange(vim.col, vim.col);
+    focusInput(vim.col);
   }
 
   function commitInsert() {
     const caret = input.selectionStart ?? input.value.length;
     const value = input.value;
     const i = index(vim.line);
-    if (buffer[i] !== value) commit({ op: "set", index: i, text: value }, () => { buffer[i] = value; });
+    if (get(i) !== value) commit({ op: "set", index: i, text: value });
     vim.mode = "normal";
     vim.col = clampCol(caret, value.length);
     onFocus();
@@ -77,13 +113,12 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
     if (line === vim.line || !editable(line)) return;
     const i = index(vim.line);
     const value = input.value;
-    if (buffer[i] !== value) commit({ op: "set", index: i, text: value }, () => { buffer[i] = value; });
+    if (get(i) !== value) commit({ op: "set", index: i, text: value });
     vim.line = line;
     vim.col = Math.min(col, text(line).length);
     input.value = text(line);
     render();
-    input.focus();
-    input.setSelectionRange(vim.col, vim.col);
+    focusInput(vim.col);
   }
 
   function insertNewline() {
@@ -91,13 +126,12 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
     const before = input.value.slice(0, caret);
     const after = input.value.slice(caret);
     const i = index(vim.line);
-    commit({ op: "split", index: i, text: before, after }, () => { buffer.splice(i, 1, before, after); });
+    commit({ op: "split", index: i, text: before, after });
     vim.line += 1;
     vim.col = 0;
     input.value = after;
     render();
-    input.focus();
-    input.setSelectionRange(0, 0);
+    focusInput(0);
   }
 
   // Insert mode: join line `upper` and the line after it, the caret at the seam.
@@ -106,19 +140,18 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
     const first = upper === vim.line ? input.value : text(upper);
     const second = upper === vim.line ? text(upper + 1) : input.value;
     const merged = first + second;
-    commit({ op: "join", index: i, text: merged }, () => { buffer.splice(i, 2, merged); });
+    commit({ op: "join", index: i, text: merged });
     vim.line = upper;
     vim.col = first.length;
     input.value = merged;
     render();
-    input.focus();
-    input.setSelectionRange(vim.col, vim.col);
+    focusInput(vim.col);
   }
 
   function openLine(below) {
     if (!editable(vim.line)) return note(`Error: line ${vim.line} is the synthesized preamble or past the end of the proof — nowhere to open a new line there.`);
     const at = index(vim.line) + (below ? 1 : 0);
-    commit({ op: "insert", index: at, text: "" }, () => { buffer.splice(at, 0, ""); });
+    commit({ op: "insert", index: at, text: "" });
     vim.line = at + FIRST;
     vim.col = 0;
     enterInsert(false);
@@ -129,15 +162,15 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
     const current = text(vim.line);
     if (vim.col >= current.length) return;
     const next = current.slice(0, vim.col) + current.slice(vim.col + 1);
-    commit({ op: "set", index: i, text: next }, () => { buffer[i] = next; });
+    commit({ op: "set", index: i, text: next });
     vim.col = clampCol(vim.col, next.length);
     render();
   }
 
   function deleteLine() {
     const i = index(vim.line);
-    commit({ op: "delete", index: i }, () => { buffer.splice(i, 1); });
-    if (!buffer.length) {
+    commit({ op: "delete", index: i });
+    if (!length()) {
       vim.active = false;
       note("Left the editor — no proof lines left to edit.");
       toPrompt("");
@@ -231,11 +264,12 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
   });
 
   return Object.assign(vim, {
-    sync(lines) {
-      if (inFlight) return;
-      buffer = (lines ?? []).map((l) => l.text);
+    text,
+    sync(next, generation) {
+      base = next;
+      log = log.filter((e) => e.generation === undefined || e.generation > generation);
       if (!vim.active) return;
-      if (!buffer.length) {
+      if (!length()) {
         vim.active = false;
         note("Left the editor — no proof lines left to edit.");
         return;
@@ -247,7 +281,7 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
     },
     /** `:edit [<n>[-<m>]]`: Normal mode on `n` (default: the last line). */
     startEdit(arg) {
-      if (!buffer.length) return note("Error: no proof lines yet to edit.");
+      if (!length()) return note("Error: no proof lines yet to edit.");
       const m = arg.trim().match(/^(\d+)(?:-\d+)?$/);
       if (arg.trim() && !m) return note("Error: usage :edit [<n>] | :edit <n>-<m>");
       const line = m ? Number(m[1]) : maxLine();
@@ -259,12 +293,12 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
     startInsert(arg) {
       const n = Number(arg.trim());
       if (!/^\d+$/.test(arg.trim())) return note("Error: usage :insert <n>");
-      const end = FIRST + buffer.length;
+      const end = FIRST + length();
       if (n !== end && !editable(n)) {
         return note(`Error: line ${n} is the synthesized preamble or past the end of the proof — nowhere to insert there. Use :insert ${end} to add lines at the end, or just type them normally.`);
       }
       const at = n - FIRST;
-      commit({ op: "insert", index: at, text: "" }, () => { buffer.splice(at, 0, ""); });
+      commit({ op: "insert", index: at, text: "" });
       start(n);
       note("Inserting — type the new line, then Esc once you're satisfied.");
       enterInsert(false);
@@ -292,6 +326,7 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
       render();
     },
     key: normalKey,
+    settle,
     exit() {
       if (!vim.active) return;
       if (vim.mode === "insert") commitInsert();

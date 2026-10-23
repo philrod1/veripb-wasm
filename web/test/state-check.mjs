@@ -1,7 +1,9 @@
 // Checks web-repl's JSON session views against the REPL's own text output.
 // After every line of each script that leaves the REPL at the pbp> prompt:
-//   - state().proof line statuses and breakpoints match `:list`
-//   - state().database ids, core/derived and texts match `:show`
+//   - view("proof") line statuses and breakpoints match `:list`
+//   - view("database") ids, core/derived and texts match `:show`
+//   - state()'s summary (line and constraint counts, breakpoints) matches
+//     the rows
 // For each preserved-set instance: preserved() matches `:preserved`.
 //
 // Usage: node web/test/state-check.mjs   (after scripts/build-web.sh)
@@ -64,6 +66,21 @@ function parseShow(lines) {
   return rows;
 }
 
+// The session as the page sees it: vr_state's summary, with every row of
+// the Proof and Database panes fetched through vr_view.
+function fullState(repl) {
+  const summary = repl.state();
+  if (!summary?.proof) return summary;
+  const proof = repl.view({ pane: "proof", start: 0, count: 1e9 });
+  const database = repl.view({ pane: "database", start: 0, count: 1e9 });
+  return {
+    ...summary,
+    summary,
+    proof: { ...summary.proof, lines: proof.rows.filter((row) => !row.preamble) },
+    database: database.error ? { error: database.error } : { ...summary.database, entries: database.rows },
+  };
+}
+
 function compareState(where, s, state) {
   const listed = parseList(s.run(":list").lines);
   const lines = state.proof.lines;
@@ -75,10 +92,17 @@ function compareState(where, s, state) {
     if (row.breakpoint !== line.breakpoint) fail(where, `line ${line.n} breakpoint ${line.breakpoint}, :list ${row.breakpoint}`);
   }
   if (state.proof.checked + state.proof.unchecked !== lines.length) fail(where, "checked + unchecked != lines");
+  if (state.summary.proof.lines !== lines.length) fail(where, `summary says ${state.summary.proof.lines} lines, rows ${lines.length}`);
+  const breakpoints = lines.filter((line) => line.breakpoint).map((line) => line.n);
+  if (JSON.stringify(state.summary.proof.breakpoints) !== JSON.stringify(breakpoints)) {
+    fail(where, `summary breakpoints ${state.summary.proof.breakpoints}, rows ${breakpoints}`);
+  }
   const shown = parseShow(s.run(":show").lines);
   if (state.database.error) { fail(where, `database error ${state.database.error}`); return; }
   const entries = state.database.entries;
   if (entries.length !== shown.size) fail(where, `database has ${entries.length} entries, :show ${shown.size}`);
+  if (state.summary.database.count !== entries.length) fail(where, `summary says ${state.summary.database.count} constraints, rows ${entries.length}`);
+  if (state.summary.database.core !== entries.filter((e) => e.core).length) fail(where, "summary core count differs from the rows");
   for (const entry of entries) {
     const row = shown.get(entry.id);
     if (!row) { fail(where, `id ${entry.id} missing from :show`); continue; }
@@ -100,12 +124,12 @@ for (const script of readdirSync(join(web, "test/scripts")).sort()) {
   let toggled = false;
   for (const [i, text] of input.entries()) {
     const { mode } = s.run(text);
-    let state = s.repl.state();
+    let state = fullState(s.repl);
     if (mode !== 0 || !state.proof) continue;
     if (!toggled && state.proof.lines.length) {
       s.repl.toggleBreakpoint(0);
       toggled = true;
-      state = s.repl.state();
+      state = fullState(s.repl);
     }
     compareState(`${script}:${i + 1} (${text})`, s, state);
     checks += 1;
@@ -131,6 +155,32 @@ for (const stem of preservedStems) {
   if (set.lastChange != null && !text.includes(String(set.lastChange))) fail(where, `lastChange ${set.lastChange} not in :preserved output`);
   console.log(`${where}: declared ${JSON.stringify(set.declared)}, current ${JSON.stringify(set.current)}, lastChange ${set.lastChange}`);
   checks += 1;
+}
+
+// Filters (vr_view's query, core and derived), on the two-of-three demo.
+{
+  const s = session(demoFiles);
+  s.run(":instance two-of-three");
+  s.run(":verify");
+  const view = (request) => s.repl.view({ start: 0, count: 1e9, ...request });
+  const ns = (rows) => rows.map((row) => row.n ?? row.id ?? row.ids).join(",");
+  const expect = (where, got, want) => {
+    checks += 1;
+    if (got !== want) fail(`filter ${where}`, `got ${got}, want ${want}`);
+  };
+  expect("proof, all", ns(view({ pane: "proof" }).rows), "1,2,3,4,5,6");
+  expect("proof, a line number", ns(view({ pane: "proof", query: "4" }).rows), "4");
+  expect("proof, a label", ns(view({ pane: "proof", query: "@SUM_ALL" }).rows), "4,5");
+  expect("proof, a window", ns(view({ pane: "proof", start: 3, count: 2 }).rows), "4,5");
+  expect("proof, the total", String(view({ pane: "proof", query: "pol", count: 1 }).total), "4");
+  expect("database, an id", ns(view({ pane: "database", query: "6" }).rows), "6");
+  expect("database, a label", ns(view({ pane: "database", query: "@not_1" }).rows), "2,3");
+  expect("database, core only", ns(view({ pane: "database", derived: false }).rows), "1,2,3,4");
+  expect("database, derived only", ns(view({ pane: "database", core: false }).rows), "5,6,7,8");
+  expect("formula, an id", ns(view({ pane: "formula", query: "2" }).rows), "2");
+  const found = s.repl.find({ label: "@sum_all" });
+  expect("find, a label", JSON.stringify(found && [found.id, found.position]), "[6,5]");
+  expect("find, a missing id", String(s.repl.find({ id: 99 })), "null");
 }
 
 console.log(`${checks} checks, ${failures} mismatches`);

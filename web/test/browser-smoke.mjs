@@ -247,6 +247,7 @@ await page.selectOption(".links-toggle select", "all");
 check("enhanced: links draw a curve per line", await until(async () => (await page.$$(".links-layer path")).length === 8), String((await page.$$(".links-layer path")).length));
 check("enhanced: links widen the gutters", (await page.$eval(".enh-top", (e) => e.style.gridTemplateColumns)).includes("56px"));
 await page.selectOption(".links-toggle select", "hover");
+await page.mouse.move(1, 1);
 const shownLinks = () => page.$$eval(".links-layer path", (ps) => ps.filter((p) => getComputedStyle(p).display !== "none").length);
 check("enhanced: hovered-row links hide the rest", await until(async () => (await shownLinks()) === 0), String(await shownLinks()));
 await page.hover('.pane-proof .row[data-n="3"] .num');

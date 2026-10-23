@@ -109,7 +109,8 @@ for (const name of readdirSync(instances).filter((f) => f.endsWith(".pbp")).sort
   const base = name.slice(0, -4);
   if (!existsSync(join(instances, `${base}.opb`))) continue;
   const repl = session(instances, base);
-  for (const line of repl.state()?.proof?.lines ?? []) {
+  const proofRows = repl.state()?.proof ? repl.view({ pane: "proof", start: 0, count: 1e9 }).rows : [];
+  for (const line of proofRows.filter((row) => !row.preamble)) {
     const rule = line.text.split(/\s+/).find((t) => !t.startsWith("@"));
     if (line.status !== "checked" || !RULES.has(rule) || /==>|<==/.test(line.text)) continue;
     lines += 1;

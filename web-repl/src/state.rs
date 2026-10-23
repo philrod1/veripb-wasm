@@ -9,20 +9,20 @@ use std::cell::RefCell;
 
 use crossterm::style::Color;
 use serde_json::{Value, json};
-use veripb_repl::checker::parse::{constraint_ids_by_line, formula_line_constraints, rule_keyword};
+use veripb_repl::checker::parse::constraint_ids_by_line;
 use veripb_repl::checker::{self, CheckOutcome};
 use veripb_repl::commands::{debug, edit, formula, help};
 use veripb_repl::session::Session;
 use veripb_repl::tui::complete;
 use veripb_repl::tui::theme::ThemeName;
 
-use crate::{MODE_DEBUG, STATE, State};
+use crate::{MODE_DEBUG, STATE, State, views};
 
 thread_local! {
     static RESULT: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
 }
 
-fn set_result(value: Value) -> i32 {
+pub(crate) fn set_result(value: Value) -> i32 {
     let bytes = value.to_string().into_bytes();
     let len = bytes.len() as i32;
     RESULT.with_borrow_mut(|result| *result = bytes);
@@ -35,9 +35,14 @@ pub extern "C" fn vr_result_ptr() -> *const u8 {
     RESULT.with_borrow(|result| result.as_ptr())
 }
 
-/// The whole session view (see web/modes/enhanced.js for its use):
-/// `{mode, formula, proof, database, variables}`; the last four are `null`
-/// without a session. Runs veripb only when the database cache is stale.
+/// The session summary (see web/modes/enhanced.js for its use), with the rows
+/// themselves from `views::vr_view`: `{mode, generation, formula: {name, path,
+/// count, lines, objective, preserved}, proof: {preamble, lines, checked,
+/// unchecked, rejected: {n, message} | null, debugLine, lastStepIds,
+/// breakpoints: [n]}, database: {count, core, labels} | {error}, variables}`; all but
+/// `mode` are `null` without a session. `generation` changes whenever the
+/// formula, proof or checked prefix does. Runs veripb only when the database
+/// cache is stale.
 #[unsafe(no_mangle)]
 pub extern "C" fn vr_state() -> i32 {
     STATE.with_borrow(|state| set_result(state_json(state)))
@@ -79,10 +84,11 @@ pub extern "C" fn vr_toggle_breakpoint(index: usize) -> i32 {
 fn state_json(state: &State) -> Value {
     let mode = state.mode();
     let Some(session) = &state.session else {
-        return json!({ "mode": mode, "formula": null, "proof": null, "database": null, "variables": null });
+        return json!({ "mode": mode, "generation": null, "formula": null, "proof": null, "database": null, "variables": null });
     };
     json!({
         "mode": mode,
+        "generation": session.generation,
         "formula": formula_json(session),
         "proof": proof_json(session, mode == MODE_DEBUG),
         "database": database_json(session),
@@ -91,17 +97,6 @@ fn state_json(state: &State) -> Value {
 }
 
 fn formula_json(session: &Session) -> Value {
-    let first_ids = session.formula_first_ids();
-    let lines: Vec<Value> = session
-        .formula
-        .iter()
-        .zip(first_ids)
-        .map(|(text, first)| {
-            let count = formula_line_constraints(text).max(1);
-            let ids = if count == 1 { first.to_string() } else { format!("{first}-{}", first + count - 1) };
-            json!({ "ids": ids, "text": text })
-        })
-        .collect();
     let name = std::path::Path::new(&session.formula_path)
         .file_name()
         .map(|name| name.to_string_lossy().into_owned())
@@ -110,7 +105,7 @@ fn formula_json(session: &Session) -> Value {
         "name": name,
         "path": session.formula_path,
         "count": session.formula_constraint_count(),
-        "lines": lines,
+        "lines": session.formula.len(),
         "objective": session.objective,
         "preserved": session.preserved,
     })
@@ -118,63 +113,33 @@ fn formula_json(session: &Session) -> Value {
 
 fn proof_json(session: &Session, debugging: bool) -> Value {
     let checked = session.checked_len;
-    let lines: Vec<Value> = session
-        .buffer
-        .iter()
-        .enumerate()
-        .map(|(i, text)| {
-            let status = if i < checked {
-                "checked"
-            } else if i == checked && session.known_bad.is_some() {
-                "rejected"
-            } else {
-                "unchecked"
-            };
-            json!({
-                "n": session.display_line(i),
-                "index": i,
-                "text": text,
-                "status": status,
-                "breakpoint": session.breakpoints.contains(&i),
-                "assertion": rule_keyword(text) == Some("a"),
-            })
-        })
-        .collect();
     let rejected = session.known_bad.as_ref().map(|message| {
         json!({ "n": session.display_line(checked), "message": message })
     });
     let debug_line = (debugging && !session.buffer.is_empty())
         .then(|| session.display_line(checked.min(session.buffer.len() - 1)));
+    let mut breakpoints: Vec<usize> = session.breakpoints.iter().map(|&i| session.display_line(i)).collect();
+    breakpoints.sort_unstable();
     json!({
         "preamble": session.preamble_lines(),
-        "lines": lines,
+        "lines": session.buffer.len(),
         "checked": checked,
         "unchecked": session.buffer.len() - checked,
         "rejected": rejected,
         "debugLine": debug_line,
         "lastStepIds": session.last_step_constraint_ids,
+        "breakpoints": breakpoints,
     })
 }
 
 fn database_json(session: &Session) -> Value {
-    let labels = session.labels_by_id();
-    match session.database() {
-        Ok(database) => {
-            let entries: Vec<Value> = database
-                .entries
-                .iter()
-                .map(|entry| {
-                    json!({
-                        "id": entry.id,
-                        "core": entry.is_core,
-                        "text": entry.text,
-                        "labels": labels.get(&(entry.id as isize)).cloned().unwrap_or_default(),
-                    })
-                })
-                .collect();
-            json!({ "entries": entries })
+    match views::database_rows(session) {
+        Ok(rows) => {
+            let core = rows.iter().filter(|row| row["core"] == Value::Bool(true)).count();
+            let labels: usize = session.labels_by_id().values().map(Vec::len).sum();
+            json!({ "count": rows.len(), "core": core, "labels": labels })
         }
-        Err(e) => json!({ "error": format!("{e:#}") }),
+        Err(error) => json!({ "error": error }),
     }
 }
 
@@ -265,7 +230,8 @@ pub extern "C" fn vr_commands() -> i32 {
 ///   delete: line `index` is removed
 ///   split: line `index` becomes `text` and `after` is inserted after it
 ///   join: line `index` becomes `text` and line `index + 1` is removed
-/// Returns `{ok: true}` or `{error}`; `null` without a session.
+/// Returns `{ok: true, generation}` or `{error, generation}` (the session
+/// generation after the edit); `null` without a session.
 ///
 /// # Safety
 /// `ptr` must point to `len` readable bytes.
@@ -307,50 +273,55 @@ pub unsafe extern "C" fn vr_buffer_edit(ptr: *const u8, len: usize) -> i32 {
             _ => Err(anyhow::anyhow!("unknown edit")),
         };
         set_result(match result {
-            Ok(()) => json!({ "ok": true }),
-            Err(err) => json!({ "error": format!("{err:#}") }),
+            Ok(()) => json!({ "ok": true, "generation": session.generation }),
+            Err(err) => json!({ "error": format!("{err:#}"), "generation": session.generation }),
         })
     })
 }
 
 thread_local! {
-    /// `vr_line_ids`'s last result, for the proof text it traced.
-    static LINE_IDS: RefCell<Option<(String, Value)>> = const { RefCell::new(None) };
+    /// What each checked proof line derived, for the session generation it
+    /// was traced at (`vr_line_ids`).
+    static LINE_IDS: RefCell<Option<(u64, Result<std::collections::BTreeMap<usize, Vec<usize>>, String>)>> =
+        const { RefCell::new(None) };
 }
 
-/// The constraint IDs each checked proof line derived, from a traced run of
-/// the checked lines: `{"<display line>": [id, ...]}`, `{error}`, or `null`
-/// without a session. Cached until the checked proof text changes.
+/// The constraint IDs that checked proof lines `first..=last` (display lines)
+/// derived, from a traced run of the checked lines: `{"<line>": [id, ...]}`,
+/// `{error}`, or `null` without a session. The trace is cached until the
+/// session changes.
 #[unsafe(no_mangle)]
-pub extern "C" fn vr_line_ids() -> i32 {
+pub extern "C" fn vr_line_ids(first: usize, last: usize) -> i32 {
     STATE.with_borrow(|state| {
         let Some(session) = &state.session else {
             return set_result(Value::Null);
         };
-        let checked = session.checked_len;
-        let text = session.preamble_and_lines(&session.buffer[..checked]);
-        if let Some(value) = LINE_IDS.with_borrow(|c| c.as_ref().filter(|(t, _)| *t == text).map(|(_, v)| v.clone())) {
-            return set_result(value);
-        }
-        let first = session.preamble_lines().len() + 1;
-        let value = if checked == 0 {
-            json!({})
-        } else {
-            let traced = session.formula_temp_file().and_then(|formula| {
-                checker::check(formula.path(), &text, Some((first, first + checked - 1)))
-            });
-            match traced {
-                Ok(CheckOutcome::Accepted { trace } | CheckOutcome::Rejected { trace, .. }) => Value::Object(
-                    constraint_ids_by_line(&trace)
-                        .into_iter()
-                        .map(|(line, ids)| (line.to_string(), json!(ids)))
-                        .collect(),
-                ),
-                Err(err) => json!({ "error": format!("{err:#}") }),
+        LINE_IDS.with_borrow_mut(|cache| {
+            if cache.as_ref().is_none_or(|(generation, _)| *generation != session.generation) {
+                let checked = session.checked_len;
+                let traced = if checked == 0 {
+                    Ok(Default::default())
+                } else {
+                    let text = session.preamble_and_lines(&session.buffer[..checked]);
+                    let from = session.preamble_lines().len() + 1;
+                    session
+                        .formula_temp_file()
+                        .and_then(|formula| checker::check(formula.path(), &text, Some((from, from + checked - 1))))
+                        .map(|outcome| match outcome {
+                            CheckOutcome::Accepted { trace } | CheckOutcome::Rejected { trace, .. } => constraint_ids_by_line(&trace),
+                        })
+                        .map_err(|err| format!("{err:#}"))
+                };
+                *cache = Some((session.generation, traced));
             }
-        };
-        LINE_IDS.with_borrow_mut(|c| *c = Some((text, value.clone())));
-        set_result(value)
+            let (_, traced) = cache.as_ref().expect("just filled");
+            set_result(match traced {
+                Ok(by_line) => Value::Object(
+                    by_line.range(first..=last.max(first)).map(|(line, ids)| (line.to_string(), json!(ids))).collect(),
+                ),
+                Err(error) => json!({ "error": error }),
+            })
+        })
     })
 }
 

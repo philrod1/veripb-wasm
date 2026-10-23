@@ -2,8 +2,10 @@
 //
 // Layout: Formula | Database | Proof on top (each with a filter box);
 // Output / Transcript / Preserved / Extras tabs and the command line below. Splitters resize the panes (remembered).
-// Pane contents come from the worker's session state (web-repl
-// src/state.rs), posted after every command.
+// After every command the worker posts a session summary (web-repl
+// src/state.rs: counts, mode, breakpoints, ...); each pane is a virtual list
+// (modes/vlist.js) that fetches only the rows on screen, filtered in the REPL
+// (src/views.rs), so a proof of any size costs the page only what it shows.
 //
 // Implements the mode interface described in modes/plain.js.
 
@@ -14,6 +16,7 @@ import { splitter } from "./splitter.js";
 import { constraintRefs } from "./refs.js";
 import { createLinks } from "./links.js";
 import { createVim } from "./vim.js";
+import { createVirtualList } from "./vlist.js";
 
 const LAYOUT_KEY = "veripb-repl-enhanced-layout";
 const EXPLAIN_VIEW_KEY = "veripb-repl-enhanced-explain-view";
@@ -303,8 +306,17 @@ export function mount(root, host) {
     el("option", { value: "all", textContent: "all" }));
   const linksToggle = el("label", { className: "links-toggle", title: "Curves from each formula and proof line to the Database rows it created" }, "Links", linksBox);
   tabBar.insertBefore(linksToggle, zoomButtons.output.wide.parentNode);
+  // Links need the IDs of the proof lines on screen only.
+  let lineIdsFor = null;
   const refreshLineIds = () => {
-    if (links && state?.proof) client.lineIds().then((map) => links?.setLineIds(map));
+    if (!links || !state?.proof) return;
+    const ns = [...proof.body.querySelectorAll(".row[data-n]")].map((row) => Number(row.dataset.n));
+    if (!ns.length) return links.setLineIds({});
+    const range = [Math.min(...ns), Math.max(...ns)];
+    const key = JSON.stringify([state.generation, range]);
+    if (key === lineIdsFor) return;
+    lineIdsFor = key;
+    client.lineIds(...range).then((map) => { if (lineIdsFor === key) links?.setLineIds(map); });
   };
   function setLinks(mode) {
     if (!["off", "hover", "all"].includes(mode)) mode = "off";
@@ -406,7 +418,7 @@ export function mount(root, host) {
 
   // Preserved and Extras tabs run veripb, so each is recomputed only while
   // open and when the formula or proof has changed since its last view.
-  const sessionKey = () => JSON.stringify([state.formula, state.proof?.lines.map((l) => [l.text, l.status]), state.proof?.checked]);
+  const sessionKey = () => JSON.stringify([state.generation, state.proof?.checked]);
   const noFormula = () => el("p", { className: "muted", textContent: "No formula loaded." });
 
   let preservedFor = null;
@@ -454,7 +466,7 @@ export function mount(root, host) {
     if (conclusion.error) return section("Status", el("p", { className: "error", textContent: conclusion.error }));
     const verified = conclusion.status?.startsWith("s VERIFIED");
     const p = state.proof;
-    const progress = `${p.checked} of ${p.lines.length} line${p.lines.length === 1 ? "" : "s"} checked`
+    const progress = `${p.checked} of ${p.lines} line${p.lines === 1 ? "" : "s"} checked`
       + (p.unchecked ? `, ${p.unchecked} unchecked` : "");
     return section("Status",
       el("p", { className: `verdict ${verified ? "ok" : "muted"}`, textContent: conclusion.status ?? "" }),
@@ -492,16 +504,14 @@ export function mount(root, host) {
   function renderSummary() {
     const target = extrasPanel.querySelector(".extra-summary");
     if (!target || !state?.formula) return;
-    const entries = state.database?.entries ?? [];
-    const core = entries.filter((e) => e.core).length;
-    const labels = new Set(entries.flatMap((e) => e.labels)).size;
-    const breakpoints = state.proof.lines.filter((l) => l.breakpoint).length;
+    const db = state.database ?? {};
+    const breakpoints = state.proof.breakpoints;
     const modes = ["pbp (normal)", "edit", "opb (formula edit)", "debug"];
     target.replaceChildren(el("h3", { textContent: "Summary" }), facts(
       ["Formula", `${state.formula.count} constraint${state.formula.count === 1 ? "" : "s"}, ${state.variables.length} variable${state.variables.length === 1 ? "" : "s"}`],
-      ["Database", state.database?.error ? state.database.error : `${entries.length} (${core} core, ${entries.length - core} derived)`],
-      ["Labels", String(labels)],
-      ["Breakpoints", breakpoints ? state.proof.lines.filter((l) => l.breakpoint).map((l) => l.n).join(", ") : "none"],
+      ["Database", db.error ? db.error : `${db.count} (${db.core} core, ${db.count - db.core} derived)`],
+      ["Labels", String(db.labels ?? 0)],
+      ["Breakpoints", breakpoints.length ? breakpoints.join(", ") : "none"],
       ["Prompt", modes[state.mode] ?? String(state.mode)],
     ));
   }
@@ -644,19 +654,20 @@ export function mount(root, host) {
 
   // ---- Constraint refs: hover shows the constraint, click jumps to it ----
   const refTip = el("div", { className: "ref-tip", hidden: true });
+  // Constraints by label or ID (vr_find), cached per session generation.
+  const found = new Map();
   const lookup = (kind, value) => {
-    const entries = state?.database?.entries ?? [];
-    if (kind === "label") return entries.find((e) => e.labels.includes(value)) ?? null;
-    if (kind === "id") return entries.find((e) => e.id === Number(value)) ?? null;
-    return null;
+    if (kind !== "label" && kind !== "id") return Promise.resolve(null);
+    const key = `${state?.generation}|${kind}|${value}`;
+    if (!found.has(key)) found.set(key, client.find(kind === "label" ? { label: value } : { id: Number(value) }));
+    return found.get(key);
   };
-  function describeRef(target) {
+  function describeRef(target, entry) {
     const { refKind: kind, ref: value } = target.dataset;
     if (kind === "relative") {
       return [el("div", { className: "ref-tip-head", textContent: `${value}: relative ID` }),
         el("div", { textContent: value === "-1" ? "The newest constraint at this point in the proof." : `${-value} back from the newest constraint at this point in the proof.` })];
     }
-    const entry = lookup(kind, value);
     if (!entry) {
       return [el("div", { className: "ref-tip-head", textContent: kind === "label" ? value : `Constraint ${value}` }),
         el("div", { className: "muted", textContent: kind === "label" ? "Not a label in the current database." : "Not in the current database (deleted, or not derived yet)." })];
@@ -668,10 +679,14 @@ export function mount(root, host) {
       el("div", { className: "muted ref-tip-hint", textContent: `${jumpNeedsKey(target) ? `${JUMP_KEY}+click` : "Click"} to show it in the Database pane.` }),
     ];
   }
-  function showRefTip(target) {
+  let tipFor = null;
+  async function showRefTip(target) {
+    tipFor = target;
+    const entry = await lookup(target.dataset.refKind, target.dataset.ref);
+    if (tipFor !== target) return;
     const host = target.closest("dialog") ?? root;
     if (refTip.parentNode !== host) host.append(refTip);
-    refTip.replaceChildren(...describeRef(target));
+    refTip.replaceChildren(...describeRef(target, entry));
     refTip.hidden = false;
     const box = target.getBoundingClientRect();
     const tip = refTip.getBoundingClientRect();
@@ -679,7 +694,7 @@ export function mount(root, host) {
     const top = box.bottom + 6 + tip.height < innerHeight ? box.bottom + 6 : box.top - tip.height - 6;
     Object.assign(refTip.style, { left: `${left}px`, top: `${Math.max(8, top)}px` });
   }
-  const hideRefTip = () => { refTip.hidden = true; };
+  const hideRefTip = () => { tipFor = null; refTip.hidden = true; };
   root.addEventListener("mouseover", (event) => {
     const target = event.target.closest?.(".ref");
     if (target) showRefTip(target);
@@ -697,26 +712,33 @@ export function mount(root, host) {
     event.preventDefault();
     event.stopPropagation();
     hideRefTip();
-    const entry = lookup(target.dataset.refKind, target.dataset.ref);
-    if (entry) jumpToConstraint(entry.id);
+    lookup(target.dataset.refKind, target.dataset.ref).then((entry) => { if (entry) jumpToConstraint(entry); });
   }, { capture: true });
 
-  /** Shows constraint `id` in the Database pane: unzooms and clears filters that hide it. */
-  function jumpToConstraint(id) {
+  /**
+   * Shows `entry` (vr_find's `{id, position}`) in the Database pane: unzooms,
+   * clears filters (positions are among the unfiltered rows), scrolls to it
+   * and flashes it once drawn.
+   */
+  let flashId = null;
+  function jumpToConstraint(entry) {
     if (explainDialog.open) explainDialog.close();
     if (zoom && zoom.pane !== "database" && !(zoom.pane === "output" && zoom.level === "wide")) {
       zoom = null;
       applyLayout();
     }
-    const find = () => database.body.querySelector(`.row[data-id="${id}"]`);
-    if (!find()) {
+    if (filter.value || !coreBox.checked || !derivedBox.checked) {
       filter.value = "";
       coreBox.checked = derivedBox.checked = true;
-      renderDatabase(true);
+      renderDatabase();
     }
-    const row = find();
+    flashId = entry.id;
+    databaseList.scrollTo(entry.position, "center");
+  }
+  function flashJumped() {
+    const row = flashId != null && database.body.querySelector(`.row[data-id="${flashId}"]`);
     if (!row) return;
-    row.scrollIntoView({ block: "center" });
+    flashId = null;
     row.classList.remove("jumped");
     void row.offsetWidth;
     row.classList.add("jumped");
@@ -753,128 +775,162 @@ export function mount(root, host) {
     return true;
   };
 
-  // Whether a row matches a filter `query` (lower-cased): a number matches
-  // the row's id or line (`ids` may be a range "1-2"); other text matches
-  // a case-insensitive substring of the row's text.
-  const matchesQuery = (query, ids, text) => {
-    if (!query) return true;
-    if (/^\d+$/.test(query)) {
-      const [lo, hi = lo] = String(ids).split("-").map(Number);
-      return Number(query) >= lo && Number(query) <= hi;
-    }
-    return text.toLowerCase().includes(query);
+  // ---- Panes: virtual lists over vr_view ----
+  // Each pane shows only the rows on screen (and a screen of slack), fetched
+  // from the REPL; filtering happens there too. A list is refetched when its
+  // data or filter changes (`refresh`) and redrawn from its cache when only
+  // the presentation does (`redraw`).
+  const emptyNote = (pane) => {
+    const note = placeholder("");
+    note.hidden = true;
+    pane.body.append(note);
+    return (text) => {
+      note.textContent = text ?? "";
+      note.hidden = !text;
+    };
   };
 
-  function renderFormula(force = false) {
-    const f = state?.formula ?? null;
-    const query = formulaFilter.value.trim().toLowerCase();
-    if (!changed("formula", [f, [...variables], query]) && !force) return;
-    if (!f) {
-      formula.setTitle("Formula");
-      formula.body.replaceChildren(placeholder("No formula loaded. Add files, then :instance <name> or :load <file.opb>."));
-      return;
-    }
-    const shown = f.lines.filter(({ ids, text }) => matchesQuery(query, ids, text));
-    formula.setTitle(shown.length === f.lines.length ? `Formula: ${f.name} (${f.count})` : `Formula: ${f.name} (${shown.length} of ${f.lines.length} lines)`);
-    const rows = shown.map(({ ids, text }) => {
-      const row = el("div", { className: "row" }, el("span", { className: "num", textContent: ids }), el("span", { className: "text" }, tokens(stripSemicolon(text), variables, { refs: true })));
-      row.dataset.ids = ids;
-      return row;
-    });
-    if (f.objective && !query) rows.unshift(el("div", { className: "row meta" }, el("span", { className: "num", textContent: "obj" }), el("span", { className: "text", textContent: stripSemicolon(f.objective) })));
-    if (f.preserved && !query) rows.unshift(el("div", { className: "row meta" }, el("span", { className: "num", textContent: "pres" }), el("span", { className: "text", textContent: stripSemicolon(f.preserved) })));
-    formula.body.replaceChildren(...rows);
-  }
+  const formulaList = createVirtualList({
+    body: formula.body,
+    fetch: (start, count) => client.view({ pane: "formula", start, count, query: formulaFilter.value }),
+    render: (row) => {
+      if (row.meta) {
+        return el("div", { className: "row meta" }, el("span", { className: "num", textContent: row.meta === "objective" ? "obj" : "pres" }),
+          el("span", { className: "text", textContent: stripSemicolon(row.text) }));
+      }
+      const element = el("div", { className: "row" }, el("span", { className: "num", textContent: row.ids }),
+        el("span", { className: "text" }, tokens(stripSemicolon(row.text), variables, { refs: true })));
+      element.dataset.ids = row.ids;
+      return element;
+    },
+    onLoad: (info) => {
+      const f = state?.formula;
+      formulaEmpty(f ? null : "No formula loaded. Add files, then :instance <name> or :load <file.opb>.");
+      if (!f) return formula.setTitle("Formula");
+      formula.setTitle(!formulaFilter.value.trim() ? `Formula: ${f.name} (${f.count})` : `Formula: ${f.name} (${info?.total ?? 0} of ${f.lines} lines)`);
+    },
+  });
+  const formulaEmpty = emptyNote(formula);
 
-  function renderDatabase(force = false) {
-    const db = state?.database ?? null;
-    const highlight = state?.mode === MODE_DEBUG ? state.proof?.lastStepIds ?? [] : [];
-    if (!changed("database", [db, highlight, [...variables]]) && !force) return;
-    if (!db) {
-      database.setTitle("Database");
-      database.body.replaceChildren(placeholder("No formula loaded."));
-      return;
-    }
-    if (db.error) {
-      database.setTitle("Database");
-      database.body.replaceChildren(el("div", { className: "row error", textContent: `Error: ${db.error}` }));
-      return;
-    }
-    const query = filter.value.trim().toLowerCase();
-    const shown = db.entries.filter((entry) => {
-      if (entry.core ? !coreBox.checked : !derivedBox.checked) return false;
-      return matchesQuery(query, entry.id, [...entry.labels, entry.text].join(" "));
-    });
-    const lit = new Set(highlight);
-    database.setTitle(shown.length === db.entries.length ? `Database (${db.entries.length})` : `Database (${shown.length} of ${db.entries.length})`);
-    database.body.replaceChildren(...shown.map((entry) => {
-      const row = el("div", { className: `row ${entry.core ? "core" : "derived"}${lit.has(entry.id) ? " lit" : ""}`, title: entry.core ? "core" : "derived" },
+  const databaseList = createVirtualList({
+    body: database.body,
+    fetch: (start, count) => client.view({ pane: "database", start, count, query: filter.value, core: coreBox.checked, derived: derivedBox.checked }),
+    render: (entry) => {
+      const lit = state?.mode === MODE_DEBUG && (state.proof?.lastStepIds ?? []).includes(entry.id);
+      const row = el("div", { className: `row ${entry.core ? "core" : "derived"}${lit ? " lit" : ""}`, title: entry.core ? "core" : "derived" },
         el("span", { className: "num", textContent: entry.id }),
         el("span", { className: "text" },
           ...entry.labels.map((label) => el("span", { className: "tok-label", textContent: label + " " })),
           tokens(entry.text, variables)));
       row.dataset.id = entry.id;
       return row;
-    }));
+    },
+    onLoad: (info) => {
+      const db = state?.database;
+      databaseEmpty(!db ? "No formula loaded." : db.error || info?.error ? `Error: ${db.error ?? info.error}` : null);
+      if (!db || db.error) return database.setTitle("Database");
+      const total = info?.total ?? 0;
+      database.setTitle(total === db.count ? `Database (${db.count})` : `Database (${total} of ${db.count})`);
+    },
+    onRender: () => flashJumped(),
+  });
+  const databaseEmpty = emptyNote(database);
+
+  const icon = { checked: "✓", unchecked: "○", rejected: "✗" };
+  const proofList = createVirtualList({
+    body: proof.body,
+    fetch: (start, count) => client.view({ pane: "proof", start, count, query: proofFilter.value }),
+    render: (line) => (line.preamble ? preambleRow(line) : proofRow(line)),
+    onLoad: (info) => {
+      const p = state?.proof;
+      proofEmpty(p ? null : "No formula loaded.");
+      if (!proofFilter.value.trim() && info?.generation != null) {
+        vim.sync({ count: Math.max(0, info.total - 2), get: (i) => proofList.rowAt(i + 2)?.text }, info.generation);
+      }
+      proofTitle(info?.total);
+    },
+    onRender: () => {
+      vim.settle();
+      refreshLineIds();
+    },
+  });
+  const proofEmpty = emptyNote(proof);
+  function proofTitle(total = proofList.total) {
+    const p = state?.proof;
+    if (!p) return proof.setTitle("Proof");
+    const count = !proofFilter.value.trim() ? `${p.lines}` : `${total} of ${p.lines}`;
+    proof.setTitle(`Proof (${count})${p.unchecked ? ` (${p.unchecked} unchecked)` : ""}${vim.active ? (vim.mode === "insert" ? " -- INSERT --" : " -- NORMAL --") : ""}`);
   }
 
+  function preambleRow(line) {
+    return el("div", { className: "row preamble" }, el("span", { className: "gutter" }), el("span", { className: "status" }),
+      el("span", { className: "num", textContent: line.n }), el("span", { className: "text", textContent: line.text }));
+  }
+
+  function proofRow(line) {
+    const p = state?.proof ?? {};
+    const bp = el("button", {
+      type: "button", className: `gutter${line.breakpoint ? " on" : ""}`, textContent: "●",
+      title: line.breakpoint ? "Remove breakpoint" : "Set breakpoint",
+    });
+    bp.addEventListener("click", (event) => { event.stopPropagation(); client.toggleBreakpoint(line.index); });
+    const explain = el("button", { type: "button", className: "row-action", textContent: "explain", title: `Explain line ${line.n}` });
+    explain.addEventListener("click", (event) => {
+      event.stopPropagation();
+      openExplain(line);
+    });
+    const row = el("div", {
+      className: `row ${line.status}${line.n === p.debugLine ? " debug-current" : ""}${line.assertion ? " assertion" : ""}`,
+    },
+      bp,
+      el("span", { className: "status", textContent: icon[line.status], title: line.status === "rejected" ? p.rejected?.message ?? "rejected" : line.status }),
+      el("span", { className: "num", textContent: line.n, title: `Click the line to put :edit ${line.n} in the command line` }),
+      lineText(line),
+      explain);
+    row.dataset.n = line.n;
+    if (vim.active && line.n === vim.line) row.classList.add("vim-line");
+    row.addEventListener("click", (event) => {
+      if (vim.active) return vim.click(line.n, clickColumn(row, event));
+      if (view.mode === MODE_PBP && !getSelection().toString()) view.prefill(`:edit ${line.n}`);
+    });
+    row.addEventListener("dblclick", () => {
+      if (view.mode !== MODE_PBP) return;
+      if (view.input.value === `:edit ${line.n}`) view.prefill("");
+      getSelection().removeAllRanges();
+      if (proofFilter.value) {
+        proofFilter.value = "";
+        renderProof();
+      }
+      vim.doubleClick(line.n);
+    });
+    return row;
+  }
+
+  // Refetch a list when `data` changed, else redraw it when `look` did.
+  function update3(key, list, data, look, force) {
+    if (changed(`${key}:data`, data)) {
+      changed(`${key}:look`, look);
+      list.refresh();
+    } else if (changed(`${key}:look`, look) || force) {
+      list.redraw();
+    }
+  }
+  function renderFormula(force = false) {
+    update3("formula", formulaList, [state?.generation, state?.formula?.name, formulaFilter.value.trim()], [[...variables]], force);
+  }
+  function renderDatabase(force = false) {
+    const highlight = state?.mode === MODE_DEBUG ? state.proof?.lastStepIds ?? [] : [];
+    update3("database", databaseList, [state?.generation, filter.value.trim(), coreBox.checked, derivedBox.checked], [highlight, [...variables]], force);
+  }
   function renderProof(force = false) {
-    const p = state?.proof ?? null;
-    const query = proofFilter.value.trim().toLowerCase();
-    if (!changed("proof", [p, state?.mode, [...variables], query, vim.active && [vim.line, vim.col, vim.mode]]) && !force) return;
-    if (!p) {
-      proof.setTitle("Proof");
-      proof.body.replaceChildren(placeholder("No formula loaded."));
-      return;
-    }
-    const shown = p.lines.filter((line) => matchesQuery(query, line.n, line.text));
-    const count = shown.length === p.lines.length ? `${p.lines.length}` : `${shown.length} of ${p.lines.length}`;
-    proof.setTitle(`Proof (${count})${p.unchecked ? ` (${p.unchecked} unchecked)` : ""}${vim.active ? (vim.mode === "insert" ? " -- INSERT --" : " -- NORMAL --") : ""}`);
-    const typing = document.activeElement === vim.input;
-    const selection = typing ? [vim.input.selectionStart, vim.input.selectionEnd] : null;
-    const rows = (query ? [] : p.preamble).map((text, i) =>
-      el("div", { className: "row preamble" }, el("span", { className: "gutter" }), el("span", { className: "status" }),
-        el("span", { className: "num", textContent: i + 1 }), el("span", { className: "text", textContent: text })));
-    const icon = { checked: "✓", unchecked: "○", rejected: "✗" };
-    for (const line of shown) {
-      const bp = el("button", {
-        type: "button", className: `gutter${line.breakpoint ? " on" : ""}`, textContent: "●",
-        title: line.breakpoint ? "Remove breakpoint" : "Set breakpoint",
-      });
-      bp.addEventListener("click", (event) => { event.stopPropagation(); client.toggleBreakpoint(line.index); });
-      const explain = el("button", { type: "button", className: "row-action", textContent: "explain", title: `Explain line ${line.n}` });
-      explain.addEventListener("click", (event) => {
-        event.stopPropagation();
-        openExplain(line);
-      });
-      const row = el("div", {
-        className: `row ${line.status}${line.n === p.debugLine ? " debug-current" : ""}${line.assertion ? " assertion" : ""}`,
-      },
-        bp,
-        el("span", { className: "status", textContent: icon[line.status], title: line.status === "rejected" ? p.rejected?.message ?? "rejected" : line.status }),
-        el("span", { className: "num", textContent: line.n, title: `Click the line to put :edit ${line.n} in the command line` }),
-        lineText(line),
-        explain);
-      row.dataset.n = line.n;
-      if (vim.active && line.n === vim.line) row.classList.add("vim-line");
-      row.addEventListener("click", (event) => {
-        if (vim.active) return vim.click(line.n, clickColumn(row, event));
-        if (view.mode === MODE_PBP && !getSelection().toString()) view.prefill(`:edit ${line.n}`);
-      });
-      row.addEventListener("dblclick", () => {
-        if (view.mode !== MODE_PBP) return;
-        if (view.input.value === `:edit ${line.n}`) view.prefill("");
-        getSelection().removeAllRanges();
-        vim.doubleClick(line.n);
-      });
-      rows.push(row);
-    }
-    proof.body.replaceChildren(...rows);
-    if (vim.active) proof.body.querySelector(".vim-line")?.scrollIntoView({ block: "nearest" });
-    if (selection) {
-      vim.input.focus({ preventScroll: true });
-      vim.input.setSelectionRange(...selection);
-    }
+    const p = state?.proof;
+    update3("proof", proofList, [state?.generation, p?.checked, p?.rejected, p?.breakpoints, proofFilter.value.trim()],
+      [state?.mode, p?.debugLine, [...variables], vim.active && [vim.line, vim.col, vim.mode]], force);
+    proofTitle();
+    if (vim.active) proofList.scrollTo(vim.line - 1);
+    // The editor focuses its input right after asking for a redraw: draw now.
+    if (force) proofList.drawNow();
+    else if (p?.debugLine && changed("proof:debugLine", p.debugLine)) proofList.scrollTo(p.debugLine - 1);
   }
 
   // A proof line's text: tokens, or on the Vim cursor line the cursor (Normal)
@@ -882,7 +938,7 @@ export function mount(root, host) {
   function lineText(line) {
     if (!vim.active || line.n !== vim.line) return el("span", { className: "text" }, tokens(line.text, variables, { refs: true }));
     if (vim.mode === "insert") return el("span", { className: "text" }, vim.input);
-    const t = line.text;
+    const t = vim.text(line.n);
     return el("span", { className: "text" }, tokens(t.slice(0, vim.col), variables),
       el("span", { className: "vim-cursor", textContent: t[vim.col] ?? " " }), tokens(t.slice(vim.col + 1), variables));
   }
@@ -899,7 +955,6 @@ export function mount(root, host) {
 
   function update(next) {
     state = next;
-    vim.sync(state?.proof?.lines);
     if (state) followMode(state.mode);
     variables = new Set(state?.variables ?? []);
     renderFormula();

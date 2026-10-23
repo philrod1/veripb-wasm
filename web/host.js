@@ -133,8 +133,9 @@ export function createWasi(args, { stdout, stderr, root, env = [] }) {
 /**
  * Instantiates the REPL (plain and enhanced modes) and returns
  * { mode, line(text) -> mode, state(), preserved(), toggleBreakpoint(index),
- *   complete(text), themes(), commands(), glossary(), extras(), explain(line), lineIds(),
- *   bufferEdit({op, index, text?, after?}), memoryBytes(), stats }.
+ *   complete(text), themes(), commands(), glossary(), extras(), explain(line),
+ *   lineIds(first, last), view({pane, start, count, query?, core?, derived?}),
+ *   find({label} | {id}), bufferEdit({op, index, text?, after?}), memoryBytes(), stats }.
  * `state()` and `preserved()` return the parsed JSON of web-repl's
  * `vr_state` / `vr_preserved` (web-repl/src/state.rs).
  * `onLine(text)` receives every output line (stdout and stderr).
@@ -174,6 +175,16 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
     return next;
   }
 
+  // Calls an export taking a JSON argument (ptr, len) and returning a result.
+  function jsonCall(fn, value) {
+    const bytes = encoder.encode(JSON.stringify(value));
+    const ptr = repl.exports.vr_alloc(bytes.length) >>> 0;
+    new Uint8Array(repl.exports.memory.buffer, ptr, bytes.length).set(bytes);
+    const len = fn(ptr, bytes.length);
+    repl.exports.vr_free(ptr, bytes.length);
+    return result(len);
+  }
+
   const decoder = new TextDecoder();
   function result(len) {
     const bytes = new Uint8Array(repl.exports.memory.buffer, repl.exports.vr_result_ptr() >>> 0, len >>> 0);
@@ -197,15 +208,10 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
     themes: () => result(repl.exports.vr_themes()),
     commands: () => result(repl.exports.vr_commands()),
     glossary: () => result(repl.exports.vr_glossary()),
-    lineIds: () => result(repl.exports.vr_line_ids()),
-    bufferEdit(edit) {
-      const bytes = encoder.encode(JSON.stringify(edit));
-      const ptr = repl.exports.vr_alloc(bytes.length) >>> 0;
-      new Uint8Array(repl.exports.memory.buffer, ptr, bytes.length).set(bytes);
-      const len = repl.exports.vr_buffer_edit(ptr, bytes.length);
-      repl.exports.vr_free(ptr, bytes.length);
-      return result(len);
-    },
+    lineIds: (first, last) => result(repl.exports.vr_line_ids(first, last)),
+    view: (request) => jsonCall(repl.exports.vr_view, request),
+    find: (request) => jsonCall(repl.exports.vr_find, request),
+    bufferEdit: (edit) => jsonCall(repl.exports.vr_buffer_edit, edit),
     extras: () => result(repl.exports.vr_extras()),
     explain: (line) => result(repl.exports.vr_explain(line)),
     memoryBytes: () => repl.exports.memory.buffer.byteLength,

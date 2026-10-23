@@ -6,7 +6,8 @@
 //                 | {type: "watch", on}          post session state after every line
 //                 | {type: "state", id} | {type: "preserved", id}
 //                 | {type: "breakpoint", index} toggle; posts state if watching
-//                 | {type: "query", id, kind: "complete" | "themes" | "commands" | "glossary" | "extras" | "explain" | "lineIds" | "edit", text?, line?, edit?}
+//                 | {type: "query", id, kind: "complete" | "themes" | "commands" | "glossary" | "extras" | "explain" | "lineIds" | "view" | "find" | "edit",
+//                    text?, line?, first?, last?, request?, edit?}
 // Worker -> page: {type: "out", lines, trace} | {type: "mode", mode, ms, veripbRuns}
 //                 | {type: "files", files} | {type: "file", id, data}
 //                 | {type: "dump", id, files: [[name, data], ...]} | {type: "fatal", text}
@@ -109,7 +110,9 @@ onmessage = ({ data: message }) => {
             : message.kind === "themes" ? repl.themes()
             : message.kind === "commands" ? repl.commands()
             : message.kind === "glossary" ? repl.glossary()
-            : message.kind === "lineIds" ? repl.lineIds()
+            : message.kind === "lineIds" ? repl.lineIds(message.first, message.last)
+            : message.kind === "view" ? repl.view(message.request)
+            : message.kind === "find" ? repl.find(message.request)
             : message.kind === "extras" ? repl.extras()
             : message.kind === "explain" ? repl.explain(message.line)
             : message.kind === "edit" ? repl.bufferEdit(message.edit)

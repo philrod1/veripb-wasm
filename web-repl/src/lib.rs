@@ -12,6 +12,7 @@
 mod glossary;
 mod state;
 mod teach;
+mod views;
 
 use std::cell::RefCell;
 use std::path::Path;
