@@ -188,6 +188,7 @@ scripts/prepare.sh
 scripts/build-web.sh
 scripts/serve.py [port] [address]      # default 8000 127.0.0.1; then open http://localhost:8000
 scripts/deploy.sh [dir]                # on a web server: submodules, prepare, build, copy web/ to dir (default /var/www/html)
+scripts/update-upstream.sh <veripb|veripb-repl|crossterm> [ref]   # move a submodule to its branch head (or ref), re-apply patches, build, test; stops before committing
 ```
 
 `serve.py` sends `Cross-Origin-Opener-Policy: same-origin` and
