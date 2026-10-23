@@ -20,6 +20,7 @@ const statusText = document.getElementById("status");
 const fileList = document.getElementById("files");
 
 let current = null;
+let sessionHasFiles = false;
 let currentName = null;
 let files = new Map();
 
@@ -69,6 +70,7 @@ const FILE_KINDS = [
 ];
 
 function renderFiles(list) {
+  sessionHasFiles = list.length > 0;
   fileList.replaceChildren(...list.map(({ name, size }) => {
     const item = document.createElement("li");
     const kind = FILE_KINDS.find((k) => k.pattern.test(name));
@@ -182,6 +184,21 @@ document.addEventListener("drop", async (event) => {
   }
   if (added.length) current.note(`Added ${added.join(", ")}.`);
   current.focus();
+});
+
+// Leaving the page loses the session: its files exist only in this tab.
+// Backspace outside a text field does nothing (some browsers go back), and
+// with files present the browser asks before navigating away (Alt+←,
+// ⌘+[, reload, closing the tab). Trackpad swipes: style.css.
+const editable = (target) => target instanceof HTMLElement
+  && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName));
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Backspace" && !editable(event.target)) event.preventDefault();
+});
+addEventListener("beforeunload", (event) => {
+  if (!sessionHasFiles) return;
+  event.preventDefault();
+  event.returnValue = "";
 });
 
 switchTo(initialMode());

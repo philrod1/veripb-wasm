@@ -20,6 +20,8 @@
 :root[data-theme] { color-scheme: light dark; }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
+/* No history navigation from a horizontal trackpad swipe (Chrome). */
+html, body, .pane-body, .plain-out, .tab-panel { overscroll-behavior-x: none; }
 body {
   background: var(--bg); color: var(--fg);
   font: 14px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;

@@ -169,6 +169,11 @@ choice is remembered):
 Switching modes starts a fresh REPL. Files are carried over; the proof
 session is not (`:save` it first).
 
+Leaving the page loses the session (files exist only in the tab), so
+Backspace outside a text field does nothing, a horizontal trackpad swipe
+does not go back (`overscroll-behavior-x`), and while there are files the
+browser asks before leaving or reloading.
+
 Files panel (left; "Files" in the header hides and shows it, remembered):
 - **Load demo files:** copies veripb-repl's `demos/files` into `/`.
 - **Load example files:** copies veripb-repl's `examples` into `/`.

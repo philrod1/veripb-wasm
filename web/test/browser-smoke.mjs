@@ -295,6 +295,23 @@ check("files: double-click a .pbp runs :source", await until(async () => (await 
 check("files: the command is in history", (await page.press(".plain-in", "ArrowUp"), await page.inputValue(".plain-in")) === ":source tiny_unsat.pbp");
 await page.fill(".plain-in", "");
 
+// Leaving the page: Backspace outside a text field, and the leave guard.
+const backspacePrevented = () => page.evaluate(() => {
+  const event = new KeyboardEvent("keydown", { key: "Backspace", bubbles: true, cancelable: true });
+  document.body.dispatchEvent(event);
+  return event.defaultPrevented;
+});
+check("page: Backspace outside a text field does nothing", await backspacePrevented());
+await page.fill(".plain-in", "ab");
+await page.press(".plain-in", "Backspace");
+check("page: Backspace still edits the prompt", (await page.inputValue(".plain-in")) === "a");
+await page.fill(".plain-in", "");
+check("page: asks before leaving while there are files", await page.evaluate(() => {
+  const event = new Event("beforeunload", { cancelable: true });
+  dispatchEvent(event);
+  return event.defaultPrevented;
+}));
+
 // Zoom buttons (the TUI's ▭ and ⛶).
 const visible = (selector) => page.$eval(selector, (e) => e.offsetParent !== null);
 const height = (selector) => page.$eval(selector, (e) => e.getBoundingClientRect().height);
