@@ -29,9 +29,14 @@ const replReady = new Promise((resolve) => { markReplReady = resolve; });
 let watching = false;
 // The summary in two steps: at once without the database, then (after
 // "updating") with it. The database can take a veripb run (the REPL replays
-// the proof after it changes), and the page says so meanwhile.
-const postState = (id) => {
+// the proof after it changes), and the page says so meanwhile. With
+// `quickOnly` (after a command in :debug mode, where each step changes the
+// proof's checked prefix) the page asks for the database itself, once the
+// stepping pauses.
+const MODE_DEBUG = 3;
+const postState = (id, quickOnly = false) => {
   if (!id) post({ type: "state", state: repl.stateQuick() });
+  if (quickOnly) return;
   post({ type: "updating" });
   post({ type: "state", id, state: repl.state() });
 };
@@ -101,7 +106,7 @@ onmessage = ({ data: message }) => {
         const mode = repl.line(message.text);
         flush();
         post({ type: "mode", mode, ms: performance.now() - t0, veripbRuns: repl.stats.veripbRuns - runs });
-        if (watching) postState();
+        if (watching) postState(undefined, mode === MODE_DEBUG);
         postFiles();
         break;
       }

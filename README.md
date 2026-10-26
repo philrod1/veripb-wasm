@@ -348,7 +348,10 @@ Enhanced mode:
   `vr_line_ids`, one traced veripb run per change to the checked proof,
   only while links are on.
 - **Debug keys:** in `:debug` mode, as in the TUI, Shift+↓ runs `:step`,
-  Shift+↑ `:back` and Esc `:done`; the typed text stays.
+  Shift+↑ `:back` and Esc `:done`; the typed text stays. While stepping,
+  the Proof pane updates after each command and the Database pane once
+  stepping pauses (0.6 s with no new command), so each `:step` costs one
+  veripb run and `:back` none.
 - **Output:** as in plain mode, with veripb's output folded.
 - **Transcript:** every line of the session, input included and nothing
   folded, as a virtual list (only the lines on screen are in the DOM, so a

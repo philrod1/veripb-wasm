@@ -154,22 +154,38 @@ export function mount(root, host) {
   // database rebuild before it can send them).
   const live = { verifying: false, run: null, settled: 0, generation: null };
   let databasePending = false;
+  function applyState(s) {
+    live.settled = s?.proof ? s.proof.checked + 2 : 0;
+    live.generation = s?.generation ?? null;
+    if (s?.database?.pending) {
+      databasePending = true;
+      update({ ...s, database: state?.database ?? null });
+      if (s.mode === MODE_DEBUG) databaseWhenIdle();
+      return;
+    }
+    clearTimeout(databaseTimer);
+    databasePending = false;
+    updating.done();
+    update(s);
+  }
+  // In :debug mode the worker sends only the quick summary after each step
+  // (each would otherwise cost a second replay of the proof for the
+  // database): ask for the full one once stepping pauses. A new command
+  // cancels the wait.
+  let databaseTimer = null;
+  function databaseWhenIdle() {
+    clearTimeout(databaseTimer);
+    updating.start();
+    databaseTimer = setTimeout(async () => {
+      const full = await client.state();
+      if (full && !full.database?.pending) applyState(full);
+    }, 600);
+  }
   const client = connectReplWorker(host, {
     what: "REPL",
     // A summary with `database: {pending}` comes first: the panes but the
     // Database take it at once; the full one follows.
-    onState: (s) => {
-      live.settled = s?.proof ? s.proof.checked + 2 : 0;
-      live.generation = s?.generation ?? null;
-      if (s?.database?.pending) {
-        databasePending = true;
-        update({ ...s, database: state?.database ?? null });
-        return;
-      }
-      databasePending = false;
-      updating.done();
-      update(s);
-    },
+    onState: (s) => applyState(s),
     onUpdating: () => {
       live.verifying = false;
       updating.start();
@@ -200,6 +216,7 @@ export function mount(root, host) {
     complete: (text) => client.complete(text),
     // `:theme` recolours this page (the REPL itself answers "TUI only").
     onSubmit: (text) => {
+      clearTimeout(databaseTimer);
       const command = resolveCommand(text);
       const args = text.trim().replace(/^:\S+\s*/, "");
       if (command === "theme") {

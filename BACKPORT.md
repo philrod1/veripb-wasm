@@ -85,6 +85,21 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   the same cache. In the REPL, the same cache would make a repeated `:check`
   instant in both frontends.
 
+- **Make debug stepping cheap.** In `:debug`, each `:step` replays the
+  proof from the start to the new line in veripb (2.2 s at line 50,000 of
+  the circuit proof), and the next `database()` call replays it again for
+  the Database pane (2.4 s); `:back` makes no veripb run but still rebuilds
+  the database (2.4 s). Two changes in the REPL: fill the database cache
+  from the step's own traced run, and keep the database of each step taken
+  so `:back` reuses the previous one. The web build only defers the
+  rebuild until stepping pauses (`postState` in `web/repl-worker.js`,
+  `databaseWhenIdle` in `web/modes/enhanced.js`): a step is now 2.4 s, a
+  back 85 ms, and the Database pane catches up 2.9 s after the last one.
+  Steps in constant time need veripb itself to keep its state between
+  lines (an interactive mode taking proof lines one at a time, with a
+  checkpoint to step back to and a database dump on request): a note for
+  veripb's maintainers.
+
 ## Progress and feedback
 
 - **Progress line during long commands.** While a command runs, show the
