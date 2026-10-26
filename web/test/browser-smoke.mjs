@@ -157,7 +157,10 @@ await page.click(".explain-view:has-text('Plain English')");
 check("enhanced: explain offers the rule's glossary entry", (await page.textContent(".explain-rule")) === "? rup");
 await page.click(".explain-plain .g-link:has-text('Reverse unit propagation')");
 const glossaryTitle = () => page.textContent(".glossary-entry h2");
-check("enhanced: a link opens the Glossary entry", await until(async () => (await page.isVisible(".tab-glossary")) && (await glossaryTitle()) === "Reverse unit propagation (RUP)"));
+// openGlossary closes the modal first: wait for that, so a later fill isn't
+// undone by it (the Glossary may already show this entry from an earlier run).
+check("enhanced: a link opens the Glossary entry", await until(async () => !(await page.$eval(".explain-modal", (d) => d.open))
+  && (await page.isVisible(".tab-glossary")) && (await glossaryTitle()) === "Reverse unit propagation (RUP)"));
 check("enhanced: following a link closes the modal", !(await page.$eval(".explain-modal", (d) => d.open)));
 await page.fill(".glossary-search", "witness");
 const glossaryItems = () => page.$$eval(".glossary-item", (items) => items.map((i) => i.textContent));
