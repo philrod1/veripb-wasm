@@ -147,6 +147,14 @@ fn proof_row(session: &Session, i: usize) -> Value {
     })
 }
 
+/// The Database pane's rows if already built for this session generation;
+/// never runs veripb.
+pub(crate) fn known_database_rows(session: &Session) -> Option<Rc<Vec<Value>>> {
+    DATABASE_ROWS.with_borrow(|cache| {
+        cache.as_ref().filter(|(generation, _)| *generation == session.generation).map(|(_, rows)| rows.clone())
+    })
+}
+
 /// The Database pane's rows: `{id, core, text, labels}` per live constraint,
 /// cached per session generation. Runs veripb when the session's own
 /// database cache is stale.

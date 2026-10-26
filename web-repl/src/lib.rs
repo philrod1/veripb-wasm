@@ -9,6 +9,7 @@
 //! The mode handling matches `veripb_repl::plain::run`, except that errors
 //! are printed and the session continues.
 
+mod check;
 mod glossary;
 mod state;
 mod teach;
@@ -38,6 +39,9 @@ pub(crate) struct State {
     edit: Option<edit::EditState>,
     formula: Option<formula::FormulaEditState>,
     debug: Option<debug::DebugState>,
+    /// The conclusion the last sourced proof file closes with (hint IDs
+    /// dropped), for bare `:check` to try first; see `check::guesses`.
+    pub(crate) conclusion: Option<String>,
 }
 
 impl State {
@@ -86,8 +90,10 @@ impl State {
         // `:check` and `:objective` answer from the proof as it stands: asked
         // again before the session changes, the output they gave is shown
         // again rather than worked out anew (the same cache serves the
-        // Extras tab). Otherwise their output goes to stdout as ever, and a
-        // copy is kept.
+        // Extras tab). A bare `:check` tries the likely conclusions first
+        // (`check::guesses`). Otherwise output goes to stdout as ever; for
+        // these commands and those that load a proof, a copy is kept.
+        let name = command_name(line);
         let key = cached_command(line);
         if let (Some(key), Some(session)) = (&key, &self.session)
             && let Some(lines) = state::recall(key, session.generation)
@@ -97,10 +103,21 @@ impl State {
             }
             return Ok(self.mode());
         }
-        let mut tee = Tee { out, lines: Vec::new() };
-        let flow = commands::dispatch(&mut self.session, line, &mut tee)?;
+        let keep = key.is_some() || matches!(name, Some("source" | "instance" | "load"));
+        let mut tee = Tee { out, lines: Vec::new(), keep };
+        let flow = match (&key, &self.session) {
+            (Some(key), Some(session)) if key == "check " => {
+                let guesses = check::guesses(session, self.conclusion.as_deref());
+                check::bare(session, &guesses, &mut tee)?;
+                Flow::Continue
+            }
+            _ => commands::dispatch(&mut self.session, line, &mut tee)?,
+        };
         if let (Some(key), Some(session)) = (&key, &self.session) {
             state::remember(key, session.generation, &tee.lines);
+        }
+        if matches!(name, Some("source" | "instance" | "load")) {
+            self.note_loaded(&tee.lines);
         }
         match flow {
             Flow::Quit => return Ok(MODE_QUIT),
@@ -117,17 +134,56 @@ thread_local! {
     pub(crate) static STATE: RefCell<State> = RefCell::default();
 }
 
-/// Passes each line on to `out` and keeps a copy.
+/// Passes each line on to `out`, keeping a copy if `keep`.
 struct Tee<'a> {
     out: &'a mut dyn Output,
     lines: Vec<String>,
+    keep: bool,
 }
 
 impl Output for Tee<'_> {
     fn line(&mut self, text: &str) {
-        self.lines.push(text.to_string());
+        if self.keep {
+            self.lines.push(text.to_string());
+        }
         self.out.line(text);
     }
+}
+
+impl State {
+    /// After `:source`, `:instance` or `:load`: keep the conclusion of the
+    /// proof file just read (its "Loaded N line(s) from <path> into the
+    /// buffer" line names it), or forget the old one when a new formula
+    /// replaced the proof.
+    fn note_loaded(&mut self, lines: &[String]) {
+        for line in lines {
+            if let Some(path) = line
+                .strip_prefix("Loaded ")
+                .and_then(|rest| rest.split_once(" line(s) from "))
+                .and_then(|(_, rest)| rest.split_once(" into the buffer"))
+                .map(|(path, _)| path)
+            {
+                self.conclusion = check::file_conclusion(Path::new(path));
+                return;
+            }
+            if line.starts_with("Loaded ") && line.contains(" constraints from ") {
+                self.conclusion = None;
+            }
+        }
+    }
+}
+
+/// The command `line` names, in full or by a unique prefix (as
+/// `commands::dispatch` resolves it), if it is a command.
+fn command_name(line: &str) -> Option<&'static str> {
+    let rest = line.trim().strip_prefix(':')?;
+    let name = rest.split_whitespace().next()?;
+    let mut matches = help::COMMANDS.iter().filter(|t| t.name.starts_with(name));
+    let topic = help::COMMANDS.iter().find(|t| t.name == name).or_else(|| {
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
+    })?;
+    Some(topic.name)
 }
 
 /// The cache key (`state::OUTPUTS`) when `line` is `:check [<conclusion>]`
@@ -135,18 +191,11 @@ impl Output for Tee<'_> {
 /// the command named in full or by a unique prefix (as `commands::dispatch`
 /// resolves it); else `None`.
 fn cached_command(line: &str) -> Option<String> {
+    let name = command_name(line)?;
     let rest = line.trim().strip_prefix(':')?;
-    let (name, args) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
-    if name.is_empty() {
-        return None;
-    }
-    let mut matches = help::COMMANDS.iter().filter(|t| t.name.starts_with(name));
-    let topic = help::COMMANDS.iter().find(|t| t.name == name).or_else(|| {
-        let first = matches.next()?;
-        matches.next().is_none().then_some(first)
-    })?;
+    let args = rest.split_once(char::is_whitespace).map_or("", |(_, args)| args);
     let args = args.split_whitespace().collect::<Vec<_>>().join(" ");
-    match topic.name {
+    match name {
         "check" => Some(format!("check {args}")),
         "objective" if args.is_empty() => Some("objective".to_string()),
         _ => None,

@@ -227,6 +227,13 @@ Plain mode:
   formula, the proof or its checked prefix), they show the output they gave
   last time rather than running veripb again; `:check` is kept per
   conclusion. The header then shows 0 veripb runs.
+- **Bare `:check`** tries the likely conclusion first: the one the sourced
+  proof file closes with (`conclusion …;`, without hint IDs), then `UNSAT`
+  if the database already shows a contradiction, and `SAT` if a solution is
+  logged and there is no objective; then the REPL's own order (`UNSAT`,
+  `SAT`, `BOUNDS v v`), each conclusion once (`web-repl/src/check.rs`). The
+  verdict is veripb's, as before; when the guess is right, it takes one
+  veripb run instead of up to four.
 - **Timing:** the header shows the last command's duration and veripb run
   count.
 

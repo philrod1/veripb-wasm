@@ -52,6 +52,11 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   Reordering `auto_detect_candidates` this way keeps the verdict genuine
   (veripb still confirms it) and unchanged; only the runs drop, to one when
   the guess is right. A proof not yet concluded still tries every candidate.
+  Built in the web layer for now (`web-repl/src/check.rs`: the file's
+  conclusion read from its last 64 KB after `:source`/`:instance`, the
+  database guess only when its rows are already known, the REPL's own
+  candidates after, each conclusion once): on the circuit proof, `:check`
+  went from 4 veripb runs (81 s) to 1 (25 s).
 - **Cache `:check` and `:objective` per session state.** The web build keeps
   their output per generation, `:check` per conclusion (`OUTPUTS` in
   `web-repl/src/state.rs`, filled through a tee in `State::step` in

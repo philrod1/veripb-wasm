@@ -415,7 +415,7 @@ pub(crate) fn recall(key: &str, generation: u64) -> Option<Vec<String>> {
     OUTPUTS.with_borrow(|cache| cache.as_ref().filter(|(g, _)| *g == generation).and_then(|(_, m)| m.get(key).cloned()))
 }
 
-/// The Extras tab's Status: bare `:check`'s output (`commands::check::run`)
+/// The Extras tab's Status: bare `:check`'s output (`check::bare`)
 /// as `{status, lines, version}` or `{error}`; `null` without a session.
 /// Runs veripb (`:check`'s probes) unless this session generation's result
 /// is known, from here or from `:check` at the prompt.
@@ -429,7 +429,8 @@ pub extern "C" fn vr_extras_status() -> i32 {
             return set_result(status_json(&lines));
         }
         let mut lines = Lines(Vec::new());
-        set_result(match veripb_repl::commands::check::run(session, "", &mut lines) {
+        let guesses = crate::check::guesses(session, state.conclusion.as_deref());
+        set_result(match crate::check::bare(session, &guesses, &mut lines) {
             Ok(()) => {
                 remember("check ", session.generation, &lines.0);
                 status_json(&lines.0)

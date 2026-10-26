@@ -259,5 +259,34 @@ for (const stem of preservedStems) {
   expect("and :check uses that, not the old output", runs() - before, 0);
 }
 
+// Bare :check tries the sourced file's own conclusion first (web-repl
+// src/check.rs): one veripb run when it holds, and the true verdict, without
+// trying a conclusion twice, when it does not.
+{
+  const proof = (conclusion) => new TextEncoder().encode([
+    "pseudo-Boolean proof version 3.0", "f 3;",
+    "@better soli x1 x2 x3 ~x4 ~x5 ;",
+    "@colour_bound pol @better @no_15 + @no_34 + ;", "@contradiction rup >= 1 : @colour_bound ;",
+    "output NONE;", `conclusion ${conclusion};`, "end pseudo-Boolean proof;", ""].join("\n"));
+  const expect = (where, got, want) => {
+    checks += 1;
+    if (got !== want) fail(`check guesses: ${where}`, `got ${got}, want ${want}`);
+  };
+  const verdicts = {};
+  for (const [name, conclusion] of [["right", "BOUNDS -3 -3"], ["wrong", "SAT"]]) {
+    const s = session([...demoFiles, [`${name}.pbp`, proof(conclusion)]]);
+    s.run(":load clique.opb");
+    s.run(`:source ${name}.pbp`);
+    s.run(":verify");
+    const before = s.repl.stats.veripbRuns;
+    verdicts[name] = s.run(":check").lines.at(-1);
+    verdicts[`${name}Runs`] = s.repl.stats.veripbRuns - before;
+  }
+  expect("the file's conclusion holds: one veripb run", verdicts.rightRuns, 1);
+  expect("and its verdict", verdicts.right, "s VERIFIED BOUNDS -3 <= obj <= -3");
+  expect("a wrong conclusion in the file: the same verdict", verdicts.wrong, verdicts.right);
+  expect("and no conclusion tried twice (SAT, UNSAT, the bounds, BOUNDS)", verdicts.wrongRuns <= 4, true);
+}
+
 console.log(`${checks} checks, ${failures} mismatches`);
 process.exit(failures ? 1 : 0);
