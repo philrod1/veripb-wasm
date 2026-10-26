@@ -39,6 +39,25 @@ OpenFile.prototype.fd_write = function (data) {
   this.file_pos += BigInt(data.byteLength);
   return { ret: 0, nwritten: data.byteLength };
 };
+// The file a veripb run reads its proof from, and what to tell of each read
+// (see createVeripbRunner's progress).
+let reading = null;
+const shimRead = OpenFile.prototype.fd_read;
+OpenFile.prototype.fd_read = function (size) {
+  const result = shimRead.call(this, size);
+  if (reading && this.file === reading.file && result.data) reading.read(result.data);
+  return result;
+};
+
+/** The File at absolute or relative `path` under `root`, or null. */
+function fileAt(root, path) {
+  let entry = { contents: root };
+  for (const part of path.split("/").filter(Boolean)) {
+    entry = entry?.contents?.get(part);
+  }
+  return entry instanceof File ? entry : null;
+}
+
 OpenFile.prototype.fd_pwrite = function (data, offset) {
   if (this.file.readonly) return { ret: wasiDefs.ERRNO_BADF, nwritten: 0 };
   reserve(this.file, Number(offset) + data.byteLength);
@@ -122,19 +141,24 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
       const stderr = new File([]);
       const stdoutFd = new OpenFile(stdout);
       if (onProgress) {
-        // At most every 100 ms: the last `line <N>:` trace marker written.
+        // veripb streams the proof file (the `.pbp` argument) in small reads:
+        // the newlines read so far give the line it has reached. Reported
+        // as the run starts and then at most every 100 ms.
         const run = stats.veripbRuns + 1;
         onProgress({ run, line: null });
-        const write = stdoutFd.fd_write.bind(stdoutFd);
+        const proof = args.map((arg) => fileAt(root, arg)).find((file, i) => file && args[i].endsWith(".pbp"));
+        let lines = 0;
         let next = 0;
-        stdoutFd.fd_write = (data) => {
-          const now = performance.now();
-          if (now >= next) {
-            next = now + 100;
-            const marker = [...decoder.decode(data.subarray(-400)).matchAll(/line\s+(\d+):/g)].at(-1);
-            if (marker) onProgress({ run, line: Number(marker[1]) });
-          }
-          return write(data);
+        reading = !proof ? null : {
+          file: proof,
+          read(data) {
+            for (let i = 0; i < data.length; i++) if (data[i] === 10) lines += 1;
+            const now = performance.now();
+            if (now >= next) {
+              next = now + 100;
+              onProgress({ run, line: lines + 1 });
+            }
+          },
         };
       }
       const wasi = new WASI(["veripb", ...args], ENV, [
@@ -146,7 +170,13 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
       const instance = new WebAssembly.Instance(veripbModule, {
         wasi_snapshot_preview1: wasi.wasiImport,
       });
-      const code = wasi.start(instance);
+      const code = (() => {
+        try {
+          return wasi.start(instance);
+        } finally {
+          reading = null;
+        }
+      })();
       const tmp = root.get(".tmp").contents;
       tmp.set(".veripb-stdout", stdout);
       tmp.set(".veripb-stderr", stderr);
@@ -195,7 +225,8 @@ export function createWasi(args, { stdout, stderr, root, env = [] }) {
  * `onVeripbOutput(stdout, stderr)`, if given, receives the bytes of each
  * veripb run's stdout and stderr.
  * `onProgress({run, line})`, if given, is called as each veripb run starts
- * (`line` null) and, at most every 100 ms, with the last traced proof line.
+ * (`line` null) and, at most every 100 ms, with the proof line veripb has
+ * read up to.
  * `stats.veripbRuns` counts veripb invocations.
  */
 export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutput, onProgress }) {

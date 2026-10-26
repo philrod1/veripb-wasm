@@ -4,10 +4,13 @@
 // returns a client. `attach(view)` routes output, prompt modes and errors to
 // an OutputView. `options.onState(state)` / `onPreserved` receive session
 // views; `watch(on)` asks for state after every command.
+// `options.onUpdating()` runs when the worker starts computing a state to
+// post, and `options.onProgress({run, line})` with veripb's progress at any
+// time (also passed to the view).
 
 const STARTUP_TIMEOUT_MS = 15000;
 
-export function connectReplWorker(host, { what = "REPL", onState } = {}) {
+export function connectReplWorker(host, { what = "REPL", onState, onUpdating, onProgress } = {}) {
   const worker = new Worker(new URL("../repl-worker.js", import.meta.url), { type: "module" });
   let view = null;
   let started = false;
@@ -48,6 +51,10 @@ export function connectReplWorker(host, { what = "REPL", onState } = {}) {
         break;
       case "progress":
         view?.setProgress(message);
+        onProgress?.(message);
+        break;
+      case "updating":
+        onUpdating?.();
         break;
       case "files":
         host.setFiles(message.files);

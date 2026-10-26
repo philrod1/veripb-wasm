@@ -220,8 +220,9 @@ Plain mode:
   the lines on screen in the DOM.
 - **Progress:** while a command runs (after half a second), the command line
   shows it with the time so far, the veripb run if more than one, and the
-  last proof line veripb traced (in enhanced mode, "of N" and a percentage);
-  `:check`'s probe runs are not traced, so only the time and run show.
+  proof line veripb has read up to (in enhanced mode, "of N" and a
+  percentage), updated about ten times a second. It comes from veripb's
+  reads of the proof file, so every run reports it, `:check`'s too.
 - **Timing:** the header shows the last command's duration and veripb run
   count.
 
@@ -243,6 +244,10 @@ Enhanced mode:
   Preserved and Extras tabs and the command line below. Each top pane draws
   only the rows on screen plus a screen either side, fetched from the REPL
   as you scroll, so proofs of a million lines and more stay responsive.
+  While the panes' contents are being recomputed after a command or an edit
+  (the REPL replays the proof to rebuild its database when the proof has
+  changed), they are dimmed under "Updating the panes", with the time and
+  the proof line reached.
 - **Filters:** each top pane has a filter box. A number matches that id
   (Formula, Database) or proof line; other text matches a case-insensitive
   substring of the row, labels included. The pane title shows "m of n"

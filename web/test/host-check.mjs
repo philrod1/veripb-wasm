@@ -1,12 +1,18 @@
 // Checks host.js's fixes to the WASI shim's in-memory files: many small
 // writes take linear time (the shim alone copies the whole file on every
-// write), and readFile returns just a file's bytes.
+// write), and readFile returns just a file's bytes; and startRepl's
+// onProgress, which reports the proof line a veripb run has read up to.
 //
 // Usage: node web/test/host-check.mjs
 // Exit status 1 on any failure.
 
+import { readFileSync } from "node:fs";
+import { join, dirname } from "node:path";
+import { fileURLToPath } from "node:url";
 import { File, OpenFile } from "../vendor/browser_wasi_shim/index.js";
-import { createRoot, writeFile, readFile } from "../host.js";
+import { createRoot, writeFile, readFile, startRepl } from "../host.js";
+
+const web = join(dirname(fileURLToPath(import.meta.url)), "..");
 
 let failures = 0;
 function check(name, ok, detail = "") {
@@ -38,6 +44,26 @@ new OpenFile(opened).fd_pwrite(new Uint8Array([4]), 3n);
 const read = readFile(root, "small.txt");
 check("readFile copies just the file's bytes", read.byteLength === 4 && read.buffer.byteLength === 4 && read[3] === 4,
   `${read.byteLength} of ${read.buffer.byteLength}`);
+
+// Progress: each veripb run starts with {run, line: null}, then reports the
+// proof line read up to.
+const demo = createRoot();
+for (const name of ["two-of-three.opb", "two-of-three.pbp"]) writeFile(demo, name, readFileSync(join(web, "pkg/demos", name)));
+const progress = [];
+const repl = startRepl({
+  replModule: await WebAssembly.compile(readFileSync(join(web, "pkg/repl.wasm"))),
+  veripbModule: await WebAssembly.compile(readFileSync(join(web, "pkg/veripb.wasm"))),
+  root: demo,
+  onLine: () => {},
+  onProgress: (p) => progress.push(p),
+});
+repl.line(":instance two-of-three");
+progress.length = 0;
+repl.line(":verify");
+const runs = new Set(progress.map((p) => p.run));
+const lines = progress.filter((p) => p.line).map((p) => p.line);
+check("progress during :verify", runs.size >= 1 && progress[0].line === null && lines.length >= 1 && lines.every((n) => n >= 1 && n <= 12),
+  JSON.stringify(progress));
 
 console.log(failures ? `${failures} failures` : "all passed");
 process.exit(failures ? 1 : 0);

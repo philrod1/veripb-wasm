@@ -107,7 +107,52 @@ export function mount(root, host) {
   let activeTab = "output";
   try { activeTab = localStorage.getItem(TAB_KEY) || "output"; } catch {}
 
-  const client = connectReplWorker(host, { what: "REPL", onState: (s) => update(s) });
+  // While the worker computes the session summary that follows a command or
+  // an edit (which may replay the proof to rebuild the database), the top
+  // panes are out of date: say so, with veripb's progress, after 300 ms.
+  const updating = (() => {
+    const element = el("div", { className: "enh-updating", hidden: true });
+    element.setAttribute("aria-live", "polite");
+    let started = null;
+    let line = null;
+    let timer = null;
+    const render = () => {
+      const seconds = (performance.now() - started) / 1000;
+      if (seconds < 0.3) return;
+      const total = state?.proof ? state.proof.lines + 2 : null;
+      const where = line ? ` · line ${line.toLocaleString()}${total ? ` of ${total.toLocaleString()} (${Math.min(100, Math.floor((100 * line) / total))}%)` : ""}` : "";
+      element.textContent = `Updating the panes · ${seconds.toFixed(0)} s${where}`;
+      element.hidden = false;
+      element.parentElement?.classList.add("stale");
+    };
+    return {
+      element,
+      start() {
+        if (started != null) return;
+        started = performance.now();
+        line = null;
+        timer = setInterval(render, 200);
+      },
+      progress(progress) {
+        if (started != null) line = progress.line ?? line;
+      },
+      done() {
+        clearInterval(timer);
+        started = null;
+        element.hidden = true;
+        element.parentElement?.classList.remove("stale");
+      },
+    };
+  })();
+  const client = connectReplWorker(host, {
+    what: "REPL",
+    onState: (s) => {
+      updating.done();
+      update(s);
+    },
+    onUpdating: () => updating.start(),
+    onProgress: (progress) => updating.progress(progress),
+  });
   // Palettes and the command list come from the REPL.
   const colorScheme = matchMedia("(prefers-color-scheme: dark)");
   const followSystem = () => { if (!themeNames().includes(storedTheme())) applyStoredOrSystem(); };
@@ -218,7 +263,7 @@ export function mount(root, host) {
     el("label", { className: "db-kind", title: "Show derived constraints" }, derivedBox, "derived"));
   for (const control of [coreBox, derivedBox]) control.addEventListener("input", () => renderDatabase(true));
 
-  const top = el("div", { className: "enh-top" });
+  const top = el("div", { className: "enh-top" }, updating.element);
   const split1 = el("div");
   const split2 = el("div");
   top.append(formula.section, split1, database.section, split2, proof.section);

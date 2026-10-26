@@ -92,7 +92,7 @@ aside input[type=file] { display: none; }
 .plain-prompt { color: var(--echo); white-space: pre; }
 /* While a command runs (output-view.js): in place of the input. */
 .plain-form .busy { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.plain-form .busy::before { content: "◐ "; display: inline-block; animation: busy-spin 1s linear infinite; }
+.plain-form .busy::before { content: "◐"; display: inline-block; margin-right: 0.45em; animation: busy-spin 1s linear infinite; }
 @keyframes busy-spin { to { transform: rotate(360deg); } }
 .plain-form:has(.busy:not([hidden])) .plain-in { display: none; }
 .plain-in { flex: 1; font: inherit; color: inherit; background: transparent; border: none; outline: none; }
@@ -168,6 +168,15 @@ aside input[type=file] { display: none; }
 .enh-top { position: relative; }
 .enh-top.linked .splitter-x { background: linear-gradient(var(--border), var(--border)) center / 2px 100% no-repeat; }
 .enh-top.linked .splitter-x:hover, .enh-top.linked .splitter-x.dragging { background-image: linear-gradient(var(--accent), var(--accent)); }
+/* The top panes while the session summary is being recomputed (enhanced.js). */
+.enh-updating {
+  position: absolute; z-index: 3; top: 2.4rem; left: 50%; transform: translateX(-50%); padding: 0.3rem 0.8rem;
+  color: var(--fg); background: var(--panel); border: 1px solid var(--accent); border-radius: 4px;
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.2); white-space: nowrap; pointer-events: none;
+}
+.enh-updating[hidden] { display: none; }
+.enh-updating::before { content: "◐"; display: inline-block; margin-right: 0.45em; animation: busy-spin 1s linear infinite; }
+.enh-top.stale .pane-body { opacity: 0.55; transition: opacity 0.2s; }
 .links-layer { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 2; }
 .links-layer .link { fill: none; stroke-width: 1.4; opacity: 0.75; transition: opacity 0.1s; }
 .links-layer .link.core { stroke: var(--echo); }

@@ -9,7 +9,8 @@
 //                 | {type: "query", id, kind: "complete" | "themes" | "commands" | "glossary" | "extras" | "explain" | "lineIds" | "view" | "find" | "edit",
 //                    text?, line?, first?, last?, request?, edit?}
 // Worker -> page: {type: "out", lines, trace} | {type: "mode", mode, ms, veripbRuns}
-//                 | {type: "progress", run, line}  during a command: veripb run n, last traced line
+//                 | {type: "progress", run, line}  during a command: veripb run n, proof line reached
+//                 | {type: "updating"}  computing the session state that follows
 //                 | {type: "files", files} | {type: "file", id, data}
 //                 | {type: "dump", id, files: [[name, data], ...]} | {type: "fatal", text}
 //                 | {type: "state", id?, state} | {type: "preserved", id, preserved}
@@ -26,7 +27,12 @@ let repl;
 let markReplReady;
 const replReady = new Promise((resolve) => { markReplReady = resolve; });
 let watching = false;
-const postState = (id) => post({ type: "state", id, state: repl.state() });
+// "updating" first: the summary can take a veripb run (the REPL rebuilds its
+// database after the proof changes), and the page says so meanwhile.
+const postState = (id) => {
+  post({ type: "updating" });
+  post({ type: "state", id, state: repl.state() });
+};
 
 // Output lines are sent in batches: one message per OUT_BATCH lines and at
 // the end of each command. `trace[i]` is true when lines[i] is, verbatim, a
