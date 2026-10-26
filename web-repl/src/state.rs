@@ -41,7 +41,8 @@ pub extern "C" fn vr_result_ptr() -> *const u8 {
 /// unchecked, rejected: {n, message} | null, debugLine, lastStepIds,
 /// breakpoints: [n]}, database: {count, core, labels} | {error}, variables}`; all but
 /// `mode` are `null` without a session. `generation` changes whenever the
-/// formula, proof or checked prefix does. Runs veripb only when the database
+/// formula, proof or checked prefix does, `edits` with every buffer edit
+/// through `vr_buffer_edit` (a comment edit changes only `edits`). Runs veripb only when the database
 /// cache is stale.
 #[unsafe(no_mangle)]
 pub extern "C" fn vr_state() -> i32 {
@@ -97,6 +98,7 @@ fn state_json(state: &State, with_database: bool) -> Value {
     json!({
         "mode": mode,
         "generation": session.generation,
+        "edits": edits(),
         "formula": formula_json(session),
         "proof": proof_json(session, mode == MODE_DEBUG),
         "database": if with_database { database_json(session) } else { json!({ "pending": true }) },
@@ -229,8 +231,28 @@ pub extern "C" fn vr_commands() -> i32 {
     ))
 }
 
+thread_local! {
+    /// How many buffer edits `vr_buffer_edit` has applied: with the session
+    /// generation, which a comment edit leaves alone, it tells the page when
+    /// to fetch rows again.
+    static EDITS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// The count of buffer edits applied so far (see `EDITS`).
+pub(crate) fn edits() -> u64 {
+    EDITS.with(std::cell::Cell::get)
+}
+
+/// A whole-line comment: `%` first, after any spaces.
+fn is_comment(text: &str) -> bool {
+    text.trim_start().starts_with('%')
+}
+
 /// One edit to the proof buffer, recorded as one undoable action, as the
-/// TUI's Vim mode records each commit. `json` is `{op, index, text?,
+/// TUI's Vim mode records each commit. Retyping a comment as a comment keeps
+/// the checked prefix, the rejection and the database (a comment changes
+/// nothing veripb checks); `Session::set_line` would retract the prefix to
+/// that line, as every other edit does. `json` is `{op, index, text?,
 /// after?}`, with `index` a buffer index:
 ///   set: line `index` becomes `text` (no-op, and no undo entry, if equal)
 ///   insert: `text` becomes a new line before `index` (`index` = buffer
@@ -238,8 +260,9 @@ pub extern "C" fn vr_commands() -> i32 {
 ///   delete: line `index` is removed
 ///   split: line `index` becomes `text` and `after` is inserted after it
 ///   join: line `index` becomes `text` and line `index + 1` is removed
-/// Returns `{ok: true, generation}` or `{error, generation}` (the session
-/// generation after the edit); `null` without a session.
+/// Returns `{ok: true, generation, edits}` or `{error, generation, edits}`
+/// (the session generation and edit count after it); `null` without a
+/// session.
 ///
 /// # Safety
 /// `ptr` must point to `len` readable bytes.
@@ -259,8 +282,15 @@ pub unsafe extern "C" fn vr_buffer_edit(ptr: *const u8, len: usize) -> i32 {
             return set_result(Value::Null);
         };
         let in_buffer = index < session.buffer.len();
+        let before = (session.generation, session.buffer.len(), in_buffer.then(|| session.buffer[index].clone()));
         let result = match edit["op"].as_str() {
             Some("set") if in_buffer && session.buffer[index] == text => Ok(()),
+            Some("set") if in_buffer && is_comment(&session.buffer[index]) && is_comment(text) => {
+                let snapshot = session.snapshot();
+                session.buffer[index] = text.to_string();
+                session.push_undo(snapshot);
+                Ok(())
+            }
             Some("set" | "delete" | "split") if !in_buffer => Err(anyhow::anyhow!("no proof line at buffer index {index}")),
             Some("join") if index + 1 >= session.buffer.len() => Err(anyhow::anyhow!("no proof line after buffer index {index}")),
             Some("insert") if index > session.buffer.len() => Err(anyhow::anyhow!("no proof line at buffer index {index}")),
@@ -280,9 +310,13 @@ pub unsafe extern "C" fn vr_buffer_edit(ptr: *const u8, len: usize) -> i32 {
             }
             _ => Err(anyhow::anyhow!("unknown edit")),
         };
+        let after = (session.generation, session.buffer.len(), in_buffer.then(|| session.buffer.get(index).cloned()).flatten());
+        if before != after {
+            EDITS.with(|n| n.set(n.get() + 1));
+        }
         set_result(match result {
-            Ok(()) => json!({ "ok": true, "generation": session.generation }),
-            Err(err) => json!({ "error": format!("{err:#}"), "generation": session.generation }),
+            Ok(()) => json!({ "ok": true, "generation": session.generation, "edits": edits() }),
+            Err(err) => json!({ "error": format!("{err:#}"), "generation": session.generation, "edits": edits() }),
         })
     })
 }

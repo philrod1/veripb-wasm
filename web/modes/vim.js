@@ -14,12 +14,14 @@
 //        doubleClick(line), click(line, col), key(event) -> handled, settle(),
 //        exit() }
 //   Lines are display lines: buffer index i is line i + 3 (two preamble lines).
-//   sync({count, get(index) -> text | undefined}, generation) gives the
-//   session's lines as last fetched (`get` may only know the lines near the
-//   cursor) and the session generation they are from. Edits not yet in them
-//   are kept in a log and applied on top, so further keys see each edit at
-//   once; an edit leaves the log when a fetch at or after its generation
+//   sync({count, get(index) -> text | undefined}, edits) gives the session's
+//   lines as last fetched (`get` may only know the lines near the cursor)
+//   and the session's edit count when they were (vr_view's `edits`). Edits
+//   not yet in them are kept in a log and applied on top, so further keys
+//   see each edit at once; an edit leaves the log when a fetch that counts it
 //   arrives.
+//   In Insert mode, edited lines are held (isHeld(line)) and committed on Esc,
+//   or before a split or join; text(line) shows them.
 //   input is the <input> to place on the cursor line in Insert mode; call
 //   settle() after each draw of the Proof pane, to focus it when it was asked
 //   for before its row was drawn.
@@ -31,7 +33,7 @@ const clampCol = (col, len) => Math.max(0, Math.min(col, len - 1));
 
 export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFocus }) {
   let base = { count: 0, get: () => undefined };
-  // Edits not yet in `base`, oldest first: {op, index, text, after, generation}.
+  // Edits not yet in `base`, oldest first: {op, index, text, after, edits}.
   let log = [];
   let queue = Promise.resolve();
   const DELTA = { insert: 1, split: 1, delete: -1, join: -1, set: 0 };
@@ -52,18 +54,22 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
   input.setAttribute("aria-label", "Proof line (Insert mode)");
   const vim = { active: false, line: FIRST, col: 0, mode: "normal", pendingD: false, input };
 
+  // Insert mode holds each edited line's text until Esc, or until a split or
+  // join, which commit it: moving between lines commits nothing, and a line
+  // edited back to what it was is never committed. Buffer index -> text.
+  const held = new Map();
   const maxLine = () => FIRST + length() - 1;
-  const text = (line) => get(line - FIRST);
+  const text = (line) => (held.has(line - FIRST) ? held.get(line - FIRST) : get(line - FIRST));
   const index = (line) => line - FIRST;
   const editable = (line) => line >= FIRST && line <= maxLine();
 
   // Sends one edit, logging it so further keys see it before the session's
   // new lines arrive.
   function commit(op) {
-    const entry = { ...op, generation: undefined };
+    const entry = { ...op, edits: undefined };
     log.push(entry);
     queue = queue.then(() => edit(op)).then((result) => {
-      entry.generation = result?.generation ?? -1;
+      entry.edits = result?.edits ?? -1;
       if (result?.error) note(`Error: ${result.error}`);
     });
   }
@@ -97,23 +103,36 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
     focusInput(vim.col);
   }
 
+  // Holds the Insert-mode input's text for the cursor line, or forgets the
+  // line if it is back to what it was.
+  function holdCurrent() {
+    const i = index(vim.line);
+    if (input.value !== get(i)) held.set(i, input.value);
+    else held.delete(i);
+  }
+  // Commits the held lines (one undoable action each), top to bottom.
+  function commitHeld() {
+    for (const [i, value] of [...held].sort(([a], [b]) => a - b)) {
+      if (get(i) !== value) commit({ op: "set", index: i, text: value });
+    }
+    held.clear();
+  }
+
   function commitInsert() {
     const caret = input.selectionStart ?? input.value.length;
     const value = input.value;
-    const i = index(vim.line);
-    if (get(i) !== value) commit({ op: "set", index: i, text: value });
+    holdCurrent();
+    commitHeld();
     vim.mode = "normal";
     vim.col = clampCol(caret, value.length);
     onFocus();
     render();
   }
 
-  // Insert mode: move to another line, committing this one if it changed.
+  // Insert mode: move to another line, holding this one's text.
   function insertMoveTo(line, col) {
     if (line === vim.line || !editable(line)) return;
-    const i = index(vim.line);
-    const value = input.value;
-    if (get(i) !== value) commit({ op: "set", index: i, text: value });
+    holdCurrent();
     vim.line = line;
     vim.col = Math.min(col, text(line).length);
     input.value = text(line);
@@ -126,6 +145,8 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
     const before = input.value.slice(0, caret);
     const after = input.value.slice(caret);
     const i = index(vim.line);
+    held.delete(i);
+    commitHeld();
     commit({ op: "split", index: i, text: before, after });
     vim.line += 1;
     vim.col = 0;
@@ -140,6 +161,9 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
     const first = upper === vim.line ? input.value : text(upper);
     const second = upper === vim.line ? text(upper + 1) : input.value;
     const merged = first + second;
+    held.delete(i);
+    held.delete(i + 1);
+    commitHeld();
     commit({ op: "join", index: i, text: merged });
     vim.line = upper;
     vim.col = first.length;
@@ -265,9 +289,11 @@ export function createVim({ edit, toggleBreakpoint, note, render, toPrompt, onFo
 
   return Object.assign(vim, {
     text,
-    sync(next, generation) {
+    /** Whether display line `line` has edits held in Insert mode, not committed. */
+    isHeld: (line) => held.has(line - FIRST),
+    sync(next, edits) {
       base = next;
-      log = log.filter((e) => e.generation === undefined || e.generation > generation);
+      log = log.filter((e) => e.edits === undefined || e.edits > edits);
       if (!vim.active) return;
       if (!length()) {
         vim.active = false;

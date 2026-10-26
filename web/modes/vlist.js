@@ -3,11 +3,11 @@
 // what is on screen plus a screen of slack either side.
 //
 // createVirtualList({ body, fetch, render, placeholder, onLoad, onRender }) -> list
-//   fetch(start, count) -> Promise<{total, rows, generation} | {error} | null>
+//   fetch(start, count) -> Promise<{total, rows, generation, edits?} | {error} | null>
 //   render(row, position) -> Element: one row (rows must all be one height)
 //   placeholder(position) -> Element, optional: a row not fetched yet
 //   (default: an empty row); fetches wait while the source is busy
-//   onLoad({total, generation} | {error} | null): after each fetch
+//   onLoad({total, generation, edits} | {error} | null): after each fetch
 //   onRender(): after each draw
 // list: { refresh(), redraw(), scrollTo(position, block), rowAt(position),
 //         total, generation, error, visibleRange() -> [first, last] }
@@ -62,7 +62,7 @@ export function createVirtualList({ body, fetch, render, placeholder, onLoad, on
         list.total = result.total;
         list.generation = result.generation;
       }
-      onLoad?.(result && !result.error ? { total: result.total, generation: result.generation } : result);
+      onLoad?.(result && !result.error ? { total: result.total, generation: result.generation, edits: result.edits } : result);
       schedule();
     });
   }

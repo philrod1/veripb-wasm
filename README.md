@@ -285,9 +285,13 @@ Enhanced mode:
     joins it to the line above, Delete at its end pulls up the line below
     (not in the TUI); ↑/↓, and ←/→ at either end, move to the neighbouring
     line; Esc returns to Normal.
-  - Each commit (`x`, `dd`, `o`/`O`, Enter, a join, and leaving or moving off a
-    changed line) is one `:undo` action and marks the line and those after
-    it unchecked, as in the TUI (`vr_buffer_edit`). Hover a line for "explain": a modal
+  - Insert mode holds edited lines (marked in the pane, italic) and commits
+    them on Esc, or before a split or join: moving between lines commits
+    nothing, and a line edited back to what it was is not committed at all.
+  - Each commit (`x`, `dd`, `o`/`O`, Enter, a join, and each changed line on
+    Esc) is one `:undo` action and marks the line and those after it
+    unchecked, as in the TUI (`vr_buffer_edit`), except that retyping a `%`
+    comment as a comment keeps every line checked. Hover a line for "explain": a modal
   for that line, which leaves Output untouched (Copy; Esc, Close or a click
   outside closes it). `:explain` typed at the prompt prints to Output as usual.
 - **Explain modal:** for a checked `rup`, `pol`, `red` or `a` line, "Plain

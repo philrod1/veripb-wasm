@@ -943,8 +943,8 @@ export function mount(root, host) {
       // Rows from the summary's own session generation: their statuses are
       // the REPL's, so the stand-in ticks are no longer needed.
       if (info?.generation != null && info.generation === live.generation && !live.verifying) live.settled = 0;
-      if (!proofFilter.value.trim() && info?.generation != null) {
-        vim.sync({ count: Math.max(0, info.total - 2), get: (i) => proofList.rowAt(i + 2)?.text }, info.generation);
+      if (!proofFilter.value.trim() && info?.edits != null) {
+        vim.sync({ count: Math.max(0, info.total - 2), get: (i) => proofList.rowAt(i + 2)?.text }, info.edits);
       }
       proofTitle(info?.total);
     },
@@ -993,6 +993,7 @@ export function mount(root, host) {
       explain);
     row.dataset.n = line.n;
     if (vim.active && line.n === vim.line) row.classList.add("vim-line");
+    if (vim.active && vim.isHeld(line.n)) row.classList.add("held");
     row.addEventListener("click", (event) => {
       if (vim.active) return vim.click(line.n, clickColumn(row, event));
       if (view.mode === MODE_PBP && !getSelection().toString()) view.prefill(`:edit ${line.n}`);
@@ -1029,7 +1030,7 @@ export function mount(root, host) {
   }
   function renderProof(force = false) {
     const p = state?.proof;
-    update3("proof", proofList, [state?.generation, p?.checked, p?.rejected, p?.breakpoints, proofFilter.value.trim()],
+    update3("proof", proofList, [state?.generation, state?.edits, p?.checked, p?.rejected, p?.breakpoints, proofFilter.value.trim()],
       [state?.mode, p?.debugLine, [...variables], vim.active && [vim.line, vim.col, vim.mode]], force);
     proofTitle();
     if (vim.active) proofList.scrollTo(vim.line - 1);
@@ -1041,6 +1042,9 @@ export function mount(root, host) {
   // A proof line's text: tokens, or on the Vim cursor line the cursor (Normal)
   // or the Insert-mode input.
   function lineText(line) {
+    if (vim.active && line.n !== vim.line && vim.isHeld(line.n)) {
+      return el("span", { className: "text", title: "Edited; committed when you press Esc" }, tokens(vim.text(line.n), variables));
+    }
     if (!vim.active || line.n !== vim.line) return el("span", { className: "text" }, tokens(line.text, variables, { refs: true }));
     if (vim.mode === "insert") return el("span", { className: "text" }, vim.input);
     const t = vim.text(line.n);

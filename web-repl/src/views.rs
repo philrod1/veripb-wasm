@@ -6,7 +6,8 @@
 //! Filtering matches the page's rule: a number matches a row's ID or line
 //! (`ids` may be a range `1-2`); other text is a case-insensitive substring of
 //! the row's text (labels included, in the Database pane). The matching rows
-//! are cached per pane until the session or the filter changes.
+//! are cached per pane until the session, its buffer edits or the filter
+//! change.
 
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -21,7 +22,7 @@ use crate::state::set_result;
 
 /// One pane's filter and the positions (in its unfiltered rows) that match.
 struct Matches {
-    key: (u64, String, bool, bool),
+    key: (u64, u64, String, bool, bool),
     positions: Vec<usize>,
 }
 
@@ -179,8 +180,9 @@ pub(crate) fn database_rows(session: &Session) -> Result<Rc<Vec<Value>>, String>
 /// "database", start, count, query?, core?, derived?}`: `start` and `count`
 /// count matching rows; `query` filters (see the module docs); `core` and
 /// `derived` (default true) keep those Database rows. Returns `{total, start,
-/// rows, generation}`, with `total` the number of matching rows and
-/// `generation` the session's, or `{error}`; `null` without a session.
+/// rows, generation, edits}`, with `total` the number of matching rows and
+/// `generation` and `edits` as in `vr_state`, or `{error}`; `null` without a
+/// session.
 ///
 /// Rows: Formula `{ids, text}`, or `{meta: "objective" | "preserved", text}`
 /// above them when unfiltered; Proof `{n, index, text, status, breakpoint,
@@ -229,7 +231,7 @@ pub unsafe extern "C" fn vr_view(ptr: *const u8, len: usize) -> i32 {
             _ => return set_result(json!({ "error": format!("unknown pane {pane:?}") })),
         };
 
-        let key = (session.generation, query.clone(), core, derived);
+        let key = (session.generation, crate::state::edits(), query.clone(), core, derived);
         let unfiltered = query.is_empty() && core && derived;
         let positions = if unfiltered {
             None
@@ -259,7 +261,7 @@ pub unsafe extern "C" fn vr_view(ptr: *const u8, len: usize) -> i32 {
         let window: Vec<Value> = (start.min(end)..end)
             .map(|k| rows.row(positions.as_ref().map_or(k, |p| p[k])))
             .collect();
-        set_result(json!({ "total": total, "start": start, "rows": window, "generation": session.generation }))
+        set_result(json!({ "total": total, "start": start, "rows": window, "generation": session.generation, "edits": crate::state::edits() }))
     })
 }
 

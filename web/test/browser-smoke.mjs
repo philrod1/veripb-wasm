@@ -160,8 +160,9 @@ const glossaryTitle = () => page.textContent(".glossary-entry h2");
 check("enhanced: a link opens the Glossary entry", await until(async () => (await page.isVisible(".tab-glossary")) && (await glossaryTitle()) === "Reverse unit propagation (RUP)"));
 check("enhanced: following a link closes the modal", !(await page.$eval(".explain-modal", (d) => d.open)));
 await page.fill(".glossary-search", "witness");
-const glossaryItems = await page.$$eval(".glossary-item", (items) => items.map((i) => i.textContent));
-check("enhanced: glossary search", glossaryItems.includes("Witness") && !glossaryItems.includes("Slack"), glossaryItems.join(", "));
+const glossaryItems = () => page.$$eval(".glossary-item", (items) => items.map((i) => i.textContent));
+check("enhanced: glossary search", await until(async () => (await glossaryItems()).includes("Witness") && !(await glossaryItems()).includes("Slack")),
+  `search ${JSON.stringify(await page.inputValue(".glossary-search"))}: ${(await glossaryItems()).join(", ")}`);
 await page.click(".glossary-item:has-text('Witness')");
 check("enhanced: glossary entry", (await glossaryTitle()) === "Witness" && (await page.textContent(".glossary-see")).includes("Redundance-based strengthening"));
 await page.fill(".glossary-search", "");
@@ -241,6 +242,62 @@ check("vim: :edit opens Normal mode on the line", await until(async () => (await
 await page.keyboard.press(":");
 check("vim: : goes to the prompt", (await page.inputValue(".plain-in")) === ":" && !(await title("proof")).includes("--"));
 await page.fill(".plain-in", "");
+
+// Insert mode holds edits until Esc: moving off a line commits nothing, and
+// a line edited back to what it was stays checked.
+const proofStatus = () => page.$$eval(".pane-proof .row:not(.preamble) .status", (s) => s.map((x) => x.textContent).join(""));
+const original3 = await proofText(3);
+check("held: all checked first", await until(async () => (await proofStatus()) === "✓✓✓"), await proofStatus());
+await command(":edit 3");
+await page.keyboard.press("i");
+await page.keyboard.type("Z");
+await page.keyboard.press("ArrowDown");
+check("held: moving off an edited line holds it, uncommitted", await until(async () => !!(await page.$('.pane-proof .row.held[data-n="3"]'))
+  && (await proofText(3)) === `Z${original3}` && (await proofStatus()) === "✓✓✓"), `${await proofText(3)} ${await proofStatus()}`);
+await page.keyboard.press("ArrowUp");
+await page.keyboard.press("Home");
+await page.keyboard.press("Delete");
+await page.keyboard.press("Escape");
+await sleep(300);
+check("held: a line edited back stays checked", await until(async () => (await proofStatus()) === "✓✓✓" && (await proofText(3)) === original3),
+  `${await proofText(3)} ${await proofStatus()}`);
+await page.keyboard.press("Escape");
+
+// Editing a comment keeps the lines after it checked.
+await command(":insert 6");
+await page.keyboard.type("% a note");
+await page.keyboard.press("Escape");
+await page.keyboard.press("Escape");
+await sleep(200);
+await command(":verify");
+check("comment: verified with the comment", await until(async () => (await proofStatus()) === "✓✓✓✓"), await proofStatus());
+await command(":edit 4");
+await page.keyboard.press("O");
+await page.keyboard.type("% another note");
+await page.keyboard.press("Escape");
+await page.keyboard.press("Escape");
+await sleep(200);
+await command(":verify");
+check("comment: two comments, all checked", await until(async () => (await proofStatus()) === "✓✓✓✓✓"), await proofStatus());
+await command(":edit 4");
+await page.keyboard.press("i");
+await page.keyboard.press("End");
+await page.keyboard.type(", reworded");
+await page.keyboard.press("Escape");
+await page.keyboard.press("Escape");
+check("comment: editing a comment keeps every line checked", await until(async () => (await proofText(4)) === "% another note, reworded" && (await proofStatus()) === "✓✓✓✓✓"),
+  `${await proofText(4)} ${await proofStatus()}`);
+await command(":edit 7");
+await page.keyboard.press("d");
+await page.keyboard.press("d");
+await command(":edit 4");
+await page.keyboard.press("d");
+await page.keyboard.press("d");
+await page.keyboard.press("Escape");
+await sleep(200);
+await command(":verify");
+check("comment: the comments removed again", await until(async () => (await proofStatus()) === "✓✓✓" && (await proofText(4)) !== null && (await proofText(6)) === null),
+  await proofStatus());
 
 // Links: a curve per formula line and per proof line to its Database row.
 await page.selectOption(".links-toggle select", "all");

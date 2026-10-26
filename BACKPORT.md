@@ -71,6 +71,24 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   `push_undo`). Docs: `VimState`'s comment, and `USER_GUIDE.md` around the
   Insert-mode description.
 
+- **Editing a comment keeps the proof checked.** `Session::set_line` retracts
+  the checked prefix to the edited line for any edit. A `%` comment retyped
+  as a comment changes nothing veripb checks (constraint IDs, database,
+  labels), so the web build replaces the text directly under one undo
+  snapshot, without bumping `generation` (which would also make the REPL
+  rebuild its database). Here: `is_comment` in `vr_buffer_edit`,
+  `web-repl/src/state.rs`. Blank lines are left out: veripb rejected one
+  in a proof. In the REPL this belongs in `set_line` itself, or in the
+  TUI's commit, and in plain `:edit`.
+- **Insert mode commits on Esc, not on leaving a line.** The TUI commits the
+  current line whenever the cursor leaves it (`vim_insert_move_to`), so
+  moving off an accidentally edited line unchecks it and everything after,
+  even if it is then changed back. The web build holds each edited line's
+  text until Esc (or a split or join, which commit the held lines first),
+  marks held lines in the pane, and skips any line whose text is back to
+  what it was. Here: `held`, `holdCurrent` and `commitHeld` in
+  `web/modes/vim.js`.
+
 ## Explaining and learning
 
 - **Plain-English explanations.** For a checked `rup`, `pol`, `red` or `a`

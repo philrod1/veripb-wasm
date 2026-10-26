@@ -145,6 +145,9 @@ aside input[type=file] { display: none; }
 .pane-body:focus { outline: none; }
 /* A row not fetched yet (modes/vlist.js). */
 .row.vlist-loading .text { color: var(--muted); }
+/* Edited in Insert mode, not committed until Esc (modes/vim.js). */
+.pane-proof .row.held { box-shadow: inset 3px 0 0 var(--accent); }
+.pane-proof .row.held .text { font-style: italic; }
 .pane-proof .row.vim-line { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .vim-cursor { background: var(--accent); color: var(--bg); }
 .pane-body:not(:focus) .vim-cursor { background: transparent; color: inherit; outline: 1px solid var(--accent); }

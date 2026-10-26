@@ -187,5 +187,33 @@ for (const stem of preservedStems) {
   expect("find, a missing id", String(s.repl.find({ id: 99 })), "null");
 }
 
+// Editing a comment keeps the checked prefix (vr_buffer_edit); any other
+// edit retracts it to the edited line.
+{
+  const s = session(demoFiles);
+  s.run(":instance two-of-three");
+  s.run(":insert 4");
+  s.run("% a comment");
+  s.run(":done");
+  s.run(":verify");
+  const expect = (where, got, want) => {
+    checks += 1;
+    if (got !== want) fail(`comment edit: ${where}`, `got ${got}, want ${want}`);
+  };
+  const summary = () => s.repl.state();
+  const before = summary();
+  expect("all checked first", `${before.proof.checked}/${before.proof.lines}`, "5/5");
+  const edited = s.repl.bufferEdit({ op: "set", index: 1, text: "% the comment, reworded" });
+  const after = summary();
+  expect("a comment edit keeps everything checked", `${after.proof.checked}/${after.proof.lines}`, "5/5");
+  expect("a comment edit keeps the generation", String(after.generation), String(before.generation));
+  expect("a comment edit counts as an edit", String(edited.edits > before.edits), "true");
+  expect("the new comment text", s.repl.view({ pane: "proof", start: 3, count: 1 }).rows[0]?.text, "% the comment, reworded");
+  s.repl.bufferEdit({ op: "set", index: 1, text: "rup 1 ~x1 1 ~x2 >= 1 ;" });
+  expect("a comment turned into a rule retracts", String(summary().proof.checked), "1");
+  s.run(":undo");
+  expect(":undo restores the comment", s.repl.view({ pane: "proof", start: 3, count: 1 }).rows[0]?.text, "% the comment, reworded");
+}
+
 console.log(`${checks} checks, ${failures} mismatches`);
 process.exit(failures ? 1 : 0);
