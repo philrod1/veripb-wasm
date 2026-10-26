@@ -825,34 +825,101 @@ export function mount(root, host) {
     lookup(target.dataset.refKind, target.dataset.ref).then((entry) => { if (entry) jumpToConstraint(entry); });
   }, { capture: true });
 
-  /**
-   * Shows `entry` (vr_find's `{id, position}`) in the Database pane: unzooms,
-   * clears filters (positions are among the unfiltered rows), scrolls to it
-   * and flashes it once drawn.
-   */
-  let flashId = null;
-  function jumpToConstraint(entry) {
-    if (explainDialog.open) explainDialog.close();
-    if (zoom && zoom.pane !== "database" && !(zoom.pane === "output" && zoom.level === "wide")) {
+  // ---- Jumps between a line and its constraints ----
+  // Clicking a row's number: a Formula or Proof line shows its constraints in
+  // the Database pane; a Database row shows the line it came from. The pane
+  // jumped to is unzoomed and unfiltered (positions are among its unfiltered
+  // rows), scrolled to the row, which flashes once drawn.
+  const flash = { database: new Set(), formula: null, proof: null };
+  const paneParts = () => ({ formula: [formula, formulaList, formulaFilter], database: [database, databaseList, filter], proof: [proof, proofList, proofFilter] });
+  function reveal(pane) {
+    if (zoom && zoom.pane !== pane && !(zoom.pane === "output" && zoom.level === "wide")) {
       zoom = null;
       applyLayout();
     }
-    if (filter.value || !coreBox.checked || !derivedBox.checked) {
-      filter.value = "";
-      coreBox.checked = derivedBox.checked = true;
-      renderDatabase();
+    const box = paneParts()[pane][2];
+    if (box.value || (pane === "database" && (!coreBox.checked || !derivedBox.checked))) {
+      box.value = "";
+      if (pane === "database") coreBox.checked = derivedBox.checked = true;
+      ({ formula: renderFormula, database: renderDatabase, proof: renderProof })[pane]();
     }
-    flashId = entry.id;
+  }
+  /** Shows `entry` (vr_find's `{id, position}`), flashing `ids` (default: its own). */
+  function jumpToConstraint(entry, ids = [entry.id]) {
+    if (explainDialog.open) explainDialog.close();
+    reveal("database");
+    flash.database = new Set(ids);
     databaseList.scrollTo(entry.position, "center");
   }
-  function flashJumped() {
-    const row = flashId != null && database.body.querySelector(`.row[data-id="${flashId}"]`);
-    if (!row) return;
-    flashId = null;
+  /** Shows row `position` of the Formula or Proof pane. */
+  function jumpToRow(pane, position) {
+    reveal(pane);
+    flash[pane] = position;
+    paneParts()[pane][1].scrollTo(position, "center");
+  }
+  const flashRow = (row) => {
     row.classList.remove("jumped");
     void row.offsetWidth;
     row.classList.add("jumped");
+  };
+  function flashJumped() {
+    if (!flash.database.size) return;
+    const rows = [...database.body.querySelectorAll(".row[data-id]")].filter((row) => flash.database.has(Number(row.dataset.id)));
+    if (!rows.length) return;
+    rows.forEach(flashRow);
+    flash.database = new Set();
   }
+  function flashAt(pane) {
+    const row = flash[pane] != null && paneParts()[pane][0].body.querySelector(`.row[data-pos="${flash[pane]}"]`);
+    if (!row) return;
+    flashRow(row);
+    flash[pane] = null;
+  }
+
+  // A lookup can take a veripb run (a proof line's constraints need the
+  // traced replay): it says so after 300 ms; a dead end is said for 3 s.
+  const locating = el("div", { className: "enh-updating enh-locating", hidden: true });
+  top.append(locating);
+  let locatingTimer = null;
+  async function locate(text, work) {
+    clearTimeout(locatingTimer);
+    locatingTimer = setTimeout(() => { locating.textContent = text; locating.hidden = false; }, 300);
+    try {
+      return await work();
+    } finally {
+      clearTimeout(locatingTimer);
+      locating.hidden = true;
+    }
+  }
+  function sayBriefly(text) {
+    clearTimeout(locatingTimer);
+    locating.textContent = text;
+    locating.hidden = false;
+    locatingTimer = setTimeout(() => { locating.hidden = true; }, 3000);
+  }
+  /** The first of `ids` still in the database, scrolled to; all of them flashed. */
+  async function showConstraints(ids, what) {
+    const entries = await locate(`Finding ${what}'s constraints…`, () => Promise.all(ids.map((id) => client.find({ id }))));
+    const first = entries.find(Boolean);
+    if (!first) return sayBriefly(ids.length ? `The constraints of ${what} are no longer in the database.` : `${what[0].toUpperCase()}${what.slice(1)} derived no constraints.`);
+    jumpToConstraint(first, ids);
+  }
+  async function showProofLine(n) {
+    const ids = await locate(`Finding line ${n}'s constraints…`, () => client.lineIds(n, n));
+    if (ids?.error) return sayBriefly(`Error: ${ids.error}`);
+    if (!ids?.[n]) return sayBriefly(`Line ${n} is not checked: :verify it to see its constraints.`);
+    showConstraints(ids[n], `line ${n}`);
+  }
+  async function showSource(id) {
+    const source = await locate(`Finding where constraint ${id} came from…`, () => client.source(id));
+    if (!source) return sayBriefly(`Constraint ${id}: no checked line derived it.`);
+    jumpToRow(source.pane, source.position);
+  }
+  // "1-2" -> [1, 2]; "3" -> [3].
+  const expandIds = (text) => {
+    const [lo, hi = lo] = String(text).split("-").map(Number);
+    return Array.from({ length: hi - lo + 1 }, (_, k) => lo + k);
+  };
 
   // ---- Rendering ----
   // Text with `code` spans and [glossary links](g:<id>) (teach.rs and
@@ -903,16 +970,19 @@ export function mount(root, host) {
   const formulaList = createVirtualList({
     body: formula.body,
     fetch: (start, count) => client.view({ pane: "formula", start, count, query: formulaFilter.value }),
-    render: (row) => {
+    render: (row, position) => {
       if (row.meta) {
         return el("div", { className: "row meta" }, el("span", { className: "num", textContent: row.meta === "objective" ? "obj" : "pres" }),
           el("span", { className: "text", textContent: stripSemicolon(row.text) }));
       }
-      const element = el("div", { className: "row" }, el("span", { className: "num", textContent: row.ids }),
+      const element = el("div", { className: "row" },
+        jumpNum(row.ids, "Show in the Database pane", () => showConstraints(expandIds(row.ids), `formula line ${row.ids}`)),
         el("span", { className: "text" }, tokens(stripSemicolon(row.text), variables, { refs: true })));
       element.dataset.ids = row.ids;
+      element.dataset.pos = position;
       return element;
     },
+    onRender: () => flashAt("formula"),
     onLoad: (info) => {
       const f = state?.formula;
       formulaEmpty(f ? null : "No formula loaded. Add files, then :instance <name> or :load <file.opb>.");
@@ -921,6 +991,15 @@ export function mount(root, host) {
     },
   });
   const formulaEmpty = emptyNote(formula);
+  // A row number that jumps (see "Jumps between a line and its constraints").
+  function jumpNum(text, title, jump) {
+    const num = el("span", { className: "num jump", textContent: text, title });
+    num.addEventListener("click", (event) => {
+      event.stopPropagation();
+      jump();
+    });
+    return num;
+  }
 
   const databaseList = createVirtualList({
     body: database.body,
@@ -928,7 +1007,7 @@ export function mount(root, host) {
     render: (entry) => {
       const lit = state?.mode === MODE_DEBUG && (state.proof?.lastStepIds ?? []).includes(entry.id);
       const row = el("div", { className: `row ${entry.core ? "core" : "derived"}${lit ? " lit" : ""}`, title: entry.core ? "core" : "derived" },
-        el("span", { className: "num", textContent: entry.id }),
+        jumpNum(entry.id, entry.id <= (state?.formula?.count ?? 0) ? "Show its formula line" : "Show the proof line that derived it", () => showSource(entry.id)),
         el("span", { className: "text" },
           ...entry.labels.map((label) => el("span", { className: "tok-label", textContent: label + " " })),
           tokens(entry.text, variables)));
@@ -950,7 +1029,11 @@ export function mount(root, host) {
   const proofList = createVirtualList({
     body: proof.body,
     fetch: (start, count) => client.view({ pane: "proof", start, count, query: proofFilter.value }),
-    render: (line) => (line.preamble ? preambleRow(line) : proofRow(line)),
+    render: (line, position) => {
+      const row = line.preamble ? preambleRow(line) : proofRow(line);
+      row.dataset.pos = position;
+      return row;
+    },
     // Not fetched yet (the worker may be busy verifying): the line number,
     // known without it, and a provisional tick if it is settled.
     placeholder: (position) => {
@@ -974,6 +1057,7 @@ export function mount(root, host) {
     onRender: () => {
       vim.settle();
       refreshLineIds();
+      flashAt("proof");
     },
   });
   const proofEmpty = emptyNote(proof);
@@ -1011,7 +1095,7 @@ export function mount(root, host) {
         className: "status", textContent: provisional ? icon.checked : icon[line.status],
         title: provisional ? "checked (verifying…)" : line.status === "rejected" ? p.rejected?.message ?? "rejected" : line.status,
       }),
-      el("span", { className: "num", textContent: line.n, title: `Click the line to put :edit ${line.n} in the command line` }),
+      jumpNum(line.n, "Show the constraints it derived in the Database pane", () => showProofLine(line.n)),
       lineText(line),
       explain);
     row.dataset.n = line.n;

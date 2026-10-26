@@ -190,6 +190,22 @@ await page.click('.pane-formula .ref[data-ref="@x1_imp_x3"]');
 check("enhanced: a plain click on a formula ref jumps", (await page.inputValue(".plain-in")) === ":edit 3"
   && await until(async () => !!(await page.$('.pane-database .row.jumped[data-id="2"]'))));
 
+// Clicking a row's number jumps between a line and its constraints.
+const jumped = (selector) => until(async () => !!(await page.$(selector)));
+await page.click('.pane-formula .row[data-ids="2"] .num');
+check("jump: a formula line to its constraint", await jumped('.pane-database .row.jumped[data-id="2"]'));
+// A round trip: proof line 4 to the constraint it derived, and back (the IDs
+// depend on how often the proof was verified above).
+await page.fill(".plain-in", "");
+await page.click('.pane-proof .row[data-n="4"] .num');
+check("jump: a proof line to the constraint it derived", await jumped('.pane-database .row.jumped:not([data-id="2"])'));
+check("jump: the number click doesn't prefill :edit", (await page.inputValue(".plain-in")) === "");
+const derivedId = await page.$eval('.pane-database .row.jumped:not([data-id="2"])', (r) => r.dataset.id);
+await page.click(`.pane-database .row[data-id="${derivedId}"] .num`);
+check("jump: a derived constraint back to its proof line", await jumped('.pane-proof .row.jumped[data-n="4"]'), `constraint ${derivedId}`);
+await page.click('.pane-database .row[data-id="1"] .num');
+check("jump: a formula constraint to its formula line", await jumped('.pane-formula .row.jumped[data-ids="1"]'));
+
 // Vim-style editing of the Proof pane (the TUI's key set).
 const proofText = (n) => page.$eval(`.pane-proof .row[data-n="${n}"] .text`, (e) => e.querySelector("input")?.value ?? e.textContent).catch(() => null);
 const original5 = await proofText(5);

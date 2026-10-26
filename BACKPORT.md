@@ -16,6 +16,13 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   `:check`'s five runs. `:verify` already makes a traced run over the same
   lines; recording its database dump and `constraint_ids_by_line` there would
   remove the second run.
+- **Keep what each proof line derived.** `Session::database()` already makes
+  a traced run of the checked proof and computes `constraint_ids_by_line`,
+  but keeps only the label map it builds from it. Keeping the whole map in
+  the database cache would answer "which constraints did line n derive" and
+  "which line derived constraint c" for free. The web build makes a second
+  traced run for them (`vr_line_ids`, `vr_source`): 22 s for the first jump
+  on the circuit proof, then instant.
 - **Stream the proof to the temp file.** To call veripb, the REPL builds the
   whole proof as one `String` (`preamble_and_lines`) next to the buffer it
   already holds; as that string grows, its buffer doubles, briefly needing
@@ -161,6 +168,15 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   it in the Database pane. Here: `web/modes/refs.js` (with
   `web/test/refs-check.mjs`) and `vr_find`. In the TUI, a click on an ID
   could scroll the Database pane to it.
+
+- **Jump between a line and its constraints.** Clicking a Formula or Proof
+  line's number scrolls the Database pane to the constraints it gave rise to,
+  and flashes them; clicking a Database row's ID scrolls to the formula line
+  or proof line it came from. Lining these up by hand is hard on large
+  formulas and proofs. Here: "Jumps between a line and its constraints" in
+  `web/modes/enhanced.js`, with `vr_source` and `vr_line_ids`
+  (`web-repl/src/state.rs`). In the TUI, a click on a line number could do
+  the same.
 
 ## Large output
 

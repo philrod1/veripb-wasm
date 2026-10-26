@@ -222,7 +222,7 @@ export function createWasi(args, { stdout, stderr, root, env = [] }) {
  * Instantiates the REPL (plain and enhanced modes) and returns
  * { mode, line(text) -> mode, state(), preserved(), toggleBreakpoint(index),
  *   complete(text), themes(), commands(), glossary(), extrasStatus(), extrasObjective(), explain(line),
- *   lineIds(first, last), view({pane, start, count, query?, core?, derived?}),
+ *   lineIds(first, last), source(id), view({pane, start, count, query?, core?, derived?}),
  *   find({label} | {id}), bufferEdit({op, index, text?, after?}), memoryBytes(), stats }.
  * `state()` and `preserved()` return the parsed JSON of web-repl's
  * `vr_state` / `vr_preserved` (web-repl/src/state.rs); `stateQuick()` is
@@ -303,6 +303,7 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
     commands: () => result(repl.exports.vr_commands()),
     glossary: () => result(repl.exports.vr_glossary()),
     lineIds: (first, last) => result(repl.exports.vr_line_ids(first, last)),
+    source: (id) => result(repl.exports.vr_source(id)),
     view: (request) => jsonCall(repl.exports.vr_view, request),
     find: (request) => jsonCall(repl.exports.vr_find, request),
     bufferEdit: (edit) => jsonCall(repl.exports.vr_buffer_edit, edit),

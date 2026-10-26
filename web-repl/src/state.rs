@@ -347,6 +347,31 @@ thread_local! {
         const { RefCell::new(None) };
 }
 
+/// Runs `f` on what each checked proof line derived (display line -> IDs),
+/// from a traced run of the checked lines, cached until the session changes.
+fn with_line_ids<T>(session: &Session, f: impl FnOnce(&Result<std::collections::BTreeMap<usize, Vec<usize>>, String>) -> T) -> T {
+    LINE_IDS.with_borrow_mut(|cache| {
+        if cache.as_ref().is_none_or(|(generation, _)| *generation != stamp(session)) {
+            let checked = session.checked_len;
+            let traced = if checked == 0 {
+                Ok(Default::default())
+            } else {
+                let text = session.preamble_and_lines(&session.buffer[..checked]);
+                let from = session.preamble_lines().len() + 1;
+                session
+                    .formula_temp_file()
+                    .and_then(|formula| checker::check(formula.path(), &text, Some((from, from + checked - 1))))
+                    .map(|outcome| match outcome {
+                        CheckOutcome::Accepted { trace } | CheckOutcome::Rejected { trace, .. } => constraint_ids_by_line(&trace),
+                    })
+                    .map_err(|err| format!("{err:#}"))
+            };
+            *cache = Some((stamp(session), traced));
+        }
+        f(&cache.as_ref().expect("just filled").1)
+    })
+}
+
 /// The constraint IDs that checked proof lines `first..=last` (display lines)
 /// derived, from a traced run of the checked lines: `{"<line>": [id, ...]}`,
 /// `{error}`, or `null` without a session. The trace is cached until the
@@ -357,32 +382,43 @@ pub extern "C" fn vr_line_ids(first: usize, last: usize) -> i32 {
         let Some(session) = &state.session else {
             return set_result(Value::Null);
         };
-        LINE_IDS.with_borrow_mut(|cache| {
-            if cache.as_ref().is_none_or(|(generation, _)| *generation != stamp(session)) {
-                let checked = session.checked_len;
-                let traced = if checked == 0 {
-                    Ok(Default::default())
-                } else {
-                    let text = session.preamble_and_lines(&session.buffer[..checked]);
-                    let from = session.preamble_lines().len() + 1;
-                    session
-                        .formula_temp_file()
-                        .and_then(|formula| checker::check(formula.path(), &text, Some((from, from + checked - 1))))
-                        .map(|outcome| match outcome {
-                            CheckOutcome::Accepted { trace } | CheckOutcome::Rejected { trace, .. } => constraint_ids_by_line(&trace),
-                        })
-                        .map_err(|err| format!("{err:#}"))
-                };
-                *cache = Some((stamp(session), traced));
-            }
-            let (_, traced) = cache.as_ref().expect("just filled");
-            set_result(match traced {
-                Ok(by_line) => Value::Object(
-                    by_line.range(first..=last.max(first)).map(|(line, ids)| (line.to_string(), json!(ids))).collect(),
-                ),
-                Err(error) => json!({ "error": error }),
-            })
-        })
+        set_result(with_line_ids(session, |traced| match traced {
+            Ok(by_line) => Value::Object(
+                by_line.range(first..=last.max(first)).map(|(line, ids)| (line.to_string(), json!(ids))).collect(),
+            ),
+            Err(error) => json!({ "error": error }),
+        }))
+    })
+}
+
+/// Where constraint `id` came from: `{pane: "formula", position, line}` for a
+/// formula constraint (`position` among the Formula pane's unfiltered rows,
+/// `line` the formula line), `{pane: "proof", position, n}` for one a checked proof
+/// line derived (`n` the display line; may run the traced replay of
+/// `vr_line_ids`), or `null` (no session, or not found).
+#[unsafe(no_mangle)]
+pub extern "C" fn vr_source(id: usize) -> i32 {
+    STATE.with_borrow(|state| {
+        let Some(session) = &state.session else {
+            return set_result(Value::Null);
+        };
+        if (1..=session.formula_constraint_count()).contains(&id) {
+            let meta = usize::from(session.objective.is_some()) + usize::from(session.preserved.is_some());
+            let found = session.formula.iter().zip(session.formula_first_ids()).position(|(text, first)| {
+                (first..first + veripb_repl::checker::parse::formula_line_constraints(text).max(1)).contains(&id)
+            });
+            return set_result(match found {
+                Some(i) => json!({ "pane": "formula", "position": meta + i, "line": i + 1 }),
+                None => Value::Null,
+            });
+        }
+        set_result(with_line_ids(session, |traced| match traced {
+            Ok(by_line) => by_line
+                .iter()
+                .find(|(_, ids)| ids.contains(&id))
+                .map_or(Value::Null, |(&n, _)| json!({ "pane": "proof", "position": n - 1, "n": n })),
+            Err(_) => Value::Null,
+        }))
     })
 }
 

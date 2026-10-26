@@ -101,6 +101,7 @@ export function connectReplWorker(host, { what = "REPL", onState, onUpdating, on
     commands: () => request({ type: "query", kind: "commands" }),
     glossary: () => request({ type: "query", kind: "glossary" }),
     lineIds: (first, last) => request({ type: "query", kind: "lineIds", first, last }),
+    source: (id) => request({ type: "query", kind: "source", line: id }),
     view: (req) => request({ type: "query", kind: "view", request: req }),
     find: (req) => request({ type: "query", kind: "find", request: req }),
     edit: (edit) => request({ type: "query", kind: "edit", edit }),

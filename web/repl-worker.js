@@ -6,7 +6,7 @@
 //                 | {type: "watch", on}          post session state after every line
 //                 | {type: "state", id} | {type: "preserved", id}
 //                 | {type: "breakpoint", index} toggle; posts state if watching
-//                 | {type: "query", id, kind: "complete" | "themes" | "commands" | "glossary" | "extrasStatus" | "extrasObjective" | "explain" | "lineIds" | "view" | "find" | "edit",
+//                 | {type: "query", id, kind: "complete" | "themes" | "commands" | "glossary" | "extrasStatus" | "extrasObjective" | "explain" | "lineIds" | "source" | "view" | "find" | "edit",
 //                    text?, line?, first?, last?, request?, edit?}
 // Worker -> page: {type: "out", lines, trace} | {type: "mode", mode, ms, veripbRuns}
 //                 | {type: "progress", run, line, settled}  veripb run n: proof line reached, last line accepted
@@ -122,6 +122,7 @@ onmessage = ({ data: message }) => {
             : message.kind === "commands" ? repl.commands()
             : message.kind === "glossary" ? repl.glossary()
             : message.kind === "lineIds" ? repl.lineIds(message.first, message.last)
+            : message.kind === "source" ? repl.source(message.line)
             : message.kind === "view" ? repl.view(message.request)
             : message.kind === "find" ? repl.find(message.request)
             : message.kind === "extrasStatus" ? repl.extrasStatus()

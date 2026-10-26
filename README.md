@@ -313,6 +313,14 @@ Enhanced mode:
   unchecked assertion means. "Checker" shows `:explain <n>`'s output. The
   choice is remembered. Other rules, rejected lines and implication syntax
   (`==>`, `<==`) show the checker view only.
+- **Jumps:** click a Formula or Proof line's number to scroll the Database
+  pane to the constraints it gave rise to (they flash); click a Database
+  row's ID to scroll to the formula line or proof line it came from. The
+  pane jumped to is unzoomed and unfiltered if need be. A proof line's
+  constraints need a traced replay of the checked proof the first time after
+  it changes (the page says "Finding line n's constraints…"); after that,
+  jumps are instant. A line not checked yet, or whose constraints were
+  deleted, says so.
 - **Constraint refs:** labels (`@name`) and constraint IDs in the Formula
   and Proof panes, the explain modal's line and its plain-English text are
   dotted-underlined. Hover one to see the constraint (ID, core or derived,
