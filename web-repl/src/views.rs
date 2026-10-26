@@ -56,7 +56,7 @@ fn matches(query: &str, ids: &str, text: &str) -> bool {
 fn formula_ids(session: &Session) -> Rc<Vec<String>> {
     FORMULA_IDS.with_borrow_mut(|cache| {
         if let Some((generation, ids)) = cache.as_ref()
-            && *generation == session.generation
+            && *generation == crate::state::stamp(session)
         {
             return ids.clone();
         }
@@ -71,7 +71,7 @@ fn formula_ids(session: &Session) -> Rc<Vec<String>> {
                 })
                 .collect(),
         );
-        *cache = Some((session.generation, ids.clone()));
+        *cache = Some((crate::state::stamp(session), ids.clone()));
         ids
     })
 }
@@ -151,7 +151,7 @@ fn proof_row(session: &Session, i: usize) -> Value {
 /// never runs veripb.
 pub(crate) fn known_database_rows(session: &Session) -> Option<Rc<Vec<Value>>> {
     DATABASE_ROWS.with_borrow(|cache| {
-        cache.as_ref().filter(|(generation, _)| *generation == session.generation).map(|(_, rows)| rows.clone())
+        cache.as_ref().filter(|(generation, _)| *generation == crate::state::stamp(session)).map(|(_, rows)| rows.clone())
     })
 }
 
@@ -160,7 +160,7 @@ pub(crate) fn known_database_rows(session: &Session) -> Option<Rc<Vec<Value>>> {
 /// database cache is stale.
 pub(crate) fn database_rows(session: &Session) -> Result<Rc<Vec<Value>>, String> {
     if let Some(rows) = DATABASE_ROWS.with_borrow(|cache| {
-        cache.as_ref().filter(|(generation, _)| *generation == session.generation).map(|(_, rows)| rows.clone())
+        cache.as_ref().filter(|(generation, _)| *generation == crate::state::stamp(session)).map(|(_, rows)| rows.clone())
     }) {
         return Ok(rows);
     }
@@ -180,7 +180,7 @@ pub(crate) fn database_rows(session: &Session) -> Result<Rc<Vec<Value>>, String>
             })
             .collect(),
     );
-    DATABASE_ROWS.with_borrow_mut(|cache| *cache = Some((session.generation, rows.clone())));
+    DATABASE_ROWS.with_borrow_mut(|cache| *cache = Some((crate::state::stamp(session), rows.clone())));
     Ok(rows)
 }
 
@@ -239,7 +239,7 @@ pub unsafe extern "C" fn vr_view(ptr: *const u8, len: usize) -> i32 {
             _ => return set_result(json!({ "error": format!("unknown pane {pane:?}") })),
         };
 
-        let key = (session.generation, crate::state::edits(), query.clone(), core, derived);
+        let key = (crate::state::stamp(session), crate::state::edits(), query.clone(), core, derived);
         let unfiltered = query.is_empty() && core && derived;
         let positions = if unfiltered {
             None
@@ -269,7 +269,7 @@ pub unsafe extern "C" fn vr_view(ptr: *const u8, len: usize) -> i32 {
         let window: Vec<Value> = (start.min(end)..end)
             .map(|k| rows.row(positions.as_ref().map_or(k, |p| p[k])))
             .collect();
-        set_result(json!({ "total": total, "start": start, "rows": window, "generation": session.generation, "edits": crate::state::edits() }))
+        set_result(json!({ "total": total, "start": start, "rows": window, "generation": crate::state::stamp(session), "edits": crate::state::edits() }))
     })
 }
 

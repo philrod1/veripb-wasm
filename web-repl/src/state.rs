@@ -97,7 +97,7 @@ fn state_json(state: &State, with_database: bool) -> Value {
     };
     json!({
         "mode": mode,
-        "generation": session.generation,
+        "generation": stamp(session),
         "edits": edits(),
         "formula": formula_json(session),
         "proof": proof_json(session, mode == MODE_DEBUG),
@@ -238,6 +238,25 @@ thread_local! {
     static EDITS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
+thread_local! {
+    /// Bumped whenever a command may have replaced the session (`:load`,
+    /// `:instance`; see `State::step`): a new session counts its generation
+    /// from 0 again, so the generation alone does not tell sessions apart.
+    static SESSIONS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Marks that the session may have been replaced (see `SESSIONS`).
+pub(crate) fn new_session() {
+    SESSIONS.with(|n| n.set(n.get() + 1));
+}
+
+/// `session`'s state across sessions: the session count in the high bits,
+/// its generation in the low 32. Every cache here is keyed by it, and the
+/// page sees it as `generation`; it fits a JavaScript number.
+pub(crate) fn stamp(session: &Session) -> u64 {
+    (SESSIONS.with(std::cell::Cell::get) << 32) | (session.generation & 0xffff_ffff)
+}
+
 /// The count of buffer edits applied so far (see `EDITS`).
 pub(crate) fn edits() -> u64 {
     EDITS.with(std::cell::Cell::get)
@@ -315,8 +334,8 @@ pub unsafe extern "C" fn vr_buffer_edit(ptr: *const u8, len: usize) -> i32 {
             EDITS.with(|n| n.set(n.get() + 1));
         }
         set_result(match result {
-            Ok(()) => json!({ "ok": true, "generation": session.generation, "edits": edits() }),
-            Err(err) => json!({ "error": format!("{err:#}"), "generation": session.generation, "edits": edits() }),
+            Ok(()) => json!({ "ok": true, "generation": stamp(session), "edits": edits() }),
+            Err(err) => json!({ "error": format!("{err:#}"), "generation": stamp(session), "edits": edits() }),
         })
     })
 }
@@ -339,7 +358,7 @@ pub extern "C" fn vr_line_ids(first: usize, last: usize) -> i32 {
             return set_result(Value::Null);
         };
         LINE_IDS.with_borrow_mut(|cache| {
-            if cache.as_ref().is_none_or(|(generation, _)| *generation != session.generation) {
+            if cache.as_ref().is_none_or(|(generation, _)| *generation != stamp(session)) {
                 let checked = session.checked_len;
                 let traced = if checked == 0 {
                     Ok(Default::default())
@@ -354,7 +373,7 @@ pub extern "C" fn vr_line_ids(first: usize, last: usize) -> i32 {
                         })
                         .map_err(|err| format!("{err:#}"))
                 };
-                *cache = Some((session.generation, traced));
+                *cache = Some((stamp(session), traced));
             }
             let (_, traced) = cache.as_ref().expect("just filled");
             set_result(match traced {
@@ -416,7 +435,9 @@ pub(crate) fn recall(key: &str, generation: u64) -> Option<Vec<String>> {
 }
 
 /// The Extras tab's Status: bare `:check`'s output (`check::bare`)
-/// as `{status, lines, version}` or `{error}`; `null` without a session.
+/// as `{status, lines, version, conclusion, fileConclusion}` or `{error}`;
+/// `null` without a session. `conclusion` is the one veripb accepted, when
+/// known; `fileConclusion` the one the sourced proof file closes with.
 /// Runs veripb (`:check`'s probes) unless this session generation's result
 /// is known, from here or from `:check` at the prompt.
 #[unsafe(no_mangle)]
@@ -425,15 +446,21 @@ pub extern "C" fn vr_extras_status() -> i32 {
         let Some(session) = &state.session else {
             return set_result(Value::Null);
         };
-        if let Some(lines) = recall("check ", session.generation) {
-            return set_result(status_json(&lines));
+        let with_conclusions = |mut status: Value| {
+            status["conclusion"] = json!(recall("check-conclusion", stamp(session)).and_then(|c| c.first().cloned()));
+            status["fileConclusion"] = json!(state.conclusion);
+            status
+        };
+        if let Some(lines) = recall("check ", stamp(session)) {
+            return set_result(with_conclusions(status_json(&lines)));
         }
         let mut lines = Lines(Vec::new());
         let guesses = crate::check::guesses(session, state.conclusion.as_deref());
         set_result(match crate::check::bare(session, &guesses, &mut lines) {
-            Ok(()) => {
-                remember("check ", session.generation, &lines.0);
-                status_json(&lines.0)
+            Ok(found) => {
+                remember("check ", stamp(session), &lines.0);
+                remember("check-conclusion", stamp(session), &found.into_iter().collect::<Vec<_>>());
+                with_conclusions(status_json(&lines.0))
             }
             Err(e) => json!({ "error": format!("{e:#}") }),
         })
@@ -450,10 +477,10 @@ pub extern "C" fn vr_extras_objective() -> i32 {
         let Some(session) = &state.session else {
             return set_result(Value::Null);
         };
-        let lines = recall("objective", session.generation).unwrap_or_else(|| {
+        let lines = recall("objective", stamp(session)).unwrap_or_else(|| {
             let mut lines = Lines(Vec::new());
             veripb_repl::commands::objective::run(session, &mut lines);
-            remember("objective", session.generation, &lines.0);
+            remember("objective", stamp(session), &lines.0);
             lines.0
         });
         set_result(json!({ "lines": lines }))

@@ -57,6 +57,19 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   database guess only when its rows are already known, the REPL's own
   candidates after, each conclusion once): on the circuit proof, `:check`
   went from 4 veripb runs (81 s) to 1 (25 s).
+- **Keep the proof's intended conclusion.** `:source` drops the file's
+  closing lines, rightly (they would close the session for good, and a
+  conclusion only means something once the derivation verifies), but then
+  nothing remembers the conclusion the file claims: a load and bare `:save`
+  re-detects it (up to four veripb runs) or writes `conclusion NONE;` if the
+  proof is unfinished. Keeping it on the `Session` as the intended
+  conclusion would let bare `:check` and bare `:save` try it first, and a
+  `:conclusion [<text>]` command show or change it (`:save <file>
+  <conclusion>` still overriding it). Built in the web layer for now: the
+  file's conclusion is kept in `State::conclusion` (`web-repl/src/lib.rs`),
+  bare `:check` and bare `:save` try it first (`detect` and `bare_save` in
+  `web-repl/src/check.rs`), and the Extras tab's Status shows "Proof file
+  concludes … (verified / not verified yet)" beside veripb's verdict.
 - **Cache `:check` and `:objective` per session state.** The web build keeps
   their output per generation, `:check` per conclusion (`OUTPUTS` in
   `web-repl/src/state.rs`, filled through a tee in `State::step` in

@@ -227,7 +227,7 @@ Plain mode:
   formula, the proof or its checked prefix), they show the output they gave
   last time rather than running veripb again; `:check` is kept per
   conclusion. The header then shows 0 veripb runs.
-- **Bare `:check`** tries the likely conclusion first: the one the sourced
+- **Bare `:check` and bare `:save`** try the likely conclusion first: the one the sourced
   proof file closes with (`conclusion …;`, without hint IDs), then `UNSAT`
   if the database already shows a contradiction, and `SAT` if a solution is
   logged and there is no objective; then the REPL's own order (`UNSAT`,
@@ -353,7 +353,8 @@ Enhanced mode:
   reopening the tab, or opening it after those commands, runs nothing.
   - **Status:** `:check`'s verdict (`s VERIFIED …` or `NOT YET
     CONCLUDED`), the proof's checked and unchecked counts, a rejected
-    line's reason, and the veripb version.
+    line's reason, the conclusion the sourced proof file claims (verified
+    or not yet), and the veripb version.
   - **Objective:** `:objective`'s report: the objective, the best value
     found so far, and the best value with checked-deletion guarantees.
   - **Summary:** formula constraints and variables; database size, core

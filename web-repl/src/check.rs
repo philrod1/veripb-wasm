@@ -5,7 +5,8 @@
 //! tried first, the same way (`Session::dry_run_conclusion`, its output
 //! printed as `check::run` prints a success), then the rest of
 //! `check::run`'s own candidates, each conclusion once. The verdict is
-//! veripb's either way; only the number of runs changes.
+//! veripb's either way; only the number of runs changes. A bare `:save`
+//! finds its conclusion the same way.
 //!
 //! The guesses, in order:
 //! - the conclusion the sourced proof file closes with (`:source` drops it);
@@ -63,41 +64,89 @@ pub(crate) fn guesses(session: &Session, sourced: Option<&str>) -> Vec<String> {
     guesses
 }
 
-/// Bare `:check`: each guess in turn, then the rest of `check::run`'s own
-/// candidates (`UNSAT`, `SAT`, and `BOUNDS v v` for an objective with a
-/// best value known safe), as `check::run` tries them and reports the
-/// outcome; keep in step with `auto_detect_candidates` and `run` in
-/// veripb-repl's `commands/check.rs`.
-pub(crate) fn bare(session: &Session, guesses: &[String], out: &mut dyn Output) -> anyhow::Result<()> {
+/// The first conclusion veripb accepts: each guess in turn, then the rest of
+/// `check::run`'s own candidates (`UNSAT`, `SAT`, and `BOUNDS v v` for an
+/// objective with a best value known safe), each once, in `check::run`'s
+/// order; with the checker's output for it. Keep in step with
+/// `auto_detect_candidates` in veripb-repl's `commands/check.rs`.
+pub(crate) fn detect(session: &Session, guesses: &[String]) -> anyhow::Result<Option<(String, String)>> {
     let mut tried: Vec<String> = Vec::new();
-    let mut attempt = |conclusion: &str, out: &mut dyn Output| -> anyhow::Result<bool> {
+    let mut attempt = |conclusion: &str| -> anyhow::Result<Option<(String, String)>> {
         if tried.iter().any(|t| t == conclusion) {
-            return Ok(false);
+            return Ok(None);
         }
         tried.push(conclusion.to_string());
         let (captured, result) = session.dry_run_conclusion(conclusion)?;
-        if result.is_ok() {
-            output::text(out, &captured);
-        }
-        Ok(result.is_ok())
+        Ok(result.is_ok().then(|| (conclusion.to_string(), captured)))
     };
     for guess in guesses {
-        if attempt(guess, out)? {
-            return Ok(());
+        if let Some(found) = attempt(guess)? {
+            return Ok(Some(found));
         }
     }
     for conclusion in ["UNSAT", "SAT"] {
-        if attempt(conclusion, out)? {
-            return Ok(());
+        if let Some(found) = attempt(conclusion)? {
+            return Ok(Some(found));
         }
     }
     if session.objective.is_some()
         && let Ok(bounds) = session.objective_bounds()
         && let Some(value) = bounds.best_valid
-        && attempt(&format!("BOUNDS {value} {value}"), out)?
     {
-        return Ok(());
+        return attempt(&format!("BOUNDS {value} {value}"));
     }
-    out.line("NOT YET CONCLUDED");
+    Ok(None)
+}
+
+/// Bare `:check`, as `check::run` reports it; returns the conclusion found.
+pub(crate) fn bare(session: &Session, guesses: &[String], out: &mut dyn Output) -> anyhow::Result<Option<String>> {
+    Ok(match detect(session, guesses)? {
+        Some((conclusion, captured)) => {
+            output::text(out, &captured);
+            Some(conclusion)
+        }
+        None => {
+            out.line("NOT YET CONCLUDED");
+            None
+        }
+    })
+}
+
+/// `:save <path>` with no conclusion, as `save::run` does it but finding the
+/// conclusion with `detect`; keep in step with veripb-repl's
+/// `commands/save.rs` (its warnings, messages and listing).
+pub(crate) fn bare_save(session: &Session, path: &str, guesses: &[String], out: &mut dyn Output) -> anyhow::Result<()> {
+    let pending = session.buffer.len() - session.checked_len;
+    if pending > 0 {
+        out.line(&format!("Warning: {pending} line(s) in the buffer haven't been checked yet — saving as-is."));
+    }
+    if let Some(reason) = &session.known_bad {
+        out.line(&format!(
+            "Warning: line {} does not verify: {reason}",
+            session.display_line(session.checked_len)
+        ));
+    }
+    let conclusion = match detect(session, guesses)? {
+        Some((conclusion, captured)) => {
+            output::text(out, &captured);
+            conclusion
+        }
+        None => {
+            out.line(
+                "No conclusion auto-detected; saving with `conclusion NONE;` (a real \
+                 no-op — see `conclusion NONE` in the guide for why that isn't a verified \
+                 result). Pass an explicit conclusion to :save to claim one.",
+            );
+            "NONE".to_string()
+        }
+    };
+    let text = session.listing(&conclusion);
+    match std::fs::write(path, text) {
+        Ok(()) => out.line(&format!(
+            "Saved {} line(s) to {path} (conclusion {conclusion}).",
+            session.buffer.len()
+        )),
+        Err(err) => out.line(&format!("Error: failed to write {path}: {err}")),
+    }
     Ok(())
 }

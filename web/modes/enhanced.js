@@ -579,6 +579,10 @@ export function mount(root, host) {
       facts(
         ["Proof", progress],
         ...(p.rejected ? [["Rejected", `line ${p.rejected.n}: ${p.rejected.message}`]] : []),
+        // What the sourced file claims, beside what veripb accepted.
+        ...(conclusion.fileConclusion
+          ? [["Proof file", `concludes ${conclusion.fileConclusion}${conclusion.conclusion === conclusion.fileConclusion ? " (verified)" : " (not verified yet)"}`]]
+          : []),
         ...(conclusion.version ? [["veripb", conclusion.version]] : []),
       ));
   }

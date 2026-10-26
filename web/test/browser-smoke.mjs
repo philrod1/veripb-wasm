@@ -450,6 +450,7 @@ await page.click('.tab:has-text("Extras")');
 const extras = () => page.textContent(".tab-extras");
 check("enhanced: extras summary", await until(async () => (await extras()).includes("Prompt") && (await extras()).includes("core")));
 check("enhanced: extras has no preserved section", !(await extras()).includes("Preserved set"));
+check("enhanced: no proof-file line for conclusion NONE", await until(async () => (await extras()).includes("Status") && !(await extras()).includes("Proof file")));
 
 // Status and objective: demo 04 (clique) proves optimality.
 await dropFiles([demo("clique.opb")]);
@@ -461,6 +462,15 @@ for (const text of ["@colour_bound pol @better @no_15 + @no_34 + ;", "@contradic
 check("enhanced: extras verdict", await until(async () => (await page.textContent(".tab-extras .verdict")) === "s VERIFIED BOUNDS -3 <= obj <= -3"),
   await page.textContent(".tab-extras .verdict"));
 check("enhanced: extras veripb version", (await extras()).includes("veripb3.0"));
+// The proof file's own conclusion, beside what veripb accepted.
+await dropFiles([demo("two-of-three.opb"), demo("two-of-three.pbp")]);
+await until(async () => (await fileNames()).includes("two-of-three.pbp"));
+await command(":instance two-of-three");
+await command(":verify");
+// This demo's proof claims UNSAT but derives no contradiction (demo 02 finds
+// its wrong pol step), so the claim shows as not verified.
+check("enhanced: extras shows the proof file's conclusion", await until(async () => (await extras()).includes("Proof fileconcludes UNSAT (not verified yet)")),
+  (await extras()).slice(0, 240));
 
 check("no page errors", errors.length === 0, errors.join(" | "));
 await browser.close();

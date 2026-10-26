@@ -286,6 +286,33 @@ for (const stem of preservedStems) {
   expect("and its verdict", verdicts.right, "s VERIFIED BOUNDS -3 <= obj <= -3");
   expect("a wrong conclusion in the file: the same verdict", verdicts.wrong, verdicts.right);
   expect("and no conclusion tried twice (SAT, UNSAT, the bounds, BOUNDS)", verdicts.wrongRuns <= 4, true);
+
+  // Bare :save finds its conclusion the same way; the Extras Status shows the
+  // file's conclusion beside the one veripb accepted.
+  const s = session([...demoFiles, ["right.pbp", proof("BOUNDS -3 -3")]]);
+  s.run(":load clique.opb");
+  s.run(":source right.pbp");
+  s.run(":verify");
+  let before = s.repl.stats.veripbRuns;
+  const saved = s.run(":save out.pbp").lines;
+  expect("bare :save: one veripb run", s.repl.stats.veripbRuns - before, 1);
+  expect("bare :save: the verdict and the file", saved.join(" | "), "Running VeriPB version 3.0.2 | s VERIFIED BOUNDS -3 <= obj <= -3 | Saved 3 line(s) to out.pbp (conclusion BOUNDS -3 -3).");
+  before = s.repl.stats.veripbRuns;
+  const status = s.repl.extrasStatus();
+  expect("Status: the file's conclusion", status.fileConclusion, "BOUNDS -3 -3");
+  expect("Status: the conclusion veripb accepted", status.conclusion, "BOUNDS -3 -3");
+
+  // A new session counts its generation from 0 again: nothing cached for the
+  // old one may answer for it. Both formulas below are loaded with no proof,
+  // so both sessions are at generation 0.
+  s.run(":load two-of-three.opb");
+  const twoRows = s.repl.view({ pane: "database", start: 0, count: 1e9 }).rows.length;
+  const twoObjective = s.repl.extrasObjective().lines.join(" ");
+  s.run(":load clique.opb");
+  expect("the first session's database", twoRows, 4);
+  expect("a replaced session's database rows are not reused", s.repl.view({ pane: "database", start: 0, count: 1e9 }).rows.length, 3);
+  expect("nor its Objective section", s.repl.extrasObjective().lines.join(" ") !== twoObjective && s.repl.extrasObjective().lines[0]?.startsWith("Objective: min"), true);
+  expect("nor its file conclusion", String(s.repl.extrasStatus().fileConclusion), "null");
 }
 
 console.log(`${checks} checks, ${failures} mismatches`);

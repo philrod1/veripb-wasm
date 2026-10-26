@@ -90,13 +90,13 @@ impl State {
         // `:check` and `:objective` answer from the proof as it stands: asked
         // again before the session changes, the output they gave is shown
         // again rather than worked out anew (the same cache serves the
-        // Extras tab). A bare `:check` tries the likely conclusions first
-        // (`check::guesses`). Otherwise output goes to stdout as ever; for
+        // Extras tab). A bare `:check` or `:save` tries the likely
+        // conclusions first (`check::guesses`). Otherwise output goes to stdout as ever; for
         // these commands and those that load a proof, a copy is kept.
         let name = command_name(line);
         let key = cached_command(line);
         if let (Some(key), Some(session)) = (&key, &self.session)
-            && let Some(lines) = state::recall(key, session.generation)
+            && let Some(lines) = state::recall(key, state::stamp(session))
         {
             for text in &lines {
                 out.line(text);
@@ -105,16 +105,26 @@ impl State {
         }
         let keep = key.is_some() || matches!(name, Some("source" | "instance" | "load"));
         let mut tee = Tee { out, lines: Vec::new(), keep };
-        let flow = match (&key, &self.session) {
-            (Some(key), Some(session)) if key == "check " => {
+        let save_path = (name == Some("save")).then(|| bare_save_path(line)).flatten();
+        let flow = match (&key, &self.session, save_path) {
+            (Some(key), Some(session), _) if key == "check " => {
                 let guesses = check::guesses(session, self.conclusion.as_deref());
-                check::bare(session, &guesses, &mut tee)?;
+                let found = check::bare(session, &guesses, &mut tee)?;
+                state::remember("check-conclusion", state::stamp(session), &found.into_iter().collect::<Vec<_>>());
+                Flow::Continue
+            }
+            (_, Some(session), Some(path)) => {
+                let guesses = check::guesses(session, self.conclusion.as_deref());
+                check::bare_save(session, path, &guesses, &mut tee)?;
                 Flow::Continue
             }
             _ => commands::dispatch(&mut self.session, line, &mut tee)?,
         };
         if let (Some(key), Some(session)) = (&key, &self.session) {
-            state::remember(key, session.generation, &tee.lines);
+            state::remember(key, state::stamp(session), &tee.lines);
+        }
+        if matches!(name, Some("instance" | "load")) {
+            state::new_session();
         }
         if matches!(name, Some("source" | "instance" | "load")) {
             self.note_loaded(&tee.lines);
@@ -171,6 +181,14 @@ impl State {
             }
         }
     }
+}
+
+/// The file of a `:save <file>` with no conclusion; else `None`.
+fn bare_save_path(line: &str) -> Option<&str> {
+    let rest = line.trim().strip_prefix(':')?;
+    let mut words = rest.split_whitespace();
+    let (_, path) = (words.next()?, words.next()?);
+    words.next().is_none().then_some(path)
 }
 
 /// The command `line` names, in full or by a unique prefix (as
