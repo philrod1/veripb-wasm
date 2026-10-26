@@ -401,6 +401,15 @@ check("page: asks before leaving while there are files", await page.evaluate(() 
   return event.defaultPrevented;
 }));
 
+// The explain button sits at the pane's visible right edge on every row.
+await page.hover(".pane-proof .row:not(.preamble) >> nth=0");
+const explainGap = await page.evaluate(() => {
+  const body = document.querySelector(".pane-proof .pane-body").getBoundingClientRect();
+  const button = document.querySelector(".pane-proof .row:not(.preamble) .row-action").getBoundingClientRect();
+  return Math.round(body.right - button.right);
+});
+check("enhanced: explain button at the pane's right edge", explainGap >= 0 && explainGap < 20, `${explainGap}px from the edge`);
+
 // Zoom buttons (the TUI's ▭ and ⛶).
 const visible = (selector) => page.$eval(selector, (e) => e.offsetParent !== null);
 const height = (selector) => page.$eval(selector, (e) => e.getBoundingClientRect().height);

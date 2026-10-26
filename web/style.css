@@ -161,8 +161,10 @@ aside input[type=file] { display: none; }
 .pane-proof .row:hover .gutter:not(.on) { color: var(--border); }
 .pane-proof .gutter.on { color: var(--breakpoint); }
 .pane-proof .row { position: relative; }
+/* Sticky: at the pane's visible right edge on every row, however long the
+   lines and wherever the pane is scrolled sideways. */
 .pane-proof .row-action {
-  visibility: hidden; position: absolute; right: 0.4rem; top: 0.1rem;
+  visibility: hidden; position: sticky; right: 0.4rem; flex: none; align-self: center; margin-left: 0.5rem;
   font: inherit; font-size: 0.85em; padding: 0 0.4rem; cursor: pointer;
   color: var(--accent); background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
 }
