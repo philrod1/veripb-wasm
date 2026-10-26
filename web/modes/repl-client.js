@@ -46,6 +46,9 @@ export function connectReplWorker(host, { what = "REPL", onState } = {}) {
         }
         view?.setMode(message.mode);
         break;
+      case "progress":
+        view?.setProgress(message);
+        break;
       case "files":
         host.setFiles(message.files);
         break;

@@ -86,8 +86,15 @@ aside input[type=file] { display: none; }
 .plain-out details.trace { color: var(--muted); }
 .plain-out details.trace summary { cursor: pointer; font-size: 0.9em; }
 .plain-out details.trace .body { border-left: 2px solid var(--border); padding-left: 0.75rem; margin-left: 0.3rem; }
+.plain-out details.trace .body.trace-list { height: 24em; overflow: auto; position: relative; padding-left: 0; }
+.plain-out details.trace .body.trace-list .row.line { padding: 0 0.75rem; }
 .plain-form { display: flex; border-top: 1px solid var(--border); padding: 0.5rem 1rem; gap: 0.25rem; }
 .plain-prompt { color: var(--echo); white-space: pre; }
+/* While a command runs (output-view.js): in place of the input. */
+.plain-form .busy { flex: 1; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.plain-form .busy::before { content: "◐ "; display: inline-block; animation: busy-spin 1s linear infinite; }
+@keyframes busy-spin { to { transform: rotate(360deg); } }
+.plain-form:has(.busy:not([hidden])) .plain-in { display: none; }
 .plain-in { flex: 1; font: inherit; color: inherit; background: transparent; border: none; outline: none; }
 
 /* Drag and drop */
@@ -192,7 +199,10 @@ aside input[type=file] { display: none; }
 .tab-panel[hidden] { display: none; }
 .tab-tools { display: flex; gap: 0.5rem; padding: 0.4rem 1rem 0; }
 .tab-tools button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.6rem; cursor: pointer; }
-.transcript { flex: 1; margin: 0; padding: 0.5rem 1rem; overflow: auto; white-space: pre-wrap; word-break: break-word; }
+.transcript { flex: 1; min-height: 0; margin: 0; padding: 0.5rem 0; overflow: auto; position: relative; }
+/* A line of a virtual text list (modes/linelist.js): one height, no wrapping. */
+.row.line { white-space: pre; line-height: 1.5; padding: 0 1rem; }
+.transcript-filter { margin-left: auto; font: inherit; width: 16rem; min-width: 6rem; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0 0.4rem; }
 .tab-extras {
   padding: 0.5rem 1rem; overflow: auto; display: grid; gap: 0.75rem 1.5rem; align-content: start;
   grid-template-columns: repeat(auto-fill, minmax(22rem, 1fr));

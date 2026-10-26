@@ -10,9 +10,14 @@
 // `transcript` keeps every line as received (echoed input included,
 // nothing folded); `onTranscript(lines)` is called with each new batch.
 
+import { createLineList } from "./linelist.js";
+
 export const PROMPTS = ["pbp> ", "edit> ", "opb> ", "debug> "];
 export const MODE_QUIT = 4;
 const FOLD_LINES = 20;
+// A folded block of more lines than this is shown, once opened, as a virtual
+// list (modes/linelist.js) rather than as text.
+const LIST_LINES = 2000;
 
 // Resolution mirrors the REPL's `resolve_command`: exact name, else a
 // unique prefix of the REPL's commands (`setCommands`, from `vr_commands`).
@@ -38,11 +43,13 @@ export class OutputView {
    * completion result `{candidates: [{line, left, right}], selected, common}`
    * and turns on the suggestion strip and Tab completion (`suggest`).
    * `onMode(mode)`, if given, runs after each `setMode` that leaves the
-   * input ready.
+   * input ready. `progressTotal()`, if given, returns the proof's last line
+   * number, for "line n of m" while a command runs.
    */
-  constructor({ onSubmit, onTranscript, onMode, complete } = {}) {
+  constructor({ onSubmit, onTranscript, onMode, complete, progressTotal } = {}) {
     this.onSubmit = onSubmit;
     this.onMode = onMode;
+    this.progressTotal = progressTotal;
     this.onTranscript = onTranscript;
     this.transcript = [];
     this.mode = null;
@@ -59,7 +66,10 @@ export class OutputView {
     this.prompt = Object.assign(document.createElement("span"), { className: "plain-prompt" });
     this.input = Object.assign(document.createElement("input"), { className: "plain-in", spellcheck: false, disabled: true });
     this.input.setAttribute("aria-label", "REPL input");
-    this.form.append(this.prompt, this.input);
+    // While a command runs: what it is, for how long, and veripb's progress.
+    this.busy = Object.assign(document.createElement("span"), { className: "busy", hidden: true });
+    this.busy.setAttribute("aria-live", "polite");
+    this.form.append(this.prompt, this.input, this.busy);
     // What a mode puts below its output: the form, plus the suggestion
     // strip when completion is on.
     this.commandLine = this.form;
@@ -94,7 +104,47 @@ export class OutputView {
     this.historyPos = this.history.length;
     this.input.value = "";
     this.setReady(false);
+    this.#startBusy(text);
     this.onSubmit?.(text);
+  }
+
+  // ---- Progress while a command runs ----
+  //
+  // Shown after half a second, so quick commands don't flicker: the command,
+  // the time so far, which veripb run (if more than one) and the last proof
+  // line it traced.
+  #startBusy(text) {
+    this.#stopBusy();
+    const started = performance.now();
+    this.progress = null;
+    this.firstRun = null;
+    this.busyTimer = setInterval(() => {
+      const seconds = (performance.now() - started) / 1000;
+      if (seconds < 0.5) return;
+      const parts = [`${text.trim()} · ${seconds.toFixed(0)} s`];
+      // Runs counted from this command's first.
+      const { run, line } = this.progress ?? {};
+      if (run - this.firstRun > 0) parts.push(`veripb run ${run - this.firstRun + 1}`);
+      if (line) {
+        const total = this.progressTotal?.();
+        const of = total ? ` of ${total.toLocaleString()} (${Math.min(100, Math.floor((100 * line) / total))}%)` : "";
+        parts.push(`line ${line.toLocaleString()}${of}`);
+      }
+      this.busy.textContent = parts.join(" · ");
+      this.busy.hidden = false;
+    }, 200);
+  }
+
+  #stopBusy() {
+    clearInterval(this.busyTimer);
+    this.busyTimer = null;
+    this.busy.hidden = true;
+  }
+
+  /** veripb's progress during the running command: `{run, line}`. */
+  setProgress(progress) {
+    this.firstRun ??= progress.run;
+    this.progress = { ...this.progress, ...progress, line: progress.line ?? (progress.run === this.progress?.run ? this.progress.line : null) };
   }
 
   ready() {
@@ -236,20 +286,39 @@ export class OutputView {
     this.loading = false;
   }
 
+  // A run's veripb lines, folded. They are drawn only while the block is
+  // open: as text, or as a virtual list past LIST_LINES lines.
   #newTraceBlock() {
     const details = Object.assign(document.createElement("details"), { className: "trace", open: true });
     const summary = document.createElement("summary");
     const body = Object.assign(document.createElement("div"), { className: "body" });
     details.append(summary, body);
-    let count = 0;
+    const lines = [];
+    let drawn = 0;
+    let list = null;
+    const show = () => {
+      if (!details.open) return;
+      if (lines.length > LIST_LINES) {
+        if (!list) {
+          body.textContent = "";
+          body.classList.add("trace-list");
+          list = createLineList(body, lines);
+        }
+        list.update();
+      } else if (drawn < lines.length) {
+        body.appendChild(document.createTextNode(lines.slice(drawn).map((l) => l + "\n").join("")));
+        drawn = lines.length;
+      }
+    };
+    details.addEventListener("toggle", show);
     return {
       details,
-      add(lines) {
-        body.appendChild(document.createTextNode(lines.map((l) => l + "\n").join("")));
-        const before = count;
-        count += lines.length;
-        if (before <= FOLD_LINES && count > FOLD_LINES) details.open = false;
-        summary.textContent = `veripb output · ${count} line${count === 1 ? "" : "s"}`;
+      add(more) {
+        const before = lines.length;
+        for (const line of more) lines.push(line);
+        if (before <= FOLD_LINES && lines.length > FOLD_LINES) details.open = false;
+        summary.textContent = `veripb output · ${lines.length} line${lines.length === 1 ? "" : "s"}`;
+        show();
       },
     };
   }
@@ -313,6 +382,7 @@ export class OutputView {
    * Also used after a command the page answers itself, with the current mode.
    */
   setMode(mode) {
+    this.#stopBusy();
     const trailing = this.#endTrace();
     if (trailing) this.out.appendChild(document.createTextNode(trailing));
     this.#clearLoading();

@@ -296,8 +296,19 @@ check("enhanced: :theme uses the REPL's palette", (await page.evaluate(() => get
 await command(":theme light");
 
 await page.click('.tab:has-text("Transcript")');
-const transcript = await page.textContent(".transcript");
-check("enhanced: transcript has the unfolded trace", transcript.includes("line    3: @x3 rup 1 x3 >= 1") && transcript.includes("pbp> :verify"));
+// The transcript is a virtual list: find lines with its filter.
+const transcriptHas = async (text) => {
+  await page.fill(".transcript-filter", text);
+  return until(async () => (await page.$$eval(".transcript .row.line", (r) => r.map((x) => x.textContent))).some((row) => row.includes(text)));
+};
+check("enhanced: transcript has the unfolded trace", (await transcriptHas("line    3: @x3 rup 1 x3 >= 1")) && (await transcriptHas("pbp> :verify")));
+await page.fill(".transcript-filter", "");
+await page.fill(".transcript-filter", "pbp> :verify");
+check("enhanced: the transcript filter", await until(async () => {
+  const rows = await page.$$eval(".transcript .row.line", (r) => r.map((x) => x.textContent));
+  return rows.length >= 1 && rows.every((row) => row.includes("pbp> :verify"));
+}));
+await page.fill(".transcript-filter", "");
 
 // Files panel: badges, double-click to :load / :source.
 check("files: F and P badges", (await fileRow("tiny_unsat.opb").locator(".file-kind").textContent()) === "F"

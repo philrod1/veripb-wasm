@@ -9,6 +9,7 @@
 //                 | {type: "query", id, kind: "complete" | "themes" | "commands" | "glossary" | "extras" | "explain" | "lineIds" | "view" | "find" | "edit",
 //                    text?, line?, first?, last?, request?, edit?}
 // Worker -> page: {type: "out", lines, trace} | {type: "mode", mode, ms, veripbRuns}
+//                 | {type: "progress", run, line}  during a command: veripb run n, last traced line
 //                 | {type: "files", files} | {type: "file", id, data}
 //                 | {type: "dump", id, files: [[name, data], ...]} | {type: "fatal", text}
 //                 | {type: "state", id?, state} | {type: "preserved", id, preserved}
@@ -72,6 +73,8 @@ async function init() {
     root,
     onLine: output,
     onVeripbOutput: recordVeripbOutput,
+    // Posted while the REPL is still running: the page shows it at once.
+    onProgress: (progress) => post({ type: "progress", ...progress }),
   });
   flush();
   markReplReady();

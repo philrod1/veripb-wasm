@@ -108,7 +108,7 @@ export function listFiles(root) {
  * Hooks: `onRun()` before each run, `onOutput(stdout, stderr)` after it,
  * `onError(message)` on failure. `stats.veripbRuns` counts runs.
  */
-export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput, onError }) {
+export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput, onError, onProgress }) {
   const decoder = new TextDecoder();
   const stats = { veripbRuns: 0 };
   function runVeripb(ptr, len) {
@@ -120,9 +120,26 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
       // as with the pipes a native subprocess gets.
       const stdout = new File([]);
       const stderr = new File([]);
+      const stdoutFd = new OpenFile(stdout);
+      if (onProgress) {
+        // At most every 100 ms: the last `line <N>:` trace marker written.
+        const run = stats.veripbRuns + 1;
+        onProgress({ run, line: null });
+        const write = stdoutFd.fd_write.bind(stdoutFd);
+        let next = 0;
+        stdoutFd.fd_write = (data) => {
+          const now = performance.now();
+          if (now >= next) {
+            next = now + 100;
+            const marker = [...decoder.decode(data.subarray(-400)).matchAll(/line\s+(\d+):/g)].at(-1);
+            if (marker) onProgress({ run, line: Number(marker[1]) });
+          }
+          return write(data);
+        };
+      }
       const wasi = new WASI(["veripb", ...args], ENV, [
         new OpenFile(new File([])),
-        new OpenFile(stdout),
+        stdoutFd,
         new OpenFile(stderr),
         new PreopenDirectory("/", root),
       ], WASI_OPTIONS);
@@ -177,9 +194,11 @@ export function createWasi(args, { stdout, stderr, root, env = [] }) {
  * `onLine(text)` receives every output line (stdout and stderr).
  * `onVeripbOutput(stdout, stderr)`, if given, receives the bytes of each
  * veripb run's stdout and stderr.
+ * `onProgress({run, line})`, if given, is called as each veripb run starts
+ * (`line` null) and, at most every 100 ms, with the last traced proof line.
  * `stats.veripbRuns` counts veripb invocations.
  */
-export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutput }) {
+export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutput, onProgress }) {
   const encoder = new TextEncoder();
   let repl;
   const { runVeripb, stats } = createVeripbRunner({
@@ -188,6 +207,7 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
     memory: () => repl.exports.memory,
     onOutput: onVeripbOutput,
     onError: (message) => onLine(`[host] ${message}`),
+    onProgress,
   });
 
   const wasi = createWasi(["veripb-repl"], {

@@ -17,6 +17,7 @@ import { constraintRefs } from "./refs.js";
 import { createLinks } from "./links.js";
 import { createVim } from "./vim.js";
 import { createVirtualList } from "./vlist.js";
+import { createLineList } from "./linelist.js";
 
 const LAYOUT_KEY = "veripb-repl-enhanced-layout";
 const EXPLAIN_VIEW_KEY = "veripb-repl-enhanced-explain-view";
@@ -134,7 +135,9 @@ export function mount(root, host) {
       }
       client.line(text);
     },
-    onTranscript: (lines) => appendTranscript(lines),
+    onTranscript: () => appendTranscript(),
+    // "line n of m" while a command runs: the proof's last line number.
+    progressTotal: () => (state?.proof ? state.proof.lines + 2 : null),
     // Entering edit mode, the REPL prints `Line <n>: <text>` for the line to
     // retype: start the input with that text, to change in place.
     onMode: (mode) => {
@@ -221,11 +224,16 @@ export function mount(root, host) {
   top.append(formula.section, split1, database.section, split2, proof.section);
 
   // ---- Bottom: tabs ----
-  const transcriptText = el("pre", { className: "transcript" });
+  // The transcript: every line of the session, as a virtual list (only the
+  // lines on screen are in the DOM), with a filter in place of the browser's
+  // find, which cannot see the rest.
+  const transcriptText = el("div", { className: "transcript" });
   const copyButton = el("button", { type: "button", textContent: "Copy" });
   const downloadButton = el("button", { type: "button", textContent: "Download" });
+  const transcriptFilter = el("input", { type: "search", className: "transcript-filter", placeholder: "filter the transcript" });
+  transcriptFilter.setAttribute("aria-label", "Filter the transcript");
   const transcriptPanel = el("div", { className: "tab-panel tab-transcript" },
-    el("div", { className: "tab-tools" }, copyButton, downloadButton), transcriptText);
+    el("div", { className: "tab-tools" }, copyButton, downloadButton, transcriptFilter), transcriptText);
   const preservedPanel = el("div", { className: "tab-panel tab-preserved" });
   const extrasPanel = el("div", { className: "tab-panel tab-extras" });
   const outputPanel = el("div", { className: "tab-panel tab-output" }, view.out);
@@ -384,7 +392,7 @@ export function mount(root, host) {
   applyLayout();
 
   // ---- Tabs ----
-  let transcriptDirty = true;
+  let transcriptList = null;
   function selectTab(name) {
     if (!panels[name]) name = "output";
     activeTab = name;
@@ -393,22 +401,23 @@ export function mount(root, host) {
       panel.hidden = key !== name;
       tabButtons[key].setAttribute("aria-selected", String(key === name));
     }
-    if (name === "transcript" && transcriptDirty) {
-      transcriptText.textContent = view.transcript.map((l) => l + "\n").join("");
-      transcriptDirty = false;
+    if (name === "transcript") {
+      transcriptList ??= createLineList(transcriptText, view.transcript);
+      transcriptList.update();
     }
     if (name === "preserved") refreshPreserved();
     if (name === "extras") refreshExtras();
     if (name === "glossary") showGlossary();
     if (name === "output") outputPanel.querySelector(".plain-out")?.scrollTo(0, 1e9);
   }
-  function appendTranscript(lines) {
-    if (activeTab === "transcript" && !transcriptDirty) {
-      transcriptText.append(lines.map((l) => l + "\n").join(""));
-    } else {
-      transcriptDirty = true;
-    }
+  // New lines are already in view.transcript; follow them if at the bottom.
+  function appendTranscript() {
+    if (activeTab !== "transcript" || !transcriptList) return;
+    const follow = transcriptList.atBottom();
+    transcriptList.update();
+    if (follow) transcriptList.toBottom();
   }
+  transcriptFilter.addEventListener("input", () => transcriptList?.setFilter(transcriptFilter.value));
   copyButton.addEventListener("click", () => navigator.clipboard?.writeText(view.transcript.join("\n") + "\n"));
   downloadButton.addEventListener("click", () => {
     const url = URL.createObjectURL(new Blob([view.transcript.join("\n") + "\n"], { type: "text/plain" }));

@@ -215,7 +215,13 @@ Plain mode:
   veripb's lines are shown in full and not grouped. veripb's status lines
   (`s VERIFIED …`) and all of the REPL's own lines are never grouped. A line
   counts as veripb output when it matches, exactly, a line of the stdout or
-  stderr of a veripb run made during that command.
+  stderr of a veripb run made during that command. A block is drawn only
+  while open; one of more than 2000 lines scrolls as a virtual list, only
+  the lines on screen in the DOM.
+- **Progress:** while a command runs (after half a second), the command line
+  shows it with the time so far, the veripb run if more than one, and the
+  last proof line veripb traced (in enhanced mode, "of N" and a percentage);
+  `:check`'s probe runs are not traced, so only the time and run show.
 - **Timing:** the header shows the last command's duration and veripb run
   count.
 
@@ -308,7 +314,10 @@ Enhanced mode:
   Shift+↑ `:back` and Esc `:done`; the typed text stays.
 - **Output:** as in plain mode, with veripb's output folded.
 - **Transcript:** every line of the session, input included and nothing
-  folded; Copy and Download (`transcript.txt`).
+  folded, as a virtual list (only the lines on screen are in the DOM, so a
+  session of 800k lines opens at once); a filter box shows only the lines
+  containing its text, in place of the browser's find; Copy and Download
+  (`transcript.txt`) take everything.
 - **Preserved:** the current and declared preserved sets, the proof line of
   the last change, and what was added or removed. Refreshed while the tab is
   open, whenever the formula or proof has changed (this runs veripb when the
