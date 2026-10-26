@@ -2,3 +2,4 @@
 target/
 /.devcontainer/.env
 /web/pkg/
+.DS_Store
