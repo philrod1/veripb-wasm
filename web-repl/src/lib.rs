@@ -83,13 +83,24 @@ impl State {
         if line.is_empty() {
             return Ok(self.mode());
         }
-        // A bare `:check` or `:objective` also fills the Extras tab's cache:
-        // its output goes to stdout as ever, and a copy is kept.
-        let remembered = remembered_command(line);
+        // `:check` and `:objective` answer from the proof as it stands: asked
+        // again before the session changes, the output they gave is shown
+        // again rather than worked out anew (the same cache serves the
+        // Extras tab). Otherwise their output goes to stdout as ever, and a
+        // copy is kept.
+        let key = cached_command(line);
+        if let (Some(key), Some(session)) = (&key, &self.session)
+            && let Some(lines) = state::recall(key, session.generation)
+        {
+            for text in &lines {
+                out.line(text);
+            }
+            return Ok(self.mode());
+        }
         let mut tee = Tee { out, lines: Vec::new() };
         let flow = commands::dispatch(&mut self.session, line, &mut tee)?;
-        if let (Some(command), Some(session)) = (remembered, &self.session) {
-            state::remember(command, session.generation, &tee.lines);
+        if let (Some(key), Some(session)) = (&key, &self.session) {
+            state::remember(key, session.generation, &tee.lines);
         }
         match flow {
             Flow::Quit => return Ok(MODE_QUIT),
@@ -119,12 +130,14 @@ impl Output for Tee<'_> {
     }
 }
 
-/// `check` or `objective` when `line` is that command with no argument,
-/// named in full or by a unique prefix (as `commands::dispatch` resolves
-/// it); else `None`.
-fn remembered_command(line: &str) -> Option<&'static str> {
-    let name = line.trim().strip_prefix(':')?;
-    if name.contains(char::is_whitespace) || name.is_empty() {
+/// The cache key (`state::OUTPUTS`) when `line` is `:check [<conclusion>]`
+/// ("check <conclusion>") or `:objective` with no argument ("objective"),
+/// the command named in full or by a unique prefix (as `commands::dispatch`
+/// resolves it); else `None`.
+fn cached_command(line: &str) -> Option<String> {
+    let rest = line.trim().strip_prefix(':')?;
+    let (name, args) = rest.split_once(char::is_whitespace).unwrap_or((rest, ""));
+    if name.is_empty() {
         return None;
     }
     let mut matches = help::COMMANDS.iter().filter(|t| t.name.starts_with(name));
@@ -132,7 +145,12 @@ fn remembered_command(line: &str) -> Option<&'static str> {
         let first = matches.next()?;
         matches.next().is_none().then_some(first)
     })?;
-    ["check", "objective"].contains(&topic.name).then_some(topic.name)
+    let args = args.split_whitespace().collect::<Vec<_>>().join(" ");
+    match topic.name {
+        "check" => Some(format!("check {args}")),
+        "objective" if args.is_empty() => Some("objective".to_string()),
+        _ => None,
+    }
 }
 
 /// Sets up the temp directory and an empty session. Returns the prompt

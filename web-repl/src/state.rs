@@ -384,11 +384,11 @@ impl veripb_repl::output::Output for Lines {
 }
 
 thread_local! {
-    /// The Extras tab's sections for the session generation they were made
-    /// at: from vr_extras_status / vr_extras_objective, or from `:check` /
-    /// `:objective` typed at the prompt (see `remember`).
-    static STATUS: RefCell<Option<(u64, Value)>> = const { RefCell::new(None) };
-    static OBJECTIVE: RefCell<Option<(u64, Value)>> = const { RefCell::new(None) };
+    /// The output of `:check` (per conclusion) and `:objective`, for the
+    /// session generation it was made at: typed at the prompt (`State::step`
+    /// replays it when asked again) or worked out for the Extras tab.
+    /// Command key ("check <args>", "objective") -> lines.
+    static OUTPUTS: RefCell<Option<(u64, std::collections::HashMap<String, Vec<String>>)>> = const { RefCell::new(None) };
 }
 
 /// `:check`'s output as the Extras tab's Status: `{status, lines, version}`,
@@ -400,24 +400,19 @@ fn status_json(lines: &[String]) -> Value {
     json!({ "status": body.last(), "lines": body, "version": version })
 }
 
-/// Keeps the output of a bare `:check` or `:objective` run at the prompt
-/// (`command` as resolved), for the Extras tab at the same generation.
-pub(crate) fn remember(command: &str, generation: u64, lines: &[String]) {
-    match command {
-        "check" => STATUS.with_borrow_mut(|c| *c = Some((generation, status_json(lines)))),
-        "objective" => OBJECTIVE.with_borrow_mut(|c| *c = Some((generation, json!({ "lines": lines })))),
-        _ => {}
-    }
+/// Keeps a command's output (`key` as in `OUTPUTS`) for `generation`.
+pub(crate) fn remember(key: &str, generation: u64, lines: &[String]) {
+    OUTPUTS.with_borrow_mut(|cache| {
+        if cache.as_ref().is_none_or(|(g, _)| *g != generation) {
+            *cache = Some((generation, Default::default()));
+        }
+        cache.as_mut().expect("just set").1.insert(key.to_string(), lines.to_vec());
+    });
 }
 
-/// The cached value for this generation, or `make()`'s, cached.
-fn cached(cache: &'static std::thread::LocalKey<RefCell<Option<(u64, Value)>>>, generation: u64, make: impl FnOnce() -> Value) -> Value {
-    if let Some(value) = cache.with_borrow(|c| c.as_ref().filter(|(g, _)| *g == generation).map(|(_, v)| v.clone())) {
-        return value;
-    }
-    let value = make();
-    cache.with_borrow_mut(|c| *c = Some((generation, value.clone())));
-    value
+/// A command's output kept for `generation`, if any.
+pub(crate) fn recall(key: &str, generation: u64) -> Option<Vec<String>> {
+    OUTPUTS.with_borrow(|cache| cache.as_ref().filter(|(g, _)| *g == generation).and_then(|(_, m)| m.get(key).cloned()))
 }
 
 /// The Extras tab's Status: bare `:check`'s output (`commands::check::run`)
@@ -430,13 +425,17 @@ pub extern "C" fn vr_extras_status() -> i32 {
         let Some(session) = &state.session else {
             return set_result(Value::Null);
         };
-        set_result(cached(&STATUS, session.generation, || {
-            let mut lines = Lines(Vec::new());
-            match veripb_repl::commands::check::run(session, "", &mut lines) {
-                Ok(()) => status_json(&lines.0),
-                Err(e) => json!({ "error": format!("{e:#}") }),
+        if let Some(lines) = recall("check ", session.generation) {
+            return set_result(status_json(&lines));
+        }
+        let mut lines = Lines(Vec::new());
+        set_result(match veripb_repl::commands::check::run(session, "", &mut lines) {
+            Ok(()) => {
+                remember("check ", session.generation, &lines.0);
+                status_json(&lines.0)
             }
-        }))
+            Err(e) => json!({ "error": format!("{e:#}") }),
+        })
     })
 }
 
@@ -450,11 +449,13 @@ pub extern "C" fn vr_extras_objective() -> i32 {
         let Some(session) = &state.session else {
             return set_result(Value::Null);
         };
-        set_result(cached(&OBJECTIVE, session.generation, || {
+        let lines = recall("objective", session.generation).unwrap_or_else(|| {
             let mut lines = Lines(Vec::new());
             veripb_repl::commands::objective::run(session, &mut lines);
-            json!({ "lines": lines.0 })
-        }))
+            remember("objective", session.generation, &lines.0);
+            lines.0
+        });
+        set_result(json!({ "lines": lines }))
     })
 }
 

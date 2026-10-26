@@ -37,10 +37,12 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   roughly halve it. A per-generation cache of `objective_bounds()` in
   `Session` would serve both.
 - **Cache `:check` and `:objective` per session state.** The web build keeps
-  their output per generation (`vr_extras_status`, `vr_extras_objective`,
-  filled also by the commands typed at the prompt via a tee in `step`), so
-  asking again before the proof changes costs nothing. In the REPL, the same
-  cache would make a repeated `:check` instant.
+  their output per generation, `:check` per conclusion (`OUTPUTS` in
+  `web-repl/src/state.rs`, filled through a tee in `State::step` in
+  `web-repl/src/lib.rs`). Typed again before the session changes, a command
+  replays its output instead of running veripb, and the Extras tab reads
+  the same cache. In the REPL, the same cache would make a repeated `:check`
+  instant in both frontends.
 
 ## Progress and feedback
 

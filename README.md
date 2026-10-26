@@ -223,6 +223,10 @@ Plain mode:
   proof line veripb has read up to (in enhanced mode, "of N" and a
   percentage), updated about ten times a second. It comes from veripb's
   reads of the proof file, so every run reports it, `:check`'s too.
+- **`:check` and `:objective`:** asked again before the session changes (the
+  formula, the proof or its checked prefix), they show the output they gave
+  last time rather than running veripb again; `:check` is kept per
+  conclusion. The header then shows 0 veripb runs.
 - **Timing:** the header shows the last command's duration and veripb run
   count.
 

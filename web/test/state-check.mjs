@@ -239,10 +239,24 @@ for (const stem of preservedStems) {
   const status = s.repl.extrasStatus();
   expect("after :check at the prompt, the status costs no veripb run", runs() - before, 0);
   expect("the status is :check's verdict", status.status, typed.filter((l) => !l.startsWith("Running VeriPB")).at(-1));
+  before = runs();
+  const again = s.run(":check").lines;
+  expect(":check again, the session unchanged: no veripb run", runs() - before, 0);
+  expect(":check again: the same output", JSON.stringify(again), JSON.stringify(typed));
+  before = runs();
+  const unsat = s.run(":check UNSAT").lines;
+  expect(":check with a conclusion is cached apart", runs() - before > 0, true);
+  before = runs();
+  expect(":check UNSAT again: cached", JSON.stringify(s.run(":check UNSAT").lines) === JSON.stringify(unsat) && runs() === before, true);
+  const objectiveTyped = s.run(":objective").lines;
+  expect(":objective matches the Extras section", JSON.stringify(objectiveTyped), JSON.stringify(objective.lines));
   s.run(":undo");
   before = runs();
   s.repl.extrasStatus();
   expect("after the proof changes, the status is worked out again", runs() > before, true);
+  before = runs();
+  s.run(":check");
+  expect("and :check uses that, not the old output", runs() - before, 0);
 }
 
 console.log(`${checks} checks, ${failures} mismatches`);
