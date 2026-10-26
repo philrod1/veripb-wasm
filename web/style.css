@@ -143,6 +143,8 @@ aside input[type=file] { display: none; }
 .pane-proof .row.provisional .status { color: var(--ok); opacity: 0.6; }
 .pane-proof .row.provisional .text { color: inherit; }
 .pane-body:focus { outline: none; }
+/* A row not fetched yet (modes/vlist.js). */
+.row.vlist-loading .text { color: var(--muted); }
 .pane-proof .row.vim-line { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .vim-cursor { background: var(--accent); color: var(--bg); }
 .pane-body:not(:focus) .vim-cursor { background: transparent; color: inherit; outline: 1px solid var(--accent); }

@@ -146,18 +146,21 @@ export function mount(root, host) {
     };
   })();
   // While :verify runs, the proof lines its veripb run has certainly
-  // accepted (host.js's `settled`) show as checked at once, provisionally,
-  // until the session summary after the command gives the real statuses.
+  // accepted (host.js's `settled`) show as checked at once, provisionally.
   // Only the command's first run counts: later runs (the database rebuild,
-  // probes) are not checking the proof's unchecked lines.
-  const live = { verifying: false, run: null, settled: 0 };
+  // probes) are not checking the proof's unchecked lines. When a summary
+  // arrives, its checked count stands in for them until the Proof pane has
+  // rows from that same session generation (the worker may be busy with the
+  // database rebuild before it can send them).
+  const live = { verifying: false, run: null, settled: 0, generation: null };
   let databasePending = false;
   const client = connectReplWorker(host, {
     what: "REPL",
     // A summary with `database: {pending}` comes first: the panes but the
     // Database take it at once; the full one follows.
     onState: (s) => {
-      live.settled = 0;
+      live.settled = s?.proof ? s.proof.checked + 2 : 0;
+      live.generation = s?.generation ?? null;
       if (s?.database?.pending) {
         databasePending = true;
         update({ ...s, database: state?.database ?? null });
@@ -925,9 +928,21 @@ export function mount(root, host) {
     body: proof.body,
     fetch: (start, count) => client.view({ pane: "proof", start, count, query: proofFilter.value }),
     render: (line) => (line.preamble ? preambleRow(line) : proofRow(line)),
+    // Not fetched yet (the worker may be busy verifying): the line number,
+    // known without it, and a provisional tick if it is settled.
+    placeholder: (position) => {
+      const n = position + 1;
+      const ticked = !proofFilter.value.trim() && n > 2 && n <= live.settled;
+      return el("div", { className: `row vlist-loading${ticked ? " provisional" : ""}` }, el("span", { className: "gutter" }),
+        el("span", { className: "status", textContent: ticked ? icon.checked : "" }),
+        el("span", { className: "num", textContent: proofFilter.value.trim() ? "" : n }), el("span", { className: "text", textContent: "…" }));
+    },
     onLoad: (info) => {
       const p = state?.proof;
       proofEmpty(p ? null : "No formula loaded.");
+      // Rows from the summary's own session generation: their statuses are
+      // the REPL's, so the stand-in ticks are no longer needed.
+      if (info?.generation != null && info.generation === live.generation && !live.verifying) live.settled = 0;
       if (!proofFilter.value.trim() && info?.generation != null) {
         vim.sync({ count: Math.max(0, info.total - 2), get: (i) => proofList.rowAt(i + 2)?.text }, info.generation);
       }

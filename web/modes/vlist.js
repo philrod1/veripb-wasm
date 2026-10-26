@@ -2,9 +2,11 @@
 // one height, fetched on demand, so a list of any length costs the page only
 // what is on screen plus a screen of slack either side.
 //
-// createVirtualList({ body, fetch, render, onLoad, onRender }) -> list
+// createVirtualList({ body, fetch, render, placeholder, onLoad, onRender }) -> list
 //   fetch(start, count) -> Promise<{total, rows, generation} | {error} | null>
 //   render(row, position) -> Element: one row (rows must all be one height)
+//   placeholder(position) -> Element, optional: a row not fetched yet
+//   (default: an empty row); fetches wait while the source is busy
 //   onLoad({total, generation} | {error} | null): after each fetch
 //   onRender(): after each draw
 // list: { refresh(), redraw(), scrollTo(position, block), rowAt(position),
@@ -18,7 +20,7 @@
 
 const CHUNK = 200;
 
-export function createVirtualList({ body, fetch, render, onLoad, onRender }) {
+export function createVirtualList({ body, fetch, render, placeholder, onLoad, onRender }) {
   const sizer = Object.assign(document.createElement("div"), { className: "vlist-sizer" });
   const windowEl = Object.assign(document.createElement("div"), { className: "vlist-window" });
   sizer.append(windowEl);
@@ -88,7 +90,8 @@ export function createVirtualList({ body, fetch, render, onLoad, onRender }) {
     const rows = [];
     for (let pos = from; pos <= to; pos++) {
       const row = list.rowAt(pos);
-      rows.push(row ? render(row, pos) : Object.assign(document.createElement("div"), { className: "row vlist-loading", textContent: " " }));
+      rows.push(row ? render(row, pos)
+        : placeholder?.(pos) ?? Object.assign(document.createElement("div"), { className: "row vlist-loading", textContent: " " }));
     }
     windowEl.style.transform = `translateY(${from * rowHeight}px)`;
     windowEl.replaceChildren(...rows);
