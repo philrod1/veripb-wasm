@@ -334,8 +334,12 @@ Enhanced mode:
   the last change, and what was added or removed. Refreshed while the tab is
   open, whenever the formula or proof has changed (this runs veripb when the
   proof changes the set).
-- **Extras:** refreshed in the same way. This runs veripb: `:check`'s probes
-  and the objective bounds.
+- **Extras:** refreshed in the same way. Status and Objective run veripb
+  (`:check`'s probes, the objective bounds), so the tab shows at once with
+  the Summary, and each fills in as it arrives (Objective first), showing
+  veripb's progress meanwhile. The REPL caches both per session state, and a
+  bare `:check` or `:objective` typed at the prompt fills the same cache, so
+  reopening the tab, or opening it after those commands, runs nothing.
   - **Status:** `:check`'s verdict (`s VERIFIED …` or `NOT YET
     CONCLUDED`), the proof's checked and unchecked counts, a rejected
     line's reason, and the veripb version.

@@ -215,5 +215,35 @@ for (const stem of preservedStems) {
   expect(":undo restores the comment", s.repl.view({ pane: "proof", start: 3, count: 1 }).rows[0]?.text, "% the comment, reworded");
 }
 
+// The Extras tab's sections: cached per session generation, and filled by
+// :check and :objective typed at the prompt.
+{
+  // clique.opb has an objective; two solutions logged, as in demo 04.
+  const s = session(demoFiles);
+  s.run(":load clique.opb");
+  s.run("soli x1 x2 x3 x4 ~x5 ;");
+  s.run("@better soli x1 x2 x3 ~x4 ~x5 ;");
+  s.run(":verify");
+  const expect = (where, got, want) => {
+    checks += 1;
+    if (got !== want) fail(`extras: ${where}`, `got ${got}, want ${want}`);
+  };
+  const runs = () => s.repl.stats.veripbRuns;
+  let before = runs();
+  const objective = s.repl.extrasObjective();
+  expect("the objective section runs veripb once", String(runs() - before), "1");
+  before = runs();
+  expect("asked again, it is cached", JSON.stringify(s.repl.extrasObjective()) === JSON.stringify(objective) && runs() === before, true);
+  const typed = s.run(":check").lines;
+  before = runs();
+  const status = s.repl.extrasStatus();
+  expect("after :check at the prompt, the status costs no veripb run", runs() - before, 0);
+  expect("the status is :check's verdict", status.status, typed.filter((l) => !l.startsWith("Running VeriPB")).at(-1));
+  s.run(":undo");
+  before = runs();
+  s.repl.extrasStatus();
+  expect("after the proof changes, the status is worked out again", runs() > before, true);
+}
+
 console.log(`${checks} checks, ${failures} mismatches`);
 process.exit(failures ? 1 : 0);

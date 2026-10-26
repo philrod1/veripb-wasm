@@ -17,8 +17,8 @@ mod views;
 use std::cell::RefCell;
 use std::path::Path;
 
-use veripb_repl::commands::{self, Flow, debug, edit, formula};
-use veripb_repl::output::{self, Stdout};
+use veripb_repl::commands::{self, Flow, debug, edit, formula, help};
+use veripb_repl::output::{self, Output, Stdout};
 use veripb_repl::session::Session;
 
 /// Prompt modes returned by `vr_init` and `vr_line`.
@@ -83,7 +83,15 @@ impl State {
         if line.is_empty() {
             return Ok(self.mode());
         }
-        match commands::dispatch(&mut self.session, line, out)? {
+        // A bare `:check` or `:objective` also fills the Extras tab's cache:
+        // its output goes to stdout as ever, and a copy is kept.
+        let remembered = remembered_command(line);
+        let mut tee = Tee { out, lines: Vec::new() };
+        let flow = commands::dispatch(&mut self.session, line, &mut tee)?;
+        if let (Some(command), Some(session)) = (remembered, &self.session) {
+            state::remember(command, session.generation, &tee.lines);
+        }
+        match flow {
             Flow::Quit => return Ok(MODE_QUIT),
             Flow::Continue => {}
             Flow::StartEdit(state) => self.edit = Some(state),
@@ -96,6 +104,35 @@ impl State {
 
 thread_local! {
     pub(crate) static STATE: RefCell<State> = RefCell::default();
+}
+
+/// Passes each line on to `out` and keeps a copy.
+struct Tee<'a> {
+    out: &'a mut dyn Output,
+    lines: Vec<String>,
+}
+
+impl Output for Tee<'_> {
+    fn line(&mut self, text: &str) {
+        self.lines.push(text.to_string());
+        self.out.line(text);
+    }
+}
+
+/// `check` or `objective` when `line` is that command with no argument,
+/// named in full or by a unique prefix (as `commands::dispatch` resolves
+/// it); else `None`.
+fn remembered_command(line: &str) -> Option<&'static str> {
+    let name = line.trim().strip_prefix(':')?;
+    if name.contains(char::is_whitespace) || name.is_empty() {
+        return None;
+    }
+    let mut matches = help::COMMANDS.iter().filter(|t| t.name.starts_with(name));
+    let topic = help::COMMANDS.iter().find(|t| t.name == name).or_else(|| {
+        let first = matches.next()?;
+        matches.next().is_none().then_some(first)
+    })?;
+    ["check", "objective"].contains(&topic.name).then_some(topic.name)
 }
 
 /// Sets up the temp directory and an empty session. Returns the prompt

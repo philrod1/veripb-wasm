@@ -176,6 +176,7 @@ export function mount(root, host) {
     },
     onProgress: (progress) => {
       updating.progress(progress);
+      extrasProgress(progress);
       if (!live.verifying) return;
       live.run ??= progress.run;
       if (progress.run === live.run && progress.settled > live.settled) {
@@ -523,9 +524,14 @@ export function mount(root, host) {
     preservedPanel.replaceChildren(preservedSection(set));
   }
 
-  // Extras: status (`:check`'s verdict), objective (`:objective`'s report
-  // and bounds), and counts.
+  // Extras: Status (`:check`'s verdict) and Objective (`:objective`'s
+  // report) each cost veripb runs; the REPL caches them per session
+  // generation, also from `:check` and `:objective` typed at the prompt.
+  // Summary comes from the session summary. The tab shows at once, and each
+  // slow section fills in as it arrives, with veripb's progress meanwhile.
   let extrasFor = null;
+  let extrasWaiting = null;
+  const working = () => el("p", { className: "muted working", textContent: "Working…" });
   async function refreshExtras() {
     if (!state?.formula) {
       extrasFor = null;
@@ -538,11 +544,24 @@ export function mount(root, host) {
       return;
     }
     extrasFor = key;
-    const extras = await client.extras();
-    if (activeTab !== "extras" || extrasFor !== key || !extras) return;
-    extrasPanel.replaceChildren(statusSection(extras.conclusion), objectiveSection(extras.objective),
-      el("section", { className: "extra extra-summary" }));
+    const status = section("Status", working());
+    const objective = section("Objective", working());
+    extrasPanel.replaceChildren(status, objective, el("section", { className: "extra extra-summary" }));
     renderSummary();
+    for (const [slot, fetch, make] of [[objective, client.extrasObjective, objectiveSection], [status, client.extrasStatus, statusSection]]) {
+      extrasWaiting = slot;
+      const result = await fetch();
+      if (extrasFor !== key) return;
+      if (result) slot.replaceWith(make(result));
+    }
+    extrasWaiting = null;
+  }
+  // veripb's progress, in the section being worked out.
+  function extrasProgress(progress) {
+    const note = extrasWaiting?.querySelector(".working");
+    if (!note || !progress.line) return;
+    const total = state?.proof ? state.proof.lines + 2 : null;
+    note.textContent = `Working · line ${progress.line.toLocaleString()}${total ? ` of ${total.toLocaleString()}` : ""}`;
   }
 
   const section = (title, ...body) => el("section", { className: "extra" }, el("h3", { textContent: title }), ...body);

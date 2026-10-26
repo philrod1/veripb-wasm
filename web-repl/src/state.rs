@@ -383,45 +383,78 @@ impl veripb_repl::output::Output for Lines {
     }
 }
 
-/// The Extras tab's views, or `null` without a session. Runs veripb (for
-/// the objective bounds and `:check`'s probes).
-/// ```text
-/// { conclusion: {status, lines, version} | {error},
-///   objective: {lines, objective, best, bestValid} | {lines, error} }
-/// ```
-/// `conclusion` is `:check` without arguments (`commands::check::run`):
-/// `status` is its verdict line (`s VERIFIED …` or `NOT YET CONCLUDED`).
-/// `objective.lines` is `:objective`'s output (`commands::objective::run`);
-/// the bound fields are absent for a formula without an objective.
+thread_local! {
+    /// The Extras tab's sections for the session generation they were made
+    /// at: from vr_extras_status / vr_extras_objective, or from `:check` /
+    /// `:objective` typed at the prompt (see `remember`).
+    static STATUS: RefCell<Option<(u64, Value)>> = const { RefCell::new(None) };
+    static OBJECTIVE: RefCell<Option<(u64, Value)>> = const { RefCell::new(None) };
+}
+
+/// `:check`'s output as the Extras tab's Status: `{status, lines, version}`,
+/// with `status` its verdict line (`s VERIFIED …` or `NOT YET CONCLUDED`).
+fn status_json(lines: &[String]) -> Value {
+    const BANNER: &str = "Running VeriPB version ";
+    let version = lines.iter().find_map(|l| l.strip_prefix(BANNER)).map(str::to_string);
+    let body: Vec<&String> = lines.iter().filter(|l| !l.starts_with(BANNER)).collect();
+    json!({ "status": body.last(), "lines": body, "version": version })
+}
+
+/// Keeps the output of a bare `:check` or `:objective` run at the prompt
+/// (`command` as resolved), for the Extras tab at the same generation.
+pub(crate) fn remember(command: &str, generation: u64, lines: &[String]) {
+    match command {
+        "check" => STATUS.with_borrow_mut(|c| *c = Some((generation, status_json(lines)))),
+        "objective" => OBJECTIVE.with_borrow_mut(|c| *c = Some((generation, json!({ "lines": lines })))),
+        _ => {}
+    }
+}
+
+/// The cached value for this generation, or `make()`'s, cached.
+fn cached(cache: &'static std::thread::LocalKey<RefCell<Option<(u64, Value)>>>, generation: u64, make: impl FnOnce() -> Value) -> Value {
+    if let Some(value) = cache.with_borrow(|c| c.as_ref().filter(|(g, _)| *g == generation).map(|(_, v)| v.clone())) {
+        return value;
+    }
+    let value = make();
+    cache.with_borrow_mut(|c| *c = Some((generation, value.clone())));
+    value
+}
+
+/// The Extras tab's Status: bare `:check`'s output (`commands::check::run`)
+/// as `{status, lines, version}` or `{error}`; `null` without a session.
+/// Runs veripb (`:check`'s probes) unless this session generation's result
+/// is known, from here or from `:check` at the prompt.
 #[unsafe(no_mangle)]
-pub extern "C" fn vr_extras() -> i32 {
+pub extern "C" fn vr_extras_status() -> i32 {
     STATE.with_borrow(|state| {
         let Some(session) = &state.session else {
             return set_result(Value::Null);
         };
-        let mut lines = Lines(Vec::new());
-        let conclusion = match veripb_repl::commands::check::run(session, "", &mut lines) {
-            Ok(()) => {
-                const BANNER: &str = "Running VeriPB version ";
-                let version = lines.0.iter().find_map(|l| l.strip_prefix(BANNER)).map(str::to_string);
-                let body: Vec<&String> = lines.0.iter().filter(|l| !l.starts_with(BANNER)).collect();
-                json!({ "status": body.last(), "lines": body, "version": version })
+        set_result(cached(&STATUS, session.generation, || {
+            let mut lines = Lines(Vec::new());
+            match veripb_repl::commands::check::run(session, "", &mut lines) {
+                Ok(()) => status_json(&lines.0),
+                Err(e) => json!({ "error": format!("{e:#}") }),
             }
-            Err(e) => json!({ "error": format!("{e:#}") }),
+        }))
+    })
+}
+
+/// The Extras tab's Objective: `:objective`'s output
+/// (`commands::objective::run`) as `{lines}`; `null` without a session. Runs
+/// veripb (for the bounds) unless this session generation's result is known,
+/// from here or from `:objective` at the prompt.
+#[unsafe(no_mangle)]
+pub extern "C" fn vr_extras_objective() -> i32 {
+    STATE.with_borrow(|state| {
+        let Some(session) = &state.session else {
+            return set_result(Value::Null);
         };
-        let mut objective_lines = Lines(Vec::new());
-        veripb_repl::commands::objective::run(session, &mut objective_lines);
-        let objective = match session.objective.as_ref().map(|_| session.objective_bounds()) {
-            None => json!({ "lines": objective_lines.0 }),
-            Some(Ok(bounds)) => json!({
-                "lines": objective_lines.0,
-                "objective": bounds.objective,
-                "best": bounds.best,
-                "bestValid": bounds.best_valid,
-            }),
-            Some(Err(e)) => json!({ "lines": objective_lines.0, "error": format!("{e:#}") }),
-        };
-        set_result(json!({ "conclusion": conclusion, "objective": objective }))
+        set_result(cached(&OBJECTIVE, session.generation, || {
+            let mut lines = Lines(Vec::new());
+            veripb_repl::commands::objective::run(session, &mut lines);
+            json!({ "lines": lines.0 })
+        }))
     })
 }
 

@@ -28,6 +28,20 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   (below), which suggests the TUI may be doing per-line work for the whole
   buffer on each draw.
 
+- **Make `:check` cheaper on optimisation proofs.** Bare `:check` replays the
+  proof once for the objective bounds, then tries `UNSAT`, `SAT` and
+  `BOUNDS v v` in that order, a full veripb run each. On a proof with an
+  objective the first two fail before `BOUNDS` succeeds: 4 runs, 81 s on the
+  circuit proof. Trying `BOUNDS v v` first when there is an objective, and
+  sharing the bounds with `:objective` (each currently computes them), would
+  roughly halve it. A per-generation cache of `objective_bounds()` in
+  `Session` would serve both.
+- **Cache `:check` and `:objective` per session state.** The web build keeps
+  their output per generation (`vr_extras_status`, `vr_extras_objective`,
+  filled also by the commands typed at the prompt via a tee in `step`), so
+  asking again before the proof changes costs nothing. In the REPL, the same
+  cache would make a repeated `:check` instant.
+
 ## Progress and feedback
 
 - **Progress line during long commands.** While a command runs, show the
