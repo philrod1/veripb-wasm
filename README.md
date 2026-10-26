@@ -24,7 +24,7 @@ patch series and applied into `work/`.
 | `repl-core/` | wrapper crate for the veripb-repl core; enables `getrandom`'s `wasm_js` backend |
 | `wasi-run/` | Node.js `node:wasi` runners for the WASI binary and WASI test binaries |
 | `bigint-probe/` | prints `malachite-bigint` and `i128` results, for diffing native against wasm |
-| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state` (a session summary), `vr_view` (a window of a pane's rows, filtered; `src/views.rs`), `vr_find` (one constraint by label or ID), `vr_preserved`, `vr_explain` (`:explain <n>`'s output, plus the plain-English explanation from `src/teach.rs`), `vr_extras` (`:check` and `:objective` output, bounds), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, `vr_glossary` (concepts plus `help::RULES`), `vr_line_ids` (the constraint IDs checked proof lines in a range derived), `vr_buffer_edit` (one undoable proof-line edit), plus `vr_toggle_breakpoint` and `vr_result_ptr` |
+| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state` (a session summary; `vr_state_quick` without the database), `vr_view` (a window of a pane's rows, filtered; `src/views.rs`), `vr_find` (one constraint by label or ID), `vr_preserved`, `vr_explain` (`:explain <n>`'s output, plus the plain-English explanation from `src/teach.rs`), `vr_extras` (`:check` and `:objective` output, bounds), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, `vr_glossary` (concepts plus `help::RULES`), `vr_line_ids` (the constraint IDs checked proof lines in a range derived), `vr_buffer_edit` (one undoable proof-line edit), plus `vr_toggle_breakpoint` and `vr_result_ptr` |
 | `web-tui/` | the veripb-repl TUI as a `wasm32-wasip1` command, built against `work/crossterm` |
 | `web/` | browser page: mode menu, plain and classic modes, veripb in Web Workers |
 | `scripts/build-web.sh` | builds `web/pkg/` (generated, not tracked) |
@@ -244,10 +244,13 @@ Enhanced mode:
   Preserved and Extras tabs and the command line below. Each top pane draws
   only the rows on screen plus a screen either side, fetched from the REPL
   as you scroll, so proofs of a million lines and more stay responsive.
-  While the panes' contents are being recomputed after a command or an edit
-  (the REPL replays the proof to rebuild its database when the proof has
-  changed), they are dimmed under "Updating the panes", with the time and
-  the proof line reached.
+  After a command or an edit the panes update in two steps: at once from a
+  summary without the database (`vr_state_quick`), then the Database pane,
+  which may need the REPL to replay the proof to rebuild its database; while
+  it does, that pane is dimmed under "Updating the Database pane", with the
+  time and the proof line reached. During `:verify` the proof lines veripb
+  has certainly accepted show as checked as it goes (a dimmer ✓, "checked
+  (verifying…)"), before the REPL's own statuses arrive.
 - **Filters:** each top pane has a filter box. A number matches that id
   (Formula, Database) or proof line; other text matches a case-insensitive
   substring of the row, labels included. The pane title shows "m of n"

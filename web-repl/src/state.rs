@@ -45,7 +45,15 @@ pub extern "C" fn vr_result_ptr() -> *const u8 {
 /// cache is stale.
 #[unsafe(no_mangle)]
 pub extern "C" fn vr_state() -> i32 {
-    STATE.with_borrow(|state| set_result(state_json(state)))
+    STATE.with_borrow(|state| set_result(state_json(state, true)))
+}
+
+/// `vr_state` without the database, which may need a veripb run (the REPL
+/// replays the checked proof after it changes): `database` is
+/// `{pending: true}`. Never runs veripb.
+#[unsafe(no_mangle)]
+pub extern "C" fn vr_state_quick() -> i32 {
+    STATE.with_borrow(|state| set_result(state_json(state, false)))
 }
 
 /// The preserved set: `{declared, current, lastChange}` (`null` where
@@ -81,7 +89,7 @@ pub extern "C" fn vr_toggle_breakpoint(index: usize) -> i32 {
     })
 }
 
-fn state_json(state: &State) -> Value {
+fn state_json(state: &State, with_database: bool) -> Value {
     let mode = state.mode();
     let Some(session) = &state.session else {
         return json!({ "mode": mode, "generation": null, "formula": null, "proof": null, "database": null, "variables": null });
@@ -91,7 +99,7 @@ fn state_json(state: &State) -> Value {
         "generation": session.generation,
         "formula": formula_json(session),
         "proof": proof_json(session, mode == MODE_DEBUG),
-        "database": database_json(session),
+        "database": if with_database { database_json(session) } else { json!({ "pending": true }) },
         "variables": session.variables.names().collect::<Vec<_>>(),
     })
 }

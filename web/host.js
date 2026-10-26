@@ -142,8 +142,12 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
       const stdoutFd = new OpenFile(stdout);
       if (onProgress) {
         // veripb streams the proof file (the `.pbp` argument) in small reads:
-        // the newlines read so far give the line it has reached. Reported
-        // as the run starts and then at most every 100 ms.
+        // the newlines read so far give the line it has reached. It checks
+        // each line as it reads it and asks for more only once everything
+        // before has been dealt with, so the lines complete before a read
+        // (less one, for safety) are `settled`: accepted, or that run
+        // would have stopped. Reported as the run starts and then at most
+        // every 100 ms.
         const run = stats.veripbRuns + 1;
         onProgress({ run, line: null });
         const proof = args.map((arg) => fileAt(root, arg)).find((file, i) => file && args[i].endsWith(".pbp"));
@@ -152,11 +156,12 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
         reading = !proof ? null : {
           file: proof,
           read(data) {
+            const before = lines;
             for (let i = 0; i < data.length; i++) if (data[i] === 10) lines += 1;
             const now = performance.now();
             if (now >= next) {
               next = now + 100;
-              onProgress({ run, line: lines + 1 });
+              onProgress({ run, line: lines + 1, settled: Math.max(0, before - 1) });
             }
           },
         };
@@ -220,13 +225,14 @@ export function createWasi(args, { stdout, stderr, root, env = [] }) {
  *   lineIds(first, last), view({pane, start, count, query?, core?, derived?}),
  *   find({label} | {id}), bufferEdit({op, index, text?, after?}), memoryBytes(), stats }.
  * `state()` and `preserved()` return the parsed JSON of web-repl's
- * `vr_state` / `vr_preserved` (web-repl/src/state.rs).
+ * `vr_state` / `vr_preserved` (web-repl/src/state.rs); `stateQuick()` is
+ * `vr_state_quick`, the summary without the database.
  * `onLine(text)` receives every output line (stdout and stderr).
  * `onVeripbOutput(stdout, stderr)`, if given, receives the bytes of each
  * veripb run's stdout and stderr.
- * `onProgress({run, line})`, if given, is called as each veripb run starts
- * (`line` null) and, at most every 100 ms, with the proof line veripb has
- * read up to.
+ * `onProgress({run, line, settled})`, if given, is called as each veripb run
+ * starts (`line` null) and, at most every 100 ms, with the proof line veripb
+ * has read up to and the last line it has certainly accepted.
  * `stats.veripbRuns` counts veripb invocations.
  */
 export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutput, onProgress }) {
@@ -282,6 +288,7 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
     mode,
     line,
     state: () => result(repl.exports.vr_state()),
+    stateQuick: () => result(repl.exports.vr_state_quick()),
     preserved: () => result(repl.exports.vr_preserved()),
     toggleBreakpoint: (index) => repl.exports.vr_toggle_breakpoint(index) === 1,
     complete(text) {

@@ -139,6 +139,9 @@ aside input[type=file] { display: none; }
 .pane-proof .row.rejected { background: var(--error-bg); }
 .pane-proof .row.rejected .status { color: var(--fg); font-weight: 700; }
 .pane-proof .row.checked .status { color: var(--ok); }
+/* Checked while :verify runs, before the REPL's own statuses arrive. */
+.pane-proof .row.provisional .status { color: var(--ok); opacity: 0.6; }
+.pane-proof .row.provisional .text { color: inherit; }
 .pane-body:focus { outline: none; }
 .pane-proof .row.vim-line { background: color-mix(in srgb, var(--accent) 10%, transparent); }
 .vim-cursor { background: var(--accent); color: var(--bg); }
@@ -177,6 +180,8 @@ aside input[type=file] { display: none; }
 .enh-updating[hidden] { display: none; }
 .enh-updating::before { content: "◐"; display: inline-block; margin-right: 0.45em; animation: busy-spin 1s linear infinite; }
 .enh-top.stale .pane-body { opacity: 0.55; transition: opacity 0.2s; }
+.enh-top.stale.database-only .pane-body { opacity: 1; }
+.enh-top.stale.database-only .pane-database .pane-body { opacity: 0.55; }
 .links-layer { position: absolute; inset: 0; pointer-events: none; overflow: visible; z-index: 2; }
 .links-layer .link { fill: none; stroke-width: 1.4; opacity: 0.75; transition: opacity 0.1s; }
 .links-layer .link.core { stroke: var(--echo); }

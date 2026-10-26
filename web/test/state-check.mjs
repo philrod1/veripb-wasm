@@ -178,6 +178,10 @@ for (const stem of preservedStems) {
   expect("database, core only", ns(view({ pane: "database", derived: false }).rows), "1,2,3,4");
   expect("database, derived only", ns(view({ pane: "database", core: false }).rows), "5,6,7,8");
   expect("formula, an id", ns(view({ pane: "formula", query: "2" }).rows), "2");
+  const quick = s.repl.stateQuick();
+  const full = s.repl.state();
+  expect("the quick summary has the database pending", JSON.stringify(quick.database), '{"pending":true}');
+  expect("the quick summary matches the full one", JSON.stringify({ ...quick, database: null }), JSON.stringify({ ...full, database: null }));
   const found = s.repl.find({ label: "@sum_all" });
   expect("find, a label", JSON.stringify(found && [found.id, found.position]), "[6,5]");
   expect("find, a missing id", String(s.repl.find({ id: 99 })), "null");

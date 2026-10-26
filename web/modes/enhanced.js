@@ -121,9 +121,10 @@ export function mount(root, host) {
       if (seconds < 0.3) return;
       const total = state?.proof ? state.proof.lines + 2 : null;
       const where = line ? ` · line ${line.toLocaleString()}${total ? ` of ${total.toLocaleString()} (${Math.min(100, Math.floor((100 * line) / total))}%)` : ""}` : "";
-      element.textContent = `Updating the panes · ${seconds.toFixed(0)} s${where}`;
+      element.textContent = `Updating the ${databasePending ? "Database pane" : "panes"} · ${seconds.toFixed(0)} s${where}`;
       element.hidden = false;
       element.parentElement?.classList.add("stale");
+      element.parentElement?.classList.toggle("database-only", databasePending);
     };
     return {
       element,
@@ -144,14 +145,42 @@ export function mount(root, host) {
       },
     };
   })();
+  // While :verify runs, the proof lines its veripb run has certainly
+  // accepted (host.js's `settled`) show as checked at once, provisionally,
+  // until the session summary after the command gives the real statuses.
+  // Only the command's first run counts: later runs (the database rebuild,
+  // probes) are not checking the proof's unchecked lines.
+  const live = { verifying: false, run: null, settled: 0 };
+  let databasePending = false;
   const client = connectReplWorker(host, {
     what: "REPL",
+    // A summary with `database: {pending}` comes first: the panes but the
+    // Database take it at once; the full one follows.
     onState: (s) => {
+      live.settled = 0;
+      if (s?.database?.pending) {
+        databasePending = true;
+        update({ ...s, database: state?.database ?? null });
+        return;
+      }
+      databasePending = false;
       updating.done();
       update(s);
     },
-    onUpdating: () => updating.start(),
-    onProgress: (progress) => updating.progress(progress),
+    onUpdating: () => {
+      live.verifying = false;
+      updating.start();
+    },
+    onProgress: (progress) => {
+      updating.progress(progress);
+      if (!live.verifying) return;
+      live.run ??= progress.run;
+      if (progress.run === live.run && progress.settled > live.settled) {
+        live.settled = progress.settled;
+        proofList.redraw();
+        proofTitle();
+      }
+    },
   });
   // Palettes and the command list come from the REPL.
   const colorScheme = matchMedia("(prefers-color-scheme: dark)");
@@ -171,6 +200,7 @@ export function mount(root, host) {
         return;
       }
       // As in the TUI, `:edit` and `:insert` open the Vim-style editor.
+      if (command === "verify" && view.mode === MODE_PBP) Object.assign(live, { verifying: true, run: null, settled: 0 });
       if (view.mode === MODE_PBP && (command === "edit" || command === "insert")) {
         view.setMode(view.mode);
         if (!state?.proof) return view.append("No formula loaded — use :load <formula.opb> first.");
@@ -913,7 +943,8 @@ export function mount(root, host) {
     const p = state?.proof;
     if (!p) return proof.setTitle("Proof");
     const count = !proofFilter.value.trim() ? `${p.lines}` : `${total} of ${p.lines}`;
-    proof.setTitle(`Proof (${count})${p.unchecked ? ` (${p.unchecked} unchecked)` : ""}${vim.active ? (vim.mode === "insert" ? " -- INSERT --" : " -- NORMAL --") : ""}`);
+    const unchecked = p.unchecked - Math.max(0, live.settled - 2 - p.checked);
+    proof.setTitle(`Proof (${count})${unchecked > 0 ? ` (${unchecked} unchecked)` : ""}${vim.active ? (vim.mode === "insert" ? " -- INSERT --" : " -- NORMAL --") : ""}`);
   }
 
   function preambleRow(line) {
@@ -933,11 +964,15 @@ export function mount(root, host) {
       event.stopPropagation();
       openExplain(line);
     });
+    const provisional = line.status === "unchecked" && line.n <= live.settled;
     const row = el("div", {
-      className: `row ${line.status}${line.n === p.debugLine ? " debug-current" : ""}${line.assertion ? " assertion" : ""}`,
+      className: `row ${line.status}${provisional ? " provisional" : ""}${line.n === p.debugLine ? " debug-current" : ""}${line.assertion ? " assertion" : ""}`,
     },
       bp,
-      el("span", { className: "status", textContent: icon[line.status], title: line.status === "rejected" ? p.rejected?.message ?? "rejected" : line.status }),
+      el("span", {
+        className: "status", textContent: provisional ? icon.checked : icon[line.status],
+        title: provisional ? "checked (verifying…)" : line.status === "rejected" ? p.rejected?.message ?? "rejected" : line.status,
+      }),
       el("span", { className: "num", textContent: line.n, title: `Click the line to put :edit ${line.n} in the command line` }),
       lineText(line),
       explain);
@@ -973,6 +1008,7 @@ export function mount(root, host) {
     update3("formula", formulaList, [state?.generation, state?.formula?.name, formulaFilter.value.trim()], [[...variables]], force);
   }
   function renderDatabase(force = false) {
+    if (databasePending) return;
     const highlight = state?.mode === MODE_DEBUG ? state.proof?.lastStepIds ?? [] : [];
     update3("database", databaseList, [state?.generation, filter.value.trim(), coreBox.checked, derivedBox.checked], [highlight, [...variables]], force);
   }

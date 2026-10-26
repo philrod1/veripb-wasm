@@ -9,7 +9,7 @@
 //                 | {type: "query", id, kind: "complete" | "themes" | "commands" | "glossary" | "extras" | "explain" | "lineIds" | "view" | "find" | "edit",
 //                    text?, line?, first?, last?, request?, edit?}
 // Worker -> page: {type: "out", lines, trace} | {type: "mode", mode, ms, veripbRuns}
-//                 | {type: "progress", run, line}  during a command: veripb run n, proof line reached
+//                 | {type: "progress", run, line, settled}  veripb run n: proof line reached, last line accepted
 //                 | {type: "updating"}  computing the session state that follows
 //                 | {type: "files", files} | {type: "file", id, data}
 //                 | {type: "dump", id, files: [[name, data], ...]} | {type: "fatal", text}
@@ -27,9 +27,11 @@ let repl;
 let markReplReady;
 const replReady = new Promise((resolve) => { markReplReady = resolve; });
 let watching = false;
-// "updating" first: the summary can take a veripb run (the REPL rebuilds its
-// database after the proof changes), and the page says so meanwhile.
+// The summary in two steps: at once without the database, then (after
+// "updating") with it. The database can take a veripb run (the REPL replays
+// the proof after it changes), and the page says so meanwhile.
 const postState = (id) => {
+  if (!id) post({ type: "state", state: repl.stateQuick() });
   post({ type: "updating" });
   post({ type: "state", id, state: repl.state() });
 };
