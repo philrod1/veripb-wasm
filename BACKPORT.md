@@ -36,6 +36,22 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   sharing the bounds with `:objective` (each currently computes them), would
   roughly halve it. A per-generation cache of `objective_bounds()` in
   `Session` would serve both.
+- **Let bare `:check` try the likely conclusion first.** It tries `UNSAT`,
+  `SAT`, then `BOUNDS v v`, a full veripb run each, stopping at the first
+  accepted, after a run for the bounds. Often the answer is already known:
+  - **the proof file's own conclusion:** `:source` parses the closing
+    `conclusion …;` line (`pending_conclusion` in `commands/source.rs`) and
+    drops it. Kept on the `Session`, it could be tried first: one run, and
+    no bounds run when it is `BOUNDS lo hi` (the circuit proof ends with
+    `conclusion BOUNDS 23 23;`);
+  - **the database:** a contradiction (`>= k` with an empty left side)
+    suggests `UNSAT`; an objective plus a derived constraint over exactly
+    the objective's terms suggests `BOUNDS`; a logged solution and no
+    objective suggests `SAT`.
+
+  Reordering `auto_detect_candidates` this way keeps the verdict genuine
+  (veripb still confirms it) and unchanged; only the runs drop, to one when
+  the guess is right. A proof not yet concluded still tries every candidate.
 - **Cache `:check` and `:objective` per session state.** The web build keeps
   their output per generation, `:check` per conclusion (`OUTPUTS` in
   `web-repl/src/state.rs`, filled through a tee in `State::step` in
