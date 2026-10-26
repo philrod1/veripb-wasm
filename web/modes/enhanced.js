@@ -191,7 +191,11 @@ export function mount(root, host) {
   const followSystem = () => { if (!themeNames().includes(storedTheme())) applyStoredOrSystem(); };
   client.themes().then((data) => { setPalettes(data); applyStoredOrSystem(); });
   colorScheme.addEventListener("change", followSystem);
-  client.commands().then((commands) => setCommands(commands.map((c) => c.name)));
+  client.commands().then((commands) => {
+    setCommands(commands.map((c) => c.name));
+    commandBar.describe(commands);
+  });
+  let commandBar = null;
   const view = new OutputView({
     complete: (text) => client.complete(text),
     // `:theme` recolours this page (the REPL itself answers "TUI only").
@@ -215,6 +219,7 @@ export function mount(root, host) {
       client.line(text);
     },
     onTranscript: () => appendTranscript(),
+    onReady: () => commandBar?.update(),
     // "line n of m" while a command runs: the proof's last line number.
     progressTotal: () => (state?.proof ? state.proof.lines + 2 : null),
     // Entering edit mode, the REPL prints `Line <n>: <text>` for the line to
@@ -230,6 +235,36 @@ export function mount(root, host) {
     },
   });
   client.attach(view);
+
+  // Buttons for common commands, above the prompt. Each runs its command as
+  // if typed (`view.run`): echoed, in history and the transcript. Enabled at
+  // the pbp> prompt with a formula loaded and the REPL idle; tooltips are
+  // the commands' usage and summary from veripb-repl (help::COMMANDS).
+  commandBar = (() => {
+    const buttons = [["verify", "Verify"], ["check", "Check"], ["undo", "Undo"]].map(([name, label]) => {
+      const button = el("button", { type: "button", className: "cmd", textContent: label, disabled: true });
+      button.dataset.command = name;
+      button.addEventListener("click", () => {
+        view.run(`:${name}`);
+      });
+      return button;
+    });
+    const element = el("div", { className: "cmd-bar", role: "toolbar" }, ...buttons);
+    element.setAttribute("aria-label", "Commands");
+    return {
+      element,
+      update() {
+        const enabled = view.ready() && view.mode === MODE_PBP && !!state?.formula;
+        for (const button of buttons) button.disabled = !enabled;
+      },
+      describe(commands) {
+        for (const button of buttons) {
+          const command = commands.find((c) => c.name === button.dataset.command);
+          if (command) button.title = `${command.usage} — ${command.summary}`;
+        }
+      },
+    };
+  })();
   client.watch(true);
   // The TUI's debug-mode keys: Shift+↓ `:step`, Shift+↑ `:back`, Esc `:done`.
   // Caught on the form, ahead of history and the suggestion strip; the
@@ -327,7 +362,7 @@ export function mount(root, host) {
     tabButtons[name] = button;
     tabBar.append(button);
   }
-  const bottom = el("div", { className: "enh-bottom" }, tabBar, ...Object.values(panels), view.commandLine);
+  const bottom = el("div", { className: "enh-bottom" }, tabBar, ...Object.values(panels), commandBar.element, view.commandLine);
   const splitH = el("div");
   root.append(top, splitH, bottom);
 
@@ -1171,6 +1206,7 @@ export function mount(root, host) {
 
   function update(next) {
     state = next;
+    commandBar.update();
     if (state) followMode(state.mode);
     variables = new Set(state?.variables ?? []);
     renderFormula();

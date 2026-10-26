@@ -44,9 +44,11 @@ export class OutputView {
    * and turns on the suggestion strip and Tab completion (`suggest`).
    * `onMode(mode)`, if given, runs after each `setMode` that leaves the
    * input ready. `progressTotal()`, if given, returns the proof's last line
-   * number, for "line n of m" while a command runs.
+   * number, for "line n of m" while a command runs. `onReady(ready)`, if
+   * given, runs whenever the input is enabled or disabled.
    */
-  constructor({ onSubmit, onTranscript, onMode, complete, progressTotal } = {}) {
+  constructor({ onSubmit, onTranscript, onMode, onReady, complete, progressTotal } = {}) {
+    this.onReady = onReady;
     this.onSubmit = onSubmit;
     this.onMode = onMode;
     this.progressTotal = progressTotal;
@@ -160,6 +162,7 @@ export class OutputView {
   setReady(ready) {
     this.input.disabled = !ready;
     if (ready) this.input.focus();
+    this.onReady?.(ready);
   }
 
   focus() {

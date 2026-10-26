@@ -190,6 +190,15 @@ await page.click('.pane-formula .ref[data-ref="@x1_imp_x3"]');
 check("enhanced: a plain click on a formula ref jumps", (await page.inputValue(".plain-in")) === ":edit 3"
   && await until(async () => !!(await page.$('.pane-database .row.jumped[data-id="2"]'))));
 
+// Command buttons run their command as if typed.
+check("buttons: enabled with a formula at pbp>", await page.$$eval(".cmd-bar .cmd", (b) => b.every((x) => !x.disabled)));
+check("buttons: tooltips from the REPL's command list", (await page.getAttribute('.cmd[data-command="check"]', "title"))?.startsWith(":check"));
+await page.click('.cmd[data-command="check"]');
+await ready();
+check("buttons: Check runs :check at the prompt", await until(async () => (await page.textContent(".plain-out")).includes("pbp> :check")));
+check("buttons: and it goes into history", (await page.press(".plain-in", "ArrowUp"), await page.inputValue(".plain-in")) === ":check");
+await page.fill(".plain-in", "");
+
 // Clicking a row's number jumps between a line and its constraints.
 const jumped = (selector) => until(async () => !!(await page.$(selector)));
 await page.click('.pane-formula .row[data-ids="2"] .num');

@@ -174,6 +174,15 @@ aside input[type=file] { display: none; }
 .splitter-y { cursor: row-resize; }
 .splitter:hover, .splitter.dragging { background: var(--accent); }
 .enh-bottom { display: flex; flex-direction: column; min-height: 0; }
+/* Command buttons above the prompt (enhanced.js). */
+.cmd-bar { display: flex; gap: 0.4rem; padding: 0.4rem 1rem 0; border-top: 1px solid var(--border); }
+.cmd-bar + .plain-form { border-top: none; }
+.cmd-bar .cmd {
+  font: inherit; color: var(--fg); background: var(--panel); border: 1px solid var(--border); border-radius: 4px;
+  padding: 0.05rem 0.7rem; cursor: pointer;
+}
+.cmd-bar .cmd:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.cmd-bar .cmd:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
 .enh-top[hidden], .pane[hidden], .splitter[hidden] { display: none; }
 .enh-top { position: relative; }
 .enh-top.linked .splitter-x { background: linear-gradient(var(--border), var(--border)) center / 2px 100% no-repeat; }
