@@ -17,7 +17,7 @@ export function mount(root, host) {
   const view = new OutputView({ onSubmit: (text) => client.line(text) });
   root.append(view.out, view.form);
   client.attach(view);
-  client.commands().then((commands) => setCommands(commands.map((c) => c.name)));
+  client.commands().then((commands) => setCommands(commands.filter((c) => !c.mode).map((c) => c.name)));
 
   return {
     putFile: client.putFile,

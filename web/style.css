@@ -183,6 +183,7 @@ aside input[type=file] { display: none; }
 }
 .cmd-bar .cmd:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
 .cmd-bar .cmd:disabled { color: var(--muted); cursor: default; opacity: 0.6; }
+.cmd-bar .cmd[hidden] { display: none; }
 .enh-top[hidden], .pane[hidden], .splitter[hidden] { display: none; }
 .enh-top { position: relative; }
 .enh-top.linked .splitter-x { background: linear-gradient(var(--border), var(--border)) center / 2px 100% no-repeat; }

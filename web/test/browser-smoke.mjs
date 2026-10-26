@@ -199,6 +199,28 @@ check("buttons: Check runs :check at the prompt", await until(async () => (await
 check("buttons: and it goes into history", (await page.press(".plain-in", "ArrowUp"), await page.inputValue(".plain-in")) === ":check");
 await page.fill(".plain-in", "");
 
+// Debug: the bar swaps to Step, Back, Continue and Done.
+const shownButtons = () => page.$$eval(".cmd-bar .cmd", (b) => b.filter((x) => !x.hidden).map((x) => x.textContent).join(","));
+check("buttons: the pbp> set", (await shownButtons()) === "Verify,Check,Undo,Debug", await shownButtons());
+const ticks = () => page.$$eval(".pane-proof .row:not(.preamble) .status", (s) => s.map((x) => x.textContent).join(""));
+await page.click('.cmd[data-command="debug"]');
+await ready();
+check("buttons: Debug swaps to the debug set", await until(async () => (await shownButtons()) === "Step,Back,Continue,Done"), await shownButtons());
+check("buttons: debug tooltips from the REPL", (await page.getAttribute('.cmd[data-command="step"]', "title"))?.startsWith(":step"));
+const debugStart = await ticks();
+await page.click('.cmd[data-command="back"]');
+await ready();
+check("buttons: Back retracts a line", await until(async () => (await ticks()).split("✓").length === debugStart.split("✓").length - 1), `${debugStart} -> ${await ticks()}`);
+await page.click('.cmd[data-command="step"]');
+await ready();
+check("buttons: Step checks it again", await until(async () => (await ticks()) === debugStart), await ticks());
+await page.click('.cmd[data-command="done"]');
+await ready();
+check("buttons: Done swaps back", await until(async () => (await shownButtons()) === "Verify,Check,Undo,Debug" && (await page.textContent(".plain-prompt")).startsWith("pbp")));
+const echoed = await page.textContent(".plain-out");
+check("buttons: the debug commands were run as typed", ["pbp> :debug", "debug> :back", "debug> :step", "debug> :done"].every((t) => echoed.includes(t)));
+await page.fill(".plain-in", "");
+
 // Clicking a row's number jumps between a line and its constraints.
 const jumped = (selector) => until(async () => !!(await page.$(selector)));
 await page.click('.pane-formula .row[data-ids="2"] .num');

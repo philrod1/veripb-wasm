@@ -220,15 +220,16 @@ pub extern "C" fn vr_themes() -> i32 {
     set_result(json!({ "default": ThemeName::default().name(), "themes": themes }))
 }
 
-/// The REPL's `:` commands (`help::COMMANDS`): `[{name, usage, summary}]`.
+/// The REPL's `:` commands (`help::COMMANDS`), then the `:debug` mode's own
+/// (`debug::MODE_VOCABULARY`, with `mode: "debug"`): `[{name, usage,
+/// summary, mode?}]`.
 #[unsafe(no_mangle)]
 pub extern "C" fn vr_commands() -> i32 {
-    set_result(Value::Array(
-        help::COMMANDS
-            .iter()
-            .map(|t| json!({ "name": t.name, "usage": t.usage, "summary": t.summary }))
-            .collect(),
-    ))
+    let commands = help::COMMANDS.iter().map(|t| json!({ "name": t.name, "usage": t.usage, "summary": t.summary }));
+    let debugging = debug::MODE_VOCABULARY
+        .iter()
+        .map(|t| json!({ "name": t.name, "usage": t.usage, "summary": t.summary, "mode": "debug" }));
+    set_result(Value::Array(commands.chain(debugging).collect()))
 }
 
 thread_local! {

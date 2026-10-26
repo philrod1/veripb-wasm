@@ -313,10 +313,12 @@ Enhanced mode:
   unchecked assertion means. "Checker" shows `:explain <n>`'s output. The
   choice is remembered. Other rules, rejected lines and implication syntax
   (`==>`, `<==`) show the checker view only.
-- **Command buttons:** Verify, Check and Undo above the prompt. Each runs
-  its command as if typed (echoed, in history and the transcript); they are
-  enabled at the `pbp>` prompt with a formula loaded and the REPL idle, and
-  their tooltips are the commands' usage and summary from veripb-repl.
+- **Command buttons** above the prompt: Verify, Check, Undo and Debug at the
+  `pbp>` prompt (with a formula loaded); in `:debug` mode, Step, Back,
+  Continue and Done instead. Each runs its command as if typed (echoed, in
+  history and the transcript), only while the REPL is idle; tooltips are the
+  commands' usage and summary from veripb-repl (`help::COMMANDS`,
+  `debug::MODE_VOCABULARY`, sent by `vr_commands`).
 - **Jumps:** click a Formula or Proof line's number to scroll the Database
   pane to the constraints it gave rise to (they flash); click a Database
   row's ID to scroll to the formula line or proof line it came from. The

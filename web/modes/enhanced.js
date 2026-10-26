@@ -192,7 +192,7 @@ export function mount(root, host) {
   client.themes().then((data) => { setPalettes(data); applyStoredOrSystem(); });
   colorScheme.addEventListener("change", followSystem);
   client.commands().then((commands) => {
-    setCommands(commands.map((c) => c.name));
+    setCommands(commands.filter((c) => !c.mode).map((c) => c.name));
     commandBar.describe(commands);
   });
   let commandBar = null;
@@ -237,29 +237,40 @@ export function mount(root, host) {
   client.attach(view);
 
   // Buttons for common commands, above the prompt. Each runs its command as
-  // if typed (`view.run`): echoed, in history and the transcript. Enabled at
-  // the pbp> prompt with a formula loaded and the REPL idle; tooltips are
-  // the commands' usage and summary from veripb-repl (help::COMMANDS).
+  // if typed (`view.run`): echoed, in history and the transcript. At the
+  // pbp> prompt (and, disabled, in the edit modes) Verify, Check, Undo and
+  // Debug, enabled with a formula loaded; at debug>, Step, Back, Continue and
+  // Done. Only while the REPL is idle. Tooltips are the commands' usage and
+  // summary from veripb-repl (help::COMMANDS, debug::MODE_VOCABULARY).
   commandBar = (() => {
-    const buttons = [["verify", "Verify"], ["check", "Check"], ["undo", "Undo"]].map(([name, label]) => {
+    const sets = {
+      pbp: [["verify", "Verify"], ["check", "Check"], ["undo", "Undo"], ["debug", "Debug"]],
+      debug: [["step", "Step"], ["back", "Back"], ["continue", "Continue"], ["done", "Done"]],
+    };
+    const buttons = Object.entries(sets).flatMap(([set, commands]) => commands.map(([name, label]) => {
       const button = el("button", { type: "button", className: "cmd", textContent: label, disabled: true });
       button.dataset.command = name;
+      button.dataset.set = set;
       button.addEventListener("click", () => {
         view.run(`:${name}`);
       });
       return button;
-    });
+    }));
     const element = el("div", { className: "cmd-bar", role: "toolbar" }, ...buttons);
     element.setAttribute("aria-label", "Commands");
     return {
       element,
       update() {
-        const enabled = view.ready() && view.mode === MODE_PBP && !!state?.formula;
-        for (const button of buttons) button.disabled = !enabled;
+        const debugging = view.mode === MODE_DEBUG;
+        const enabled = view.ready() && (debugging || (view.mode === MODE_PBP && !!state?.formula));
+        for (const button of buttons) {
+          button.hidden = (button.dataset.set === "debug") !== debugging;
+          button.disabled = !enabled;
+        }
       },
       describe(commands) {
         for (const button of buttons) {
-          const command = commands.find((c) => c.name === button.dataset.command);
+          const command = commands.find((c) => c.name === button.dataset.command && (c.mode === "debug") === (button.dataset.set === "debug"));
           if (command) button.title = `${command.usage} — ${command.summary}`;
         }
       },
