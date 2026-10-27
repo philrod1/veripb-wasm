@@ -757,6 +757,247 @@ export function mount(root, host) {
     showExplainView(explainView);
   }
 
+  // ---- Stats modal: click a pane's title (web-repl/src/stats.rs) ----
+  // Categorical slots (fixed order) for the light and dark surfaces; a
+  // seventh, grey, for "other".
+  const SERIES = {
+    light: ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4", "#008300"],
+    dark: ["#3987e5", "#d95926", "#199e70", "#c98500", "#d55181", "#008300"],
+  };
+  const OTHER = "#898781";
+  const MAX_SLICES = 6;
+  const PANE_NUMBER = { formula: 0, database: 1, proof: 2 };
+  const KIND_NOTES = {
+    clause: "any one true literal satisfies it",
+    cardinality: "equal coefficients",
+    general: "general pseudo-Boolean",
+    equality: "an = constraint",
+    implication: "==>, <== or <==>",
+    trivial: "always satisfied",
+    contradiction: "never satisfied",
+  };
+  const statsTitle = el("h2");
+  const statsBody = el("div", { className: "stats-body" });
+  const statsClose = el("button", { type: "button", textContent: "Close", autofocus: true });
+  const statsDialog = el("dialog", { className: "explain-modal stats-modal" },
+    el("header", {}, statsTitle, el("div", { className: "explain-tools" }, statsClose)), statsBody);
+  root.append(statsDialog);
+  statsClose.addEventListener("click", () => statsDialog.close());
+  statsDialog.addEventListener("click", (event) => { if (event.target === statsDialog) statsDialog.close(); });
+  statsDialog.addEventListener("close", () => view.focus());
+  let statsSeq = 0;
+
+  const number = (n) => (n ?? 0).toLocaleString();
+  const percent = (part, whole) => (whole ? `${((100 * part) / whole).toFixed(part / whole < 0.01 ? 2 : 1)}%` : "–");
+  /** The series colours for the page's current background. */
+  function seriesColours() {
+    const [r, g, b] = (getComputedStyle(document.body).backgroundColor.match(/\d+(\.\d+)?/g) ?? [255, 255, 255]).map(Number);
+    return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255 < 0.5 ? SERIES.dark : SERIES.light;
+  }
+  const tiles = (...pairs) => el("div", { className: "stat-tiles" }, ...pairs.map(([label, value, note]) =>
+    el("div", { className: "stat-tile" }, el("div", { className: "stat-value", textContent: value }),
+      el("div", { className: "stat-label", textContent: label }), ...(note ? [el("div", { className: "stat-note", textContent: note })] : []))));
+  const statsSection = (title, ...body) => el("section", { className: "stats-section" }, el("h3", { textContent: title }), ...body);
+
+  /** A donut of `items` ({name, count}, largest first): the first five, and the rest as "other" (or six if that is all). */
+  function donut(items, total, unit) {
+    const colours = seriesColours();
+    const slices = items.length <= MAX_SLICES ? items.map((item, i) => ({ ...item, colour: colours[i] }))
+      : [...items.slice(0, MAX_SLICES - 1).map((item, i) => ({ ...item, colour: colours[i] })),
+        { name: "other", count: items.slice(MAX_SLICES - 1).reduce((sum, item) => sum + item.count, 0), colour: OTHER,
+          rest: items.slice(MAX_SLICES - 1).map((item) => item.name) }];
+    const NS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(NS, "svg");
+    svg.setAttribute("viewBox", "-100 -100 200 200");
+    svg.setAttribute("class", "donut");
+    svg.setAttribute("role", "img");
+    svg.setAttribute("aria-label", slices.map((s) => `${s.name} ${percent(s.count, total)}`).join(", "));
+    const value = document.createElementNS(NS, "text");
+    value.setAttribute("class", "donut-value");
+    value.setAttribute("y", "4");
+    const label = document.createElementNS(NS, "text");
+    label.setAttribute("class", "donut-label");
+    label.setAttribute("y", "24");
+    const centre = (slice) => {
+      value.textContent = slice ? percent(slice.count, total) : number(total);
+      label.textContent = slice ? slice.name : unit;
+    };
+    const legend = el("ul", { className: "donut-legend" });
+    const marks = [];
+    const highlight = (index) => {
+      marks.forEach((mark, i) => mark.classList.toggle("faded", index != null && i !== index));
+      [...legend.children].forEach((row, i) => row.classList.toggle("active", i === index));
+      centre(index == null ? null : slices[index]);
+    };
+    const OUTER = 92;
+    const INNER = 58;
+    let angle = -Math.PI / 2;
+    slices.forEach((slice, index) => {
+      const sweep = (2 * Math.PI * slice.count) / total;
+      let mark;
+      if (slices.length === 1) {
+        mark = document.createElementNS(NS, "circle");
+        mark.setAttribute("r", String((OUTER + INNER) / 2));
+        mark.setAttribute("fill", "none");
+        mark.setAttribute("stroke", slice.colour);
+        mark.setAttribute("stroke-width", String(OUTER - INNER));
+      } else {
+        const point = (r, a) => `${(r * Math.cos(a)).toFixed(3)} ${(r * Math.sin(a)).toFixed(3)}`;
+        const end = angle + sweep;
+        const large = sweep > Math.PI ? 1 : 0;
+        mark = document.createElementNS(NS, "path");
+        mark.setAttribute("d", `M ${point(OUTER, angle)} A ${OUTER} ${OUTER} 0 ${large} 1 ${point(OUTER, end)} L ${point(INNER, end)} A ${INNER} ${INNER} 0 ${large} 0 ${point(INNER, angle)} Z`);
+        mark.setAttribute("fill", slice.colour);
+        mark.setAttribute("class", "donut-slice");
+        angle = end;
+      }
+      const tip = document.createElementNS(NS, "title");
+      tip.textContent = `${slice.name}: ${number(slice.count)} (${percent(slice.count, total)})${slice.rest ? `\n${slice.rest.join(", ")}` : ""}`;
+      mark.append(tip);
+      mark.addEventListener("pointerenter", () => highlight(index));
+      mark.addEventListener("pointerleave", () => highlight(null));
+      marks.push(mark);
+      svg.append(mark);
+      const row = el("li", { title: slice.rest ? slice.rest.join(", ") : "" },
+        el("span", { className: "swatch" }), el("span", { className: "legend-name", textContent: slice.name }),
+        el("span", { className: "legend-count", textContent: number(slice.count) }),
+        el("span", { className: "legend-share", textContent: percent(slice.count, total) }));
+      row.querySelector(".swatch").style.background = slice.colour;
+      row.addEventListener("pointerenter", () => highlight(index));
+      row.addEventListener("pointerleave", () => highlight(null));
+      legend.append(row);
+    });
+    svg.append(value, label);
+    centre(null);
+    return el("div", { className: "donut-chart" }, svg, legend);
+  }
+
+  /** One stacked bar of two or three parts ([{name, count}]), with a legend. */
+  function partsBar(parts) {
+    const colours = seriesColours();
+    const total = parts.reduce((sum, part) => sum + part.count, 0);
+    const bar = el("div", { className: "parts-bar", role: "img" });
+    bar.setAttribute("aria-label", parts.map((p) => `${p.name} ${percent(p.count, total)}`).join(", "));
+    const legend = el("ul", { className: "donut-legend parts-legend" });
+    parts.forEach((part, i) => {
+      if (part.count) {
+        const segment = el("div", { className: "parts-segment", title: `${part.name}: ${number(part.count)} (${percent(part.count, total)})` });
+        segment.style.flexGrow = String(part.count);
+        segment.style.background = colours[i];
+        bar.append(segment);
+      }
+      const row = el("li", {}, el("span", { className: "swatch" }), el("span", { className: "legend-name", textContent: part.name }),
+        el("span", { className: "legend-count", textContent: number(part.count) }),
+        el("span", { className: "legend-share", textContent: percent(part.count, total) }));
+      row.querySelector(".swatch").style.background = colours[i];
+      legend.append(row);
+    });
+    return el("div", { className: "parts" }, bar, legend);
+  }
+
+  /** Horizontal bars, one hue, each labelled with its count and share. */
+  function bars(items, notes = {}) {
+    const total = items.reduce((sum, item) => sum + item.count, 0);
+    const largest = Math.max(1, ...items.map((item) => item.count));
+    const colour = seriesColours()[0];
+    return el("div", { className: "hbars" }, ...items.map((item) => {
+      const fill = el("div", { className: "hbar-fill" });
+      fill.style.width = `${(100 * item.count) / largest}%`;
+      fill.style.background = colour;
+      return el("div", { className: "hbar", title: notes[item.name] ?? "" },
+        el("span", { className: "hbar-name", textContent: item.name }),
+        el("div", { className: "hbar-track" }, fill),
+        el("span", { className: "hbar-value", textContent: `${number(item.count)} · ${percent(item.count, total)}` }));
+    }));
+  }
+
+  function shapeSections(stats, noun) {
+    const t = stats.terms;
+    return [
+      statsSection(`${noun} by kind`, stats.kinds.length ? bars(stats.kinds, KIND_NOTES) : el("p", { className: "muted", textContent: "None." })),
+      statsSection("Size", facts(
+        ["Terms per constraint", t ? `min ${number(t.min)} · median ${number(t.median)} · mean ${t.mean.toFixed(1)} · max ${number(t.max)}` : "–"],
+        ["Largest coefficient", stats.largestCoefficient ?? "–"],
+      )),
+    ];
+  }
+
+  function formulaStats(s) {
+    return [
+      tiles(["Constraints", number(s.constraints)], ["Variables", number(s.variables)],
+        ["Lines", number(s.lines), s.twoConstraintLines ? `${number(s.twoConstraintLines)} give two constraints` : null],
+        ["Labelled", number(s.labelled), percent(s.labelled, s.lines)]),
+      ...shapeSections(s, "Lines"),
+      statsSection("Also", facts(
+        ["Objective", s.objectiveTerms == null ? "none" : `${number(s.objectiveTerms)} term${s.objectiveTerms === 1 ? "" : "s"}`],
+        ["Preserved set", s.preserved == null ? "none declared" : `${number(s.preserved)} variable${s.preserved === 1 ? "" : "s"}`],
+      )),
+    ];
+  }
+
+  function databaseStats(s) {
+    if (s.error) return [el("p", { className: "error", textContent: s.error })];
+    const fromProof = s.count - s.fromFormula;
+    return [
+      tiles(["Constraints", number(s.count)], ["Core", number(s.core), percent(s.core, s.count)],
+        ["Derived", number(s.count - s.core), percent(s.count - s.core, s.count)],
+        ["Labelled", number(s.labelled), percent(s.labelled, s.count)]),
+      statsSection("Core and derived", partsBar([{ name: "core", count: s.core }, { name: "derived", count: s.count - s.core }])),
+      statsSection("Where they came from", partsBar([{ name: "formula", count: s.fromFormula }, { name: "proof", count: fromProof }]),
+        el("p", { className: "muted stats-note", textContent: `${number(s.fromFormula)} of the formula's ${number(s.formulaConstraints)} constraints are still in the database; the highest constraint ID is ${number(s.highestId)}.` })),
+      ...shapeSections(s, "Constraints"),
+    ];
+  }
+
+  function proofStats(s) {
+    const used = s.rules.filter((rule) => rule.name !== "comment" && rule.name !== "blank");
+    const table = el("table", { className: "stats-table" },
+      el("thead", {}, el("tr", {}, ...["Rule", "Lines", "Share", "Checked"].map((h) => el("th", { textContent: h })))),
+      el("tbody", {}, ...s.rules.map((rule) => {
+        const id = `rule-${rule.name}`;
+        const name = glossary?.has(id)
+          ? el("a", { href: "#", textContent: rule.name, title: `Look up ${rule.name} in the Glossary` })
+          : el("span", { textContent: rule.name });
+        if (name.tagName === "A") name.addEventListener("click", (event) => { event.preventDefault(); openGlossary(id); });
+        return el("tr", {}, el("td", {}, name), el("td", { textContent: number(rule.count) }),
+          el("td", { textContent: percent(rule.count, s.lines) }),
+          el("td", { textContent: rule.checked === rule.count ? "all" : number(rule.checked) }));
+      })));
+    return [
+      tiles(["Lines", number(s.lines), s.preamble ? `plus ${number(s.preamble)} preamble` : null],
+        ["Checked", number(s.checked), s.rejected ? "then a rejected line" : percent(s.checked, s.lines)],
+        ["Rules used", number(used.length)], ["Labelled", number(s.labelled), percent(s.labelled, s.lines)]),
+      s.lines ? statsSection("Lines by rule", donut(s.rules, s.lines, "lines")) : el("p", { className: "muted", textContent: "The proof is empty." }),
+      ...(s.lines ? [statsSection("Every rule", table)] : []),
+    ];
+  }
+
+  async function openStats(name) {
+    const mine = ++statsSeq;
+    const titles = { formula: "Formula statistics", database: "Database statistics", proof: "Proof statistics" };
+    statsTitle.textContent = titles[name];
+    statsBody.replaceChildren(el("p", { className: "muted", textContent: name === "database" ? "Counting (may need the database rebuilt)…" : "Counting…" }));
+    if (!statsDialog.open) statsDialog.showModal();
+    if (name === "proof") await glossaryReady;
+    const stats = await client.paneStats(PANE_NUMBER[name]);
+    if (mine !== statsSeq) return;
+    if (!stats) return statsBody.replaceChildren(el("p", { className: "muted", textContent: "No formula loaded." }));
+    statsBody.replaceChildren(...(name === "formula" ? formulaStats(stats) : name === "database" ? databaseStats(stats) : proofStats(stats)));
+  }
+  for (const [name, target] of Object.entries({ formula, database, proof })) {
+    const title = target.head.querySelector(".pane-title-text");
+    title.classList.add("stats-link");
+    title.tabIndex = 0;
+    title.setAttribute("role", "button");
+    title.title = "Statistics";
+    title.addEventListener("click", () => openStats(name));
+    title.addEventListener("keydown", (event) => {
+      if (event.key !== "Enter" && event.key !== " ") return;
+      event.preventDefault();
+      openStats(name);
+    });
+  }
+
   // ---- Glossary tab (web-repl/src/glossary.rs) ----
   const glossarySearch = el("input", { type: "search", className: "glossary-search", placeholder: "search the glossary" });
   glossarySearch.setAttribute("aria-label", "Search the glossary");
@@ -810,10 +1051,10 @@ export function mount(root, host) {
     renderGlossaryList();
     renderGlossaryEntry();
   }
-  /** Shows entry `id` in the Glossary tab (closing the explain modal). */
+  /** Shows entry `id` in the Glossary tab (closing any modal). */
   async function openGlossary(id) {
     await glossaryReady;
-    if (explainDialog.open) explainDialog.close();
+    for (const dialog of root.querySelectorAll("dialog[open]")) dialog.close();
     glossaryCurrent = glossary.has(id) ? id : glossaryCurrent;
     try { localStorage.setItem(GLOSSARY_KEY, glossaryCurrent); } catch {}
     if (glossarySearch.value && !flat(glossary.get(glossaryCurrent) ?? {}).includes(glossarySearch.value.trim().toLowerCase())) {

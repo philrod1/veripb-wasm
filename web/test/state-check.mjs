@@ -315,5 +315,35 @@ for (const stem of preservedStems) {
   expect("nor its file conclusion", String(s.repl.extrasStatus().fileConclusion), "null");
 }
 
+// Pane statistics (vr_pane_stats) agree with the panes and the summary.
+{
+  const s = session(demoFiles);
+  s.run(":instance two-of-three");
+  s.run(":verify");
+  const expect = (where, got, want) => {
+    checks += 1;
+    if (got !== want) fail(`stats ${where}`, `got ${got}, want ${want}`);
+  };
+  const summary = s.repl.state();
+  const rows = (pane) => s.repl.view({ pane, start: 0, count: 1e9 }).rows;
+  const formula = s.repl.paneStats(0);
+  const database = s.repl.paneStats(1);
+  const proof = s.repl.paneStats(2);
+  expect("formula: constraints", formula.constraints, summary.formula.count);
+  expect("formula: kinds cover every line", formula.kinds.reduce((n, k) => n + k.count, 0), formula.lines);
+  expect("database: count and core", `${database.count} ${database.core}`, `${summary.database.count} ${summary.database.core}`);
+  expect("database: kinds cover every row", database.kinds.reduce((n, k) => n + k.count, 0), rows("database").length);
+  expect("database: from the formula", database.fromFormula, rows("database").filter((r) => r.id <= summary.formula.count).length);
+  expect("proof: lines and checked", `${proof.lines} ${proof.checked}`, `${summary.proof.lines} ${summary.proof.checked}`);
+  const keywords = {};
+  for (const row of rows("proof").filter((r) => !r.preamble)) {
+    const word = row.text.split(/\s+/).find((t) => t && !t.startsWith("@"))?.replace(/;$/, "") ?? "blank";
+    keywords[word.startsWith("%") ? "comment" : word] = (keywords[word.startsWith("%") ? "comment" : word] ?? 0) + 1;
+  }
+  expect("proof: rule counts", JSON.stringify(Object.fromEntries(proof.rules.map((r) => [r.name, r.count]).sort())), JSON.stringify(Object.fromEntries(Object.entries(keywords).sort())));
+  expect("proof: most frequent first", proof.rules.every((r, i) => i === 0 || proof.rules[i - 1].count >= r.count), true);
+  expect("no session: null", String(session(demoFiles).repl.paneStats(2)), "null");
+}
+
 console.log(`${checks} checks, ${failures} mismatches`);
 process.exit(failures ? 1 : 0);

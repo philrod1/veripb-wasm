@@ -12,6 +12,7 @@
 mod check;
 mod glossary;
 mod state;
+mod stats;
 mod teach;
 mod views;
 

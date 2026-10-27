@@ -6,8 +6,8 @@
 //                 | {type: "watch", on}          post session state after every line
 //                 | {type: "state", id} | {type: "preserved", id}
 //                 | {type: "breakpoint", index} toggle; posts state if watching
-//                 | {type: "query", id, kind: "complete" | "themes" | "commands" | "glossary" | "extrasStatus" | "extrasObjective" | "explain" | "lineIds" | "source" | "view" | "find" | "edit",
-//                    text?, line?, first?, last?, request?, edit?}
+//                 | {type: "query", id, kind: "complete" | "themes" | "commands" | "glossary" | "extrasStatus" | "extrasObjective" | "explain" | "paneStats" | "lineIds" | "source" | "view" | "find" | "edit",
+//                    text?, line?, pane?, first?, last?, request?, edit?}
 // Worker -> page: {type: "out", lines, trace} | {type: "mode", mode, ms, veripbRuns}
 //                 | {type: "progress", run, line, settled}  veripb run n: proof line reached, last line accepted
 //                 | {type: "updating"}  computing the session state that follows
@@ -133,6 +133,7 @@ onmessage = ({ data: message }) => {
             : message.kind === "extrasStatus" ? repl.extrasStatus()
             : message.kind === "extrasObjective" ? repl.extrasObjective()
             : message.kind === "explain" ? repl.explain(message.line)
+            : message.kind === "paneStats" ? repl.paneStats(message.pane)
             : message.kind === "edit" ? repl.bufferEdit(message.edit)
             : null;
           post({ type: "query", id: message.id, result });

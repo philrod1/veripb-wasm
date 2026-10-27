@@ -319,6 +319,21 @@ Enhanced mode:
   history and the transcript), only while the REPL is idle; tooltips are the
   commands' usage and summary from veripb-repl (`help::COMMANDS`,
   `debug::MODE_VOCABULARY`, sent by `vr_commands`).
+- **Statistics:** click a pane's title (or focus it and press Enter):
+  - **Proof:** lines by rule as a donut (the five most frequent, the rest
+    as "other"; hover a slice or legend row for its share), and every rule
+    with its count, share and how many are checked; rule names open the
+    Glossary.
+  - **Database:** core and derived, and from the formula and from the
+    proof, as bars.
+  - **Formula:** counts of constraints, variables, lines and labels, the
+    objective's terms and the preserved set.
+
+  The Formula and Database statistics also count constraints by kind
+  (clause, cardinality, general, equality, implication, trivial,
+  contradiction) and give the terms per constraint and the largest
+  coefficient. The counts come from `vr_pane_stats` (`web-repl/src/stats.rs`);
+  the Database's need its rows, as the pane does.
 - **Jumps:** click a Formula or Proof line's number to scroll the Database
   pane to the constraints it gave rise to (they flash); click a Database
   row's ID to scroll to the formula line or proof line it came from. The

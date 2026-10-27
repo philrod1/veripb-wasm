@@ -108,6 +108,7 @@ export function connectReplWorker(host, { what = "REPL", onState, onUpdating, on
     extrasStatus: () => request({ type: "query", kind: "extrasStatus" }),
     extrasObjective: () => request({ type: "query", kind: "extrasObjective" }),
     explain: (line) => request({ type: "query", kind: "explain", line }),
+    paneStats: (pane) => request({ type: "query", kind: "paneStats", pane }),
     putFile,
     deleteFile: (name) => worker.postMessage({ type: "delete", name }),
     getFile: (name) => request({ type: "get", name }),

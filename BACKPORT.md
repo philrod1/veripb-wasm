@@ -191,6 +191,15 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   (`web-repl/src/state.rs`). In the TUI, a click on a line number could do
   the same.
 
+- **Pane statistics.** Proof lines by rule (with how many are checked),
+  database constraints core/derived and from formula/proof, and formula and
+  database constraints by kind (clause, cardinality, general, …) with their
+  sizes. Useful for seeing what a proof is made of before stepping through
+  it. Here: `web-repl/src/stats.rs` (`vr_pane_stats`), shown by clicking a
+  pane's title (`openStats` in `web/modes/enhanced.js`). In the REPL: a
+  `:stats [formula|database|proof]` command printing the same tables; in the
+  TUI, a key or a click on a pane's title.
+
 ## Large output
 
 - **Search the scrollback.** The web Transcript tab filters 800k lines to

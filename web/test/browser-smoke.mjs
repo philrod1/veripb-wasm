@@ -457,6 +457,25 @@ const explainGap = await page.evaluate(() => {
 });
 check("enhanced: explain button at the pane's right edge", explainGap >= 0 && explainGap < 20, `${explainGap}px from the edge`);
 
+// Stats: a pane's title opens its statistics.
+await page.click(".pane-proof .pane-title-text");
+await page.waitForSelector(".stats-modal[open] .stat-tiles");
+const legend = await page.$$eval(".stats-modal .donut-legend li .legend-name", (names) => names.map((n) => n.textContent));
+check("stats: the Proof title opens a donut of its rules", legend.length > 0 && (await page.$$(".stats-modal .donut path, .stats-modal .donut circle")).length === legend.length, legend.join(","));
+await page.hover(".stats-modal .donut-legend li >> nth=0");
+check("stats: hovering a rule shows its share in the middle", (await page.textContent(".stats-modal .donut-label")) === legend[0]);
+await page.keyboard.press("Escape");
+check("stats: Esc closes it", !(await page.$(".stats-modal[open]")));
+await page.click(".pane-database .pane-title-text");
+await page.waitForSelector(".stats-modal[open] .parts-bar");
+check("stats: the Database's core and derived", (await page.$$eval(".stats-modal .parts-legend >> nth=0", (l) => l[0].textContent)).includes("core"));
+await page.click(".stats-modal .explain-tools button");
+await page.focus(".pane-formula .pane-title-text");
+await page.keyboard.press("Enter");
+await page.waitForSelector(".stats-modal[open] .hbars");
+check("stats: the Formula's, from the keyboard", (await page.textContent(".stats-modal h2")) === "Formula statistics");
+await page.keyboard.press("Escape");
+
 // Zoom buttons (the TUI's ▭ and ⛶).
 const visible = (selector) => page.$eval(selector, (e) => e.offsetParent !== null);
 const height = (selector) => page.$eval(selector, (e) => e.getBoundingClientRect().height);
