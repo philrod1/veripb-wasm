@@ -43,6 +43,14 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   ranges); for a large `:verify`, trace only the last line (enough for
   `last_step_constraint_ids`) unless the trace is wanted; and parse the
   trace line by line as veripb writes it instead of holding it whole.
+- **Find a rejected line from the batch's own error.** When a batched
+  check (`verify_forward`) is rejected, the REPL discards the result and
+  checks line by line from the first unchecked line (`verify_next`), each a
+  veripb run over the whole prefix. A bad line near the end of a
+  2,312,065-line proof would mean millions of runs. veripb's error already
+  names the failing line (`Checking error at <file>:<line>`), and every line
+  before it was accepted, so the REPL could advance `checked_len` to just
+  before it and make one more run for that line's message.
 - **The TUI hangs loading a large proof.** Reported with a 1.1M-line,
   456 MB proof; not investigated. The web build shows only the rows on screen
   (below), which suggests the TUI may be doing per-line work for the whole
