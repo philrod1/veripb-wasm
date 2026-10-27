@@ -149,6 +149,16 @@ async function init() {
   postFiles();
 }
 
+// veripb's stdout and stderr stay in /.tmp until the next run replaces them,
+// and a whole-proof trace runs to gigabytes. The REPL reads them within the
+// call that ran veripb, so they are emptied once each message is handled.
+function releaseVeripbOutput() {
+  const tmp = root.get(".tmp").contents;
+  for (const name of [".veripb-stdout", ".veripb-stderr"]) {
+    if (tmp.get(name)?.data.byteLength) tmp.set(name, new File([]));
+  }
+}
+
 onmessage = ({ data: message }) => {
   try {
     switch (message.type) {
@@ -202,6 +212,7 @@ onmessage = ({ data: message }) => {
           post({ type: "query", id: message.id, result });
           // An edit changes the buffer: send the new state after the result.
           if (message.kind === "edit" && watching) postState();
+          releaseVeripbOutput();
         });
         break;
       case "breakpoint":
@@ -233,6 +244,7 @@ onmessage = ({ data: message }) => {
         post({ type: "dump", id: message.id, files: listFiles(root).map(({ name }) => [name, readFile(root, name)]) });
         break;
     }
+    releaseVeripbOutput();
   } catch (error) {
     flush();
     post({ type: "fatal", text: String(error?.stack ?? error) });
