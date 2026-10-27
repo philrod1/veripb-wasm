@@ -16,6 +16,8 @@
 //                 | {type: "dump", id, files: [[name, data], ...]} | {type: "fatal", text}
 //                 | {type: "state", id?, state} | {type: "preserved", id, preserved}
 //                 | {type: "resources", id, resources}  see `resources()`
+//                 | {type: "usage", phase, run, runMs, veripbMemory, stdoutBytes, replMemory}
+//                     during a command, from veripb's progress and as each run ends
 //                 | {type: "query", id, result}
 //
 // Queries wait for the REPL to start.
@@ -137,6 +139,7 @@ async function init() {
     onVeripbOutput: recordVeripbOutput,
     // Posted while the REPL is still running: the page shows it at once.
     onProgress: (progress) => post({ type: "progress", ...progress }),
+    onUsage: (usage) => post({ type: "usage", ...usage }),
     sessionBase: restarts * SESSIONS_PER_REPL,
   });
   flush();

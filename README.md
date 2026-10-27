@@ -189,8 +189,11 @@ Resource usage (the gauge at the right of the header, every mode):
   browsers do not report CPU use), and the number of cores.
 - **Files:** each file's size, and veripb's temporary files.
 
-Refreshed every 2 s while open; a busy REPL answers when its command
-finishes. In classic mode only the browser's figures and the files are shown.
+Refreshed every 2 s while open. A busy REPL cannot answer; the modal then
+shows **Working now** (every second): the command or pane update and how
+long it has run, the veripb run in progress with its memory and output, and
+the REPL's memory, from the usage veripb's runs report as they go
+(`onUsage` in `host.js`); the other figures are from before. In classic mode only the browser's figures and the files are shown.
 `web/resources.js`, fed by the worker's `resources` message
 (`repl-worker.js`).
 

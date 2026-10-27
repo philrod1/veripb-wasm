@@ -10,6 +10,8 @@
 // starts a new REPL on the same files (the view's restart button).
 
 const STARTUP_TIMEOUT_MS = 15000;
+// How long `resources()` waits before reporting the worker as busy.
+const BUSY_MS = 400;
 
 export function connectReplWorker(host, { what = "REPL", onState, onUpdating, onProgress, onRestart } = {}) {
   const worker = new Worker(new URL("../repl-worker.js", import.meta.url), { type: "module" });
@@ -35,6 +37,14 @@ export function connectReplWorker(host, { what = "REPL", onState, onUpdating, on
   };
   worker.onmessageerror = () => view?.append("Worker message could not be read.", "error");
 
+  // What the worker is doing, for the resources view while it is busy (a
+  // busy worker answers nothing, but posts veripb's usage as it runs).
+  let activity = null; // {what, since}
+  let usage = null; // the latest "usage" message, with `at`
+  let lastResources = null;
+  let resourcesPending = null;
+  const startActivity = (what) => { activity = { what, since: performance.now() }; usage = null; };
+
   worker.onmessage = ({ data: message }) => {
     if (message.type !== "out") {
       started = true;
@@ -44,7 +54,11 @@ export function connectReplWorker(host, { what = "REPL", onState, onUpdating, on
       case "out":
         view?.append(message.lines, null, message.trace);
         break;
+      case "usage":
+        usage = { ...message, at: performance.now() };
+        break;
       case "mode":
+        activity = null;
         if (message.ms > 0) {
           host.setStatus(`${message.ms.toFixed(0)} ms · ${message.veripbRuns} veripb run${message.veripbRuns === 1 ? "" : "s"}`);
         }
@@ -55,12 +69,14 @@ export function connectReplWorker(host, { what = "REPL", onState, onUpdating, on
         onProgress?.(message);
         break;
       case "updating":
+        startActivity("updating the panes (the database may need a veripb run)");
         onUpdating?.();
         break;
       case "files":
         host.setFiles(message.files);
         break;
       case "state":
+        if (!message.id && !message.state?.database?.pending) activity = null;
         if (message.id) {
           waiting.get(message.id)?.(message.state);
           waiting.delete(message.id);
@@ -83,6 +99,7 @@ export function connectReplWorker(host, { what = "REPL", onState, onUpdating, on
         waiting.delete(message.id);
         break;
       case "fatal":
+        activity = null;
         view?.fail(`Internal error: ${message.text}`);
         break;
     }
@@ -104,7 +121,10 @@ export function connectReplWorker(host, { what = "REPL", onState, onUpdating, on
       view = outputView;
       view.onRestart = restart;
     },
-    line: (text) => worker.postMessage({ type: "line", text }),
+    line: (text) => {
+      startActivity(text);
+      worker.postMessage({ type: "line", text });
+    },
     watch: (on) => worker.postMessage({ type: "watch", on }),
     state: () => request({ type: "state" }),
     preserved: () => request({ type: "preserved" }),
@@ -126,7 +146,20 @@ export function connectReplWorker(host, { what = "REPL", onState, onUpdating, on
     deleteFile: (name) => worker.postMessage({ type: "delete", name }),
     getFile: (name) => request({ type: "get", name }),
     snapshot: () => request({ type: "dump" }),
-    resources: () => request({ type: "resources" }),
+    /**
+     * The worker's resources (repl-worker.js's `resources()`); if it has not
+     * answered within BUSY_MS, the last answer with `live: {what, since,
+     * usage}`: what it is doing and veripb's latest usage report.
+     */
+    resources() {
+      resourcesPending ??= request({ type: "resources" }).then((r) => {
+        resourcesPending = null;
+        lastResources = r;
+        return r;
+      });
+      const live = () => ({ ...(lastResources ?? {}), live: { what: activity?.what ?? "working", since: activity?.since ?? null, usage } });
+      return Promise.race([resourcesPending, new Promise((resolve) => setTimeout(() => resolve(live()), BUSY_MS))]);
+    },
     terminate: () => worker.terminate(),
   };
 }

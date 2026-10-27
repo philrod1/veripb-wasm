@@ -128,8 +128,13 @@ export function listFiles(root) {
  * `onError(message)` on failure. `stats` has `veripbRuns`, `veripbMs` (wall
  * time in veripb), `lastVeripb` (`{ms, memoryBytes}` of the latest run) and
  * `peakVeripbMemory` (the largest memory a run grew to).
+ * `onUsage({phase, run, runMs, veripbMemory, stdoutBytes, replMemory})`, if
+ * given, is called with each progress report and as each run ends (`phase`
+ * "veripb", then "repl"): the run's time so far, its memory and output size,
+ * and the calling module's memory. It is the only news while a long command
+ * holds the worker.
  */
-export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput, onError, onProgress }) {
+export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput, onError, onProgress, onUsage }) {
   const decoder = new TextDecoder();
   const stats = { veripbRuns: 0, veripbMs: 0, lastVeripb: null, peakVeripbMemory: 0 };
   function runVeripb(ptr, len) {
@@ -142,7 +147,15 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
       const stdout = new File([]);
       const stderr = new File([]);
       const stdoutFd = new OpenFile(stdout);
-      if (onProgress) {
+      const run = stats.veripbRuns + 1;
+      let instance = null;
+      let started = performance.now();
+      const usage = (phase) => onUsage?.({
+        phase, run, runMs: performance.now() - started,
+        veripbMemory: instance?.exports.memory.buffer.byteLength ?? 0,
+        stdoutBytes: stdout.data.byteLength, replMemory: memory().buffer.byteLength,
+      });
+      if (onProgress || onUsage) {
         // veripb streams the proof file (the `.pbp` argument) in small reads:
         // the newlines read so far give the line it has reached. It checks
         // each line as it reads it and asks for more only once everything
@@ -150,8 +163,7 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
         // (less one, for safety) are `settled`: accepted, or that run
         // would have stopped. Reported as the run starts and then at most
         // every 100 ms.
-        const run = stats.veripbRuns + 1;
-        onProgress({ run, line: null });
+        onProgress?.({ run, line: null });
         const proof = args.map((arg) => fileAt(root, arg)).find((file, i) => file && args[i].endsWith(".pbp"));
         let lines = 0;
         let next = 0;
@@ -163,7 +175,8 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
             const now = performance.now();
             if (now >= next) {
               next = now + 100;
-              onProgress({ run, line: lines + 1, settled: Math.max(0, before - 1) });
+              onProgress?.({ run, line: lines + 1, settled: Math.max(0, before - 1) });
+              usage("veripb");
             }
           },
         };
@@ -174,10 +187,10 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
         new OpenFile(stderr),
         new PreopenDirectory("/", root),
       ], WASI_OPTIONS);
-      const instance = new WebAssembly.Instance(veripbModule, {
+      instance = new WebAssembly.Instance(veripbModule, {
         wasi_snapshot_preview1: wasi.wasiImport,
       });
-      const started = performance.now();
+      started = performance.now();
       const code = (() => {
         try {
           return wasi.start(instance);
@@ -194,6 +207,7 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
       tmp.set(".veripb-stdout", stdout);
       tmp.set(".veripb-stderr", stderr);
       stats.veripbRuns += 1;
+      usage("repl");
       onOutput?.(stdout.data, stderr.data);
       return code;
     } catch (e) {
@@ -241,11 +255,12 @@ export function createWasi(args, { stdout, stderr, root, env = [] }) {
  * `onProgress({run, line, settled})`, if given, is called as each veripb run
  * starts (`line` null) and, at most every 100 ms, with the proof line veripb
  * has read up to and the last line it has certainly accepted.
+ * `onUsage(usage)`, if given: as for `createVeripbRunner`.
  * `stats.veripbRuns` counts veripb invocations. `sessionBase` starts web-repl's
  * session count (`vr_session_base`): a REPL started again in the same page
  * passes one above the previous REPL's.
  */
-export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutput, onProgress, sessionBase = 0 }) {
+export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutput, onProgress, onUsage, sessionBase = 0 }) {
   const encoder = new TextEncoder();
   let repl;
   const { runVeripb, stats } = createVeripbRunner({
@@ -255,6 +270,7 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
     onOutput: onVeripbOutput,
     onError: (message) => onLine(`[host] ${message}`),
     onProgress,
+    onUsage,
   });
 
   const wasi = createWasi(["veripb-repl"], {
