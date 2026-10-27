@@ -125,11 +125,13 @@ export function listFiles(root) {
  * returns its exit code, or -1 if veripb could not be run. veripb's stdout
  * and stderr go to /.tmp/.veripb-stdout and /.tmp/.veripb-stderr.
  * Hooks: `onRun()` before each run, `onOutput(stdout, stderr)` after it,
- * `onError(message)` on failure. `stats.veripbRuns` counts runs.
+ * `onError(message)` on failure. `stats` has `veripbRuns`, `veripbMs` (wall
+ * time in veripb), `lastVeripb` (`{ms, memoryBytes}` of the latest run) and
+ * `peakVeripbMemory` (the largest memory a run grew to).
  */
 export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput, onError, onProgress }) {
   const decoder = new TextDecoder();
-  const stats = { veripbRuns: 0 };
+  const stats = { veripbRuns: 0, veripbMs: 0, lastVeripb: null, peakVeripbMemory: 0 };
   function runVeripb(ptr, len) {
     try {
       onRun?.();
@@ -175,11 +177,17 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
       const instance = new WebAssembly.Instance(veripbModule, {
         wasi_snapshot_preview1: wasi.wasiImport,
       });
+      const started = performance.now();
       const code = (() => {
         try {
           return wasi.start(instance);
         } finally {
           reading = null;
+          const ms = performance.now() - started;
+          const memoryBytes = instance.exports.memory.buffer.byteLength;
+          stats.veripbMs += ms;
+          stats.lastVeripb = { ms, memoryBytes };
+          stats.peakVeripbMemory = Math.max(stats.peakVeripbMemory, memoryBytes);
         }
       })();
       const tmp = root.get(".tmp").contents;

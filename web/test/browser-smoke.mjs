@@ -476,6 +476,14 @@ await page.waitForSelector(".stats-modal[open] .hbars");
 check("stats: the Formula's, from the keyboard", (await page.textContent(".stats-modal h2")) === "Formula statistics");
 await page.keyboard.press("Escape");
 
+// Resource usage: the top bar's gauge.
+await page.click("#resources");
+await page.waitForSelector(".resources-modal[open] .meter");
+const resourceText = await page.textContent(".resources-modal");
+check("resources: REPL memory, veripb runs and the files", /REPL/.test(resourceText) && /veripb runs/.test(resourceText) && /tiny_unsat\.opb/.test(resourceText));
+await page.keyboard.press("Escape");
+check("resources: Esc closes it", !(await page.$(".resources-modal[open]")));
+
 // Zoom buttons (the TUI's ▭ and ⛶).
 const visible = (selector) => page.$eval(selector, (e) => e.offsetParent !== null);
 const height = (selector) => page.$eval(selector, (e) => e.getBoundingClientRect().height);

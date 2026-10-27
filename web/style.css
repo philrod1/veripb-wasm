@@ -35,6 +35,7 @@ header h1 { font-size: 1rem; margin: 0; }
 header .about { color: var(--muted); }
 header select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.1rem 0.3rem; }
 #status { color: var(--muted); margin-left: auto; }
+#resources { display: inline-flex; align-items: center; padding: 0.2rem 0.35rem; }
 #mode-root { grid-area: main; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
 body.files-hidden { grid-template-columns: 1fr; grid-template-areas: "head" "main"; }
 body.files-hidden aside { display: none; }
@@ -360,6 +361,14 @@ aside input[type=file] { display: none; }
 .stats-table th, .stats-table td { padding: 0.15rem 1.2rem 0.15rem 0; }
 .stats-table td:not(:first-child), .stats-table th:not(:first-child) { text-align: right; }
 .stats-table a { color: var(--accent); }
+
+/* Resource usage modal (the top bar's gauge) */
+.resources-modal { width: min(44rem, calc(100vw - 2rem)); font-size: 14px; }
+.resources-busy { font-size: 0.85em; }
+.meter-row { display: flex; align-items: center; gap: 0.75rem; }
+.meter { flex: 1; max-width: 16rem; height: 0.6rem; border-radius: 4px; background: color-mix(in srgb, var(--muted) 25%, transparent); overflow: hidden; }
+.meter-fill { height: 100%; min-width: 2px; background: var(--accent); border-radius: 4px; }
+.meter-text { font-variant-numeric: tabular-nums; }
 
 /* Explain modal (enhanced mode) */
 .explain-modal {

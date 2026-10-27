@@ -11,6 +11,8 @@ const MODES = {
   classic: { label: "Classic (TUI)", load: () => import("./modes/classic.js") },
   enhanced: { label: "Enhanced", load: () => import("./modes/enhanced.js") },
 };
+import { createResources } from "./resources.js";
+
 const STORAGE_KEY = "veripb-repl-mode";
 const FILES_HIDDEN_KEY = "veripb-repl-files-hidden";
 
@@ -23,6 +25,7 @@ let current = null;
 let sessionHasFiles = false;
 let currentName = null;
 let files = new Map();
+let fileListing = [];
 
 for (const [name, { label, load }] of Object.entries(MODES)) {
   const option = Object.assign(document.createElement("option"), {
@@ -70,6 +73,7 @@ const FILE_KINDS = [
 ];
 
 function renderFiles(list) {
+  fileListing = list;
   sessionHasFiles = list.length > 0;
   fileList.replaceChildren(...list.map(({ name, size }) => {
     const item = document.createElement("li");
@@ -133,6 +137,9 @@ function download(name, data) {
 }
 
 modeSelect.addEventListener("change", () => switchTo(modeSelect.value));
+
+const resources = createResources({ source: () => current?.resources?.() ?? null, files: () => fileListing });
+document.getElementById("resources").addEventListener("click", () => resources.open());
 
 document.getElementById("upload").addEventListener("change", async (event) => {
   for (const file of event.target.files) current.putFile(file.name, new Uint8Array(await file.arrayBuffer()));

@@ -174,6 +174,19 @@ Backspace outside a text field does nothing, a horizontal trackpad swipe
 does not go back (`overscroll-behavior-x`), and while there are files the
 browser asks before leaving or reloading.
 
+Resource usage (the gauge at the right of the header, every mode):
+- **Memory:** the REPL's WebAssembly memory and the last veripb run's, each
+  against the 4 GiB limit; the largest veripb run; the files; the page's
+  JavaScript heap and the device memory, where the browser reports them.
+- **Time:** commands and veripb runs, in all and the latest (elapsed times:
+  browsers do not report CPU use), and the number of cores.
+- **Files:** each file's size, and veripb's temporary files.
+
+Refreshed every 2 s while open; a busy REPL answers when its command
+finishes. In classic mode only the browser's figures and the files are shown.
+`web/resources.js`, fed by the worker's `resources` message
+(`repl-worker.js`).
+
 Files panel (left; "Files" in the header hides and shows it, remembered):
 - **Load demo files:** copies veripb-repl's `demos/files` into `/`.
 - **Load example files:** copies veripb-repl's `examples` into `/`.
@@ -424,7 +437,7 @@ Differences from `veripb-repl --plain` (plain and enhanced):
 
 How it works:
 - **Shell:** `index.html`, `style.css` and `shell.js` provide the mode
-  menu, status line and files panel. Each mode is a module in `web/modes/`
+  menu, status line, resource usage and files panel. Each mode is a module in `web/modes/`
   with `mount(root, host)`; the interface is described in
   `web/modes/plain.js`.
 - **Plain and enhanced modes:** `modes/repl-client.js` starts

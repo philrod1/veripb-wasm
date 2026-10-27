@@ -5,7 +5,8 @@
 //     root: element to render into (emptied by the shell on unmount)
 //     host: { files: Map<name, Uint8Array>, setStatus(text), setFiles([{name, size}]) }
 //   instance: { putFile(name, bytes), deleteFile(name), getFile(name) -> Promise<Uint8Array|null>,
-//               snapshot() -> Promise<Map<name, Uint8Array>>, run(command), note(text), focus(), unmount() }
+//               snapshot() -> Promise<Map<name, Uint8Array>>, run(command), note(text), focus(), unmount(),
+//               resources?() -> Promise (see resources.js) }
 //     run(command): runs a REPL line as if typed at the prompt.
 
 import { OutputView, setCommands } from "./output-view.js";
@@ -24,6 +25,7 @@ export function mount(root, host) {
     deleteFile: client.deleteFile,
     getFile: client.getFile,
     snapshot: client.snapshot,
+    resources: client.resources,
     run: (command) => view.run(command),
     note: (text) => view.append(text, "note"),
     focus: () => view.focus(),

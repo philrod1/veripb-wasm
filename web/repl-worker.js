@@ -2,7 +2,7 @@
 // REPL; the page sends input lines and file operations and receives output.
 //
 // Page -> worker: {type: "line", text} | {type: "put", name, data} | {type: "delete", name}
-//                 | {type: "get", id, name} | {type: "dump", id}
+//                 | {type: "get", id, name} | {type: "dump", id} | {type: "resources", id}
 //                 | {type: "watch", on}          post session state after every line
 //                 | {type: "state", id} | {type: "preserved", id}
 //                 | {type: "breakpoint", index} toggle; posts state if watching
@@ -14,6 +14,7 @@
 //                 | {type: "files", files} | {type: "file", id, data}
 //                 | {type: "dump", id, files: [[name, data], ...]} | {type: "fatal", text}
 //                 | {type: "state", id?, state} | {type: "preserved", id, preserved}
+//                 | {type: "resources", id, resources}  see `resources()`
 //                 | {type: "query", id, result}
 //
 // Queries wait for the REPL to start.
@@ -21,6 +22,7 @@
 // Files may be put before the REPL is ready; input lines may not.
 
 import { createRoot, startRepl, writeFile, readFile, deleteFile, listFiles } from "./host.js";
+import { Directory, File } from "./vendor/browser_wasi_shim/index.js";
 
 const root = createRoot();
 let repl;
@@ -69,6 +71,36 @@ function recordVeripbOutput(stdout, stderr) {
 }
 const postFiles = () => post({ type: "files", files: listFiles(root) });
 
+// Time and memory for the resources view.
+const startedAt = performance.now();
+const commands = { count: 0, ms: 0, last: null };
+/** Bytes held by the files under `dir`: `{files, bytes, allocated}`. */
+function usage(dir) {
+  const total = { files: 0, bytes: 0, allocated: 0 };
+  for (const entry of dir.values()) {
+    const part = entry instanceof Directory ? usage(entry.contents)
+      : entry instanceof File ? { files: 1, bytes: entry.data.byteLength, allocated: entry.data.buffer.byteLength }
+      : null;
+    if (part) for (const key in total) total[key] += part[key];
+  }
+  return total;
+}
+/**
+ * `{uptimeMs, repl: {memoryBytes} | null, commands: {count, ms, last},
+ * veripb: {runs, ms, last, peakMemoryBytes} | null, files: [{name, size}],
+ * filesystem: {files, bytes, allocated}, temp: {files, bytes, allocated}}`;
+ * `last` is `{ms, ...}` of the latest command or veripb run.
+ */
+const resources = () => ({
+  uptimeMs: performance.now() - startedAt,
+  repl: repl ? { memoryBytes: repl.memoryBytes() } : null,
+  commands,
+  veripb: repl ? { runs: repl.stats.veripbRuns, ms: repl.stats.veripbMs, last: repl.stats.lastVeripb, peakMemoryBytes: repl.stats.peakVeripbMemory } : null,
+  files: listFiles(root),
+  filesystem: usage(root),
+  temp: usage(root.get(".tmp").contents),
+});
+
 async function compile(url) {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
@@ -105,7 +137,11 @@ onmessage = ({ data: message }) => {
         const t0 = performance.now();
         const mode = repl.line(message.text);
         flush();
-        post({ type: "mode", mode, ms: performance.now() - t0, veripbRuns: repl.stats.veripbRuns - runs });
+        const ms = performance.now() - t0;
+        commands.count += 1;
+        commands.ms += ms;
+        commands.last = { ms, command: message.text, veripbRuns: repl.stats.veripbRuns - runs };
+        post({ type: "mode", mode, ms, veripbRuns: repl.stats.veripbRuns - runs });
         if (watching) postState(undefined, mode === MODE_DEBUG);
         postFiles();
         break;
@@ -154,6 +190,9 @@ onmessage = ({ data: message }) => {
         break;
       case "get":
         post({ type: "file", id: message.id, data: readFile(root, message.name) });
+        break;
+      case "resources":
+        post({ type: "resources", id: message.id, resources: resources() });
         break;
       case "dump":
         post({ type: "dump", id: message.id, files: listFiles(root).map(({ name }) => [name, readFile(root, name)]) });

@@ -68,6 +68,7 @@ export function connectReplWorker(host, { what = "REPL", onState, onUpdating, on
         }
         break;
       case "file":
+      case "resources":
       case "dump":
       case "preserved":
       case "query":
@@ -75,6 +76,7 @@ export function connectReplWorker(host, { what = "REPL", onState, onUpdating, on
           message.type === "file" ? message.data
             : message.type === "dump" ? new Map(message.files)
             : message.type === "query" ? message.result
+            : message.type === "resources" ? message.resources
             : message.preserved,
         );
         waiting.delete(message.id);
@@ -113,6 +115,7 @@ export function connectReplWorker(host, { what = "REPL", onState, onUpdating, on
     deleteFile: (name) => worker.postMessage({ type: "delete", name }),
     getFile: (name) => request({ type: "get", name }),
     snapshot: () => request({ type: "dump" }),
+    resources: () => request({ type: "resources" }),
     terminate: () => worker.terminate(),
   };
 }
