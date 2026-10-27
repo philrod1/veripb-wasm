@@ -2,7 +2,8 @@
 //! what the rule means, then this line's derivation step by step. Built from
 //! the same checker output `:explain` shows.
 //!
-//! Covers `rup`, `pol`, `red` and `a`; other rules, rejected lines and lines
+//! Covers `rup`, `pol`, `red`, `a`, `setlvl` and `wiplvl`; other rules,
+//! rejected lines and lines
 //! the narration can't follow give `None` (the page then shows only
 //! `:explain`'s output).
 //!
@@ -28,6 +29,8 @@ pub fn explain(session: &Session, n: usize) -> Option<Value> {
         "pol" => pol(session, n, line),
         "red" => red(session, n, idx, line),
         "a" => assertion(session, n, line),
+        "setlvl" => set_level(session, n, idx, line),
+        "wiplvl" => wipe_level(session, n, idx, line),
         _ => None,
     }?;
     Some(json!({ "title": doc.title, "blocks": doc.blocks }))
@@ -888,5 +891,104 @@ fn assertion(session: &Session, n: usize, line: &str) -> Option<Doc> {
          step: `:deassert {n}` helps with that."
     ));
     doc.negation_note(&[&claim]);
+    Some(doc)
+}
+
+// ---- setlvl and wiplvl ----
+
+/// The level a `setlvl` or `wiplvl` line names.
+fn level_of(line: &str) -> Option<usize> {
+    line.split_whitespace().skip_while(|t| t.starts_with('@')).nth(1)?.trim_end_matches(';').parse().ok()
+}
+
+/// The `keyword` lines among buffer lines `range`, as (buffer index,
+/// level).
+fn level_lines<'a>(
+    session: &'a Session,
+    keyword: &'a str,
+    range: std::ops::Range<usize>,
+) -> impl DoubleEndedIterator<Item = (usize, usize)> + 'a {
+    range.filter_map(move |i| {
+        let line = &session.buffer[i];
+        (rule_keyword(line) == Some(keyword)).then(|| level_of(line)).flatten().map(|level| (i, level))
+    })
+}
+
+fn set_level(session: &Session, n: usize, idx: usize, line: &str) -> Option<Doc> {
+    let level = level_of(line)?;
+    let mut doc = Doc::new(format!("Line {n}: set level (setlvl)"));
+    doc.p(format!(
+        "This line sets the current [level](g:levels) to {level}. From here until the next `setlvl`, every \
+         constraint the proof adds is recorded at level {level}. The line adds no constraint itself."
+    ));
+    doc.p(match level_lines(session, "setlvl", 0..idx).next_back() {
+        Some((i, before)) => format!("Before it, the level was {before} (set on line {}).", session.display_line(i)),
+        None => "Before it, no level was set: the constraints added so far are recorded at no level, so no \
+                 `wiplvl` deletes them."
+            .to_string(),
+    });
+    doc.p(match level_lines(session, "wiplvl", idx + 1..session.buffer.len()).find(|&(_, wipe)| wipe <= level) {
+        Some((i, wipe)) => format!(
+            "Line {} (`wiplvl {wipe}`) deletes the constraints recorded at level {level}, along with those at the \
+             other levels from {wipe} up.",
+            session.display_line(i)
+        ),
+        None => format!("No later `wiplvl` deletes level {level}: its constraints stay in the database."),
+    });
+    Some(doc)
+}
+
+/// Constraints shown by name before the rest are counted.
+const LISTED: usize = 12;
+
+fn wipe_level(session: &Session, n: usize, idx: usize, line: &str) -> Option<Doc> {
+    let level = level_of(line)?;
+    let mut doc = Doc::new(format!("Line {n}: wipe level (wiplvl)"));
+    doc.p(format!(
+        "This line deletes every constraint recorded at [level](g:levels) {level} or higher: the constraints added \
+         while a `setlvl` of {level} or more was in force. The current level stays as it was."
+    ));
+    let set: Vec<String> = level_lines(session, "setlvl", 0..idx)
+        .filter(|&(_, set)| set >= level)
+        .map(|(i, set)| format!("line {} (`setlvl {set}`)", session.display_line(i)))
+        .collect();
+    if !set.is_empty() {
+        doc.p(format!("Those levels were set on {}.", join_and(&set)));
+    }
+    let before = database_before(session, idx)?;
+    let after = database_before(session, idx + 1)?;
+    let kept: std::collections::HashSet<usize> = after.entries.iter().map(|e| e.id).collect();
+    let deleted: Vec<_> = before.entries.iter().filter(|e| !kept.contains(&e.id)).collect();
+    if deleted.is_empty() {
+        doc.p(format!(
+            "Here that deletes nothing: no constraint still in the database was recorded at level {level} or above \
+             (a constraint already deleted, by `del` or an earlier `wiplvl`, is not deleted again)."
+        ));
+        return Some(doc);
+    }
+    // Not linked: they are no longer in the database to jump to.
+    let labels = first_labels(session);
+    let name = |id: usize| match labels.get(&id) {
+        Some(label) => format!("`{label}` (constraint {id})"),
+        None => format!("constraint {id}"),
+    };
+    let mut names: Vec<String> = deleted.iter().take(LISTED).map(|e| name(e.id)).collect();
+    if deleted.len() > LISTED {
+        names.push(format!("{} more", deleted.len() - LISTED));
+    }
+    doc.p(format!(
+        "Here that deletes {} constraint{}: {}.",
+        deleted.len(),
+        if deleted.len() == 1 { "" } else { "s" },
+        join_and(&names)
+    ));
+    let core = deleted.iter().filter(|e| e.is_core).count();
+    if core > 0 {
+        doc.note(format!(
+            "{core} of them {} [core](g:core). As with `del`, deleting a core constraint is checked: it must be \
+             re-derivable from the remaining core constraints.",
+            if core == 1 { "is" } else { "are" }
+        ));
+    }
     Some(doc)
 }

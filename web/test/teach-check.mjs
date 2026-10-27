@@ -1,7 +1,8 @@
 // Checks the plain-English explanations (web-repl/src/teach.rs), returned
 // as `plain` by explain(line):
-//   - content: sample rup, pol, red and a lines give the expected steps
-//   - sweep: every checked rup, pol, red and a line of veripb's correct
+//   - content: sample rup, pol, red, a, setlvl and wiplvl lines give the
+//     expected steps
+//   - sweep: every checked rup, pol, red, a, setlvl and wiplvl line of veripb's correct
 //     version-3 instances gets one (implication syntax excepted), and each
 //     rup replay reaches its conflict, and its glossary links exist
 //   - glossary: concepts and rules, every link and see-also exists
@@ -85,6 +86,14 @@ content(objective, 4, "symmetry with objective 4", { title: "redundance", phrase
 const assertion = session(instances, "assertion_rule");
 content(assertion, 5, "assertion 5", { title: "assertion", phrases: ["without any proof", "`:deassert 5`"] });
 
+// setlvl 0; pol (6); e; wiplvl 0; setlvl 1; pol (7); setlvl 0; pol (8); wiplvl 1
+const levels = session(instances, "set_level_withdraw");
+content(levels, 3, "levels 3", { title: "set level", phrases: ["current level to 0", "no level was set", "Line 6 (`wiplvl 0`)"] });
+content(levels, 6, "levels 6", { title: "wipe level", phrases: ["level 0 or higher", "line 3 (`setlvl 0`)", "deletes 1 constraint: constraint 6."] });
+content(levels, 7, "levels 7", { title: "set level", phrases: ["Before it, the level was 0 (set on line 3)", "Line 11 (`wiplvl 1`)"] });
+content(levels, 9, "levels 9", { title: "set level", phrases: ["No later `wiplvl` deletes level 0"] });
+content(levels, 11, "levels 11", { title: "wipe level", phrases: ["line 7 (`setlvl 1`)", "deletes 1 constraint: constraint 7."] });
+
 // ---- Glossary ----
 
 const glossary = chain.glossary();
@@ -92,7 +101,8 @@ const ids = new Set(glossary.map((e) => e.id));
 const linkIds = (value) => [...JSON.stringify(value).matchAll(/\]\(g:([\w-]+)\)/g)].map((m) => m[1]);
 const concepts = glossary.filter((e) => e.group === "concept");
 const rules = glossary.filter((e) => e.group === "rule");
-check(`glossary: ${concepts.length} concepts, ${rules.length} rules`, concepts.length >= 20 && ["rup", "pol", "red", "a"].every((r) => ids.has(`rule-${r}`)));
+check(`glossary: ${concepts.length} concepts, ${rules.length} rules`, concepts.length >= 20 && ["rup", "pol", "red", "a", "setlvl", "wiplvl"].every((r) => ids.has(`rule-${r}`)));
+check("glossary: the level rules, and the concept", rules.find((e) => e.term === "wiplvl")?.usage === "wiplvl <level> ;" && ids.has("levels"));
 check("glossary: rule entries carry :help's usage", rules.find((e) => e.term === "pol")?.usage?.startsWith("pol "));
 const broken = glossary.flatMap((e) => [...linkIds([e.body, e.example]), ...e.see].filter((id) => !ids.has(id)).map((id) => `${e.id} -> ${id}`));
 check("glossary: every link and see-also exists", !broken.length, broken.join(", "));
@@ -100,7 +110,7 @@ check("glossary: ids are unique", ids.size === glossary.length);
 
 // ---- Sweep ----
 
-const RULES = new Set(["rup", "pol", "red", "a"]);
+const RULES = new Set(["rup", "pol", "red", "a", "setlvl", "wiplvl"]);
 let lines = 0;
 const missing = [];
 const unfinished = [];

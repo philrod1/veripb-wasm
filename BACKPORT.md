@@ -221,6 +221,15 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   `:stats [formula|database|proof]` command printing the same tables; in the
   TUI, a key or a click on a pane's title.
 
+- **`setlvl` and `wiplvl` in `:help`.** veripb's level rules are missing
+  from `help::RULES`, so `:help`, the rule completions and anything built on
+  the list leave them out. The web build adds entries in the same form
+  (`MORE_RULES` in `web-repl/src/glossary.rs`, dropped automatically once
+  `help::RULES` has them) and a "Levels" concept, and explains both rules in
+  plain English (`set_level` and `wipe_level` in `web-repl/src/teach.rs`:
+  the level in force, the `wiplvl` that clears it, and the constraints a
+  `wiplvl` deleted).
+
 ## Large output
 
 - **Search the scrollback.** The web Transcript tab filters 800k lines to

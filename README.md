@@ -328,12 +328,15 @@ Enhanced mode:
     comment as a comment keeps every line checked. Hover a line for "explain": a modal
   for that line, which leaves Output untouched (Copy; Esc, Close or a click
   outside closes it). `:explain` typed at the prompt prints to Output as usual.
-- **Explain modal:** for a checked `rup`, `pol`, `red` or `a` line, "Plain
+- **Explain modal:** for a checked `rup`, `pol`, `red`, `a`, `setlvl` or `wiplvl` line, "Plain
   English" explains the rule and then the line step by step, written for
   students: for `rup`, the forced values that lead to the contradiction;
   for `pol`, each cutting-planes operation and why it is sound; for `red`,
   the witness and each proof goal with how it was proved; for `a`, what an
-  unchecked assertion means. "Checker" shows `:explain <n>`'s output. The
+  unchecked assertion means; for `setlvl`, the level before it and the
+  `wiplvl` that deletes it; for `wiplvl`, the `setlvl` lines it covers and
+  the constraints it deleted (the database before and after the line, two
+  veripb runs). "Checker" shows `:explain <n>`'s output. The
   choice is remembered. Other rules, rejected lines and implication syntax
   (`==>`, `<==`) show the checker view only.
 - **Command buttons** above the prompt: Verify, Check, Undo and Debug at the
@@ -416,8 +419,9 @@ Enhanced mode:
     and derived; labels; breakpoints; the prompt mode.
 - **Glossary:** concepts for students new to pseudo-Boolean proofs
   (constraints, literals, unit propagation, slack, cutting planes, witness,
-  proof goals, …; written in `web-repl/src/glossary.rs`), and every proof
-  rule from veripb-repl's `:help` topics. Search matches terms and text;
+  proof goals, levels, …; written in `web-repl/src/glossary.rs`), and every proof
+  rule from veripb-repl's `:help` topics, plus `setlvl` and `wiplvl`, which
+  those lack (`MORE_RULES`, left out once `help::RULES` has them). Search matches terms and text;
   entries link to each other ("See also"). Underlined terms in a plain-English
   explanation open their entry, and the modal's "? <rule>" button opens the
   line's rule.
