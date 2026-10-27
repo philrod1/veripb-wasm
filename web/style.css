@@ -316,7 +316,10 @@ aside input[type=file] { display: none; }
 /* Stats modal (enhanced mode): click a pane's title */
 .pane-title-text.stats-link { cursor: pointer; border-radius: 3px; }
 .pane-title-text.stats-link:hover, .pane-title-text.stats-link:focus-visible { text-decoration: underline dotted; text-underline-offset: 3px; }
-.stats-modal { width: min(46rem, calc(100vw - 2rem)); }
+.stats-modal { width: min(60rem, calc(100vw - 2rem)); }
+/* Two sections side by side, wrapping when the modal is narrow. */
+.stats-pair { display: flex; flex-wrap: wrap; gap: 1rem 2.5rem; align-items: flex-start; }
+.stats-pair .donut-chart { flex-wrap: nowrap; }
 .stats-body { overflow: auto; padding: 0.75rem 1rem 1rem; display: flex; flex-direction: column; gap: 1rem; }
 .stats-section h3 { margin: 0 0 0.5rem; font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); }
 .stats-section dl { display: grid; grid-template-columns: max-content 1fr; gap: 0.3rem 1rem; margin: 0; }

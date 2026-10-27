@@ -967,8 +967,9 @@ export function mount(root, host) {
       tiles(["Lines", number(s.lines), s.preamble ? `plus ${number(s.preamble)} preamble` : null],
         ["Checked", number(s.checked), s.rejected ? "then a rejected line" : percent(s.checked, s.lines)],
         ["Rules used", number(used.length)], ["Labelled", number(s.labelled), percent(s.labelled, s.lines)]),
-      s.lines ? statsSection("Lines by rule", donut(s.rules, s.lines, "lines")) : el("p", { className: "muted", textContent: "The proof is empty." }),
-      ...(s.lines ? [statsSection("Every rule", table)] : []),
+      s.lines
+        ? el("div", { className: "stats-pair" }, statsSection("Lines by rule", donut(s.rules, s.lines, "lines")), statsSection("Every rule", table))
+        : el("p", { className: "muted", textContent: "The proof is empty." }),
     ];
   }
 
