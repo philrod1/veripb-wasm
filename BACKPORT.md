@@ -95,10 +95,8 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   rebuild until stepping pauses (`postState` in `web/repl-worker.js`,
   `databaseWhenIdle` in `web/modes/enhanced.js`): a step is now 2.4 s, a
   back 85 ms, and the Database pane catches up 2.9 s after the last one.
-  Steps in constant time need veripb itself to keep its state between
-  lines (an interactive mode taking proof lines one at a time, with a
-  checkpoint to step back to and a database dump on request): a note for
-  veripb's maintainers.
+  Steps in constant time need a debug mode in veripb itself (see "For
+  veripb" below).
 
 ## Progress and feedback
 
@@ -199,6 +197,30 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   the ones containing some text, in about 50 ms, since its virtual list hides
   the rest from the browser's own find. A `/`-style search in the TUI's
   Output pane would serve the same purpose.
+
+## For veripb
+
+- **A debug mode.** veripb checks a proof in one run, so veripb-repl
+  replays the proof from the start for each `:step`, `:verify` after an
+  edit, and database dump: 2.2 s per step at line 50,000 of the circuit
+  proof, 24 s per replay of all 403,891 lines. An interactive mode would
+  remove the replays:
+  - **Incremental checking:** load the formula once, then take proof lines
+    one at a time (stdin or a socket), checking each against the live
+    database and replying with the verdict and the constraint IDs it added.
+  - **Stepping back:** a checkpoint or undo log, so the last line can be
+    undone without a replay, including deletions and `red`/`dom`
+    subproofs.
+  - **Database on request:** dump the whole database, one constraint, or
+    the rows changed since the last dump.
+  - **Optional:** run to line n (breakpoints); report the preserved set,
+    objective bounds and open proof goals at the current line.
+
+  In veripb-repl, `:debug` would drive this mode directly, and edits near
+  the end of a verified proof would recheck only from the edit, which also
+  covers most of the caching above (database, per-line IDs). The WASM
+  build would need it compiled in too; its 4 GiB memory limit would then
+  apply to veripb's state, not to a copy of the proof text.
 
 ## To check upstream
 
