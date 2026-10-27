@@ -30,6 +30,19 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   file would cut peak memory a lot. In the browser, which has a hard 4 GiB
   limit, this is what decides the largest proof that can be verified (about
   1 GB of proof failed).
+- **Trace less, and read the trace as a stream.** `:verify` passes
+  `--trace-lines` over every unchecked line, and `Session::database()` over
+  every checked line (to learn which IDs labelled lines derived). On the
+  circuit proof (62 MB) that trace is 169 MB and 830,845 lines; the REPL
+  reads all of it into one buffer, then a `String`, alongside the proof text.
+  The web build's REPL memory goes from 132 MiB after `:source` to 945 MiB
+  after `:verify` and 1,058 MiB after the database rebuild (WebAssembly
+  memory never shrinks, so the peak stays): about 17 times the proof's size,
+  which puts the 4 GiB limit at roughly 240 MB of proof. Options: trace only
+  the labelled lines for `database()` (`--trace-lines` takes a list of
+  ranges); for a large `:verify`, trace only the last line (enough for
+  `last_step_constraint_ids`) unless the trace is wanted; and parse the
+  trace line by line as veripb writes it instead of holding it whole.
 - **The TUI hangs loading a large proof.** Reported with a 1.1M-line,
   456 MB proof; not investigated. The web build shows only the rows on screen
   (below), which suggests the TUI may be doing per-line work for the whole
