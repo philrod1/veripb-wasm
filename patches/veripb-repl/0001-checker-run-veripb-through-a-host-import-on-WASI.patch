@@ -8,14 +8,22 @@ the veripb arguments to the host import `veripb_host.run_veripb` and reads
 veripb's stdout and stderr back from files the host writes. Other targets
 still spawn the `veripb` binary.
 ---
- src/checker/invoke.rs | 98 ++++++++++++++++++++++++++++++++++++-------
- 1 file changed, 83 insertions(+), 15 deletions(-)
+ src/checker/invoke.rs | 62 ++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 61 insertions(+), 1 deletion(-)
 
 diff --git a/src/checker/invoke.rs b/src/checker/invoke.rs
-index f7d5e12..982f9c7 100644
+index 8a9d098..7cba19f 100644
 --- a/src/checker/invoke.rs
 +++ b/src/checker/invoke.rs
-@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
+@@ -2,11 +2,14 @@
+ //! `veripb`, and returns its raw output.
+ 
+ use std::ffi::{OsStr, OsString};
+-use std::io::{BufRead, Read, Write};
++#[cfg(not(target_os = "wasi"))]
++use std::io::Read;
++use std::io::{BufRead, Write};
+ use std::path::{Path, PathBuf};
  
  use anyhow::Context;
  
@@ -23,66 +31,39 @@ index f7d5e12..982f9c7 100644
  /// Returns the `veripb` binary to invoke: `$VERIPB_REPL_VERIPB_BIN` if
  /// set, otherwise `"veripb"` resolved via `$PATH`.
  fn veripb_binary() -> std::ffi::OsString {
-@@ -56,23 +57,43 @@ where
+@@ -101,6 +104,7 @@ struct Output {
  
-     let proof_file_path = proof_file.path().to_path_buf();
- 
--    let output = std::process::Command::new(veripb_binary())
--        .arg(formula_path)
--        .arg(&proof_file_path)
--        .args(extra_args)
--        .output()
--        .with_context(|| {
--            format!(
--                "failed to run `{}` — is it installed and on PATH?",
--                veripb_binary().to_string_lossy()
--            )
--        })?;
-+    #[cfg(not(target_os = "wasi"))]
-+    let (stdout, stderr, success, code) = {
-+        let output = std::process::Command::new(veripb_binary())
-+            .arg(formula_path)
-+            .arg(&proof_file_path)
-+            .args(extra_args)
-+            .output()
-+            .with_context(|| {
-+                format!(
-+                    "failed to run `{}` — is it installed and on PATH?",
-+                    veripb_binary().to_string_lossy()
-+                )
-+            })?;
-+        (
-+            output.stdout,
-+            output.stderr,
-+            output.status.success(),
-+            output.status.code(),
-+        )
-+    };
-+
-+    #[cfg(target_os = "wasi")]
-+    let (stdout, stderr, success, code) = {
-+        let mut args = vec![
-+            formula_path.as_os_str().to_os_string(),
-+            proof_file_path.as_os_str().to_os_string(),
-+        ];
-+        args.extend(extra_args.into_iter().map(|s| s.as_ref().to_os_string()));
-+        let output = host::run(&args)?;
-+        (output.stdout, output.stderr, output.code == 0, Some(output.code))
-+    };
- 
-     Ok(RawInvocation {
--        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
--        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
--        success: output.status.success(),
--        code: output.status.code(),
-+        stdout: String::from_utf8_lossy(&stdout).into_owned(),
-+        stderr: String::from_utf8_lossy(&stderr).into_owned(),
-+        success,
-+        code,
-         proof_file_path,
-         formula_file_path: formula_path.to_path_buf(),
+ /// Runs `veripb` with `args`, reading its stdout a line at a time as it is
+ /// written (see [`keep_lines`]) and its stderr whole.
++#[cfg(not(target_os = "wasi"))]
+ fn run_veripb(args: &[OsString], consume: &mut dyn FnMut(&str) -> bool) -> anyhow::Result<Output> {
+     let mut child = std::process::Command::new(veripb_binary())
+         .args(args)
+@@ -135,6 +139,23 @@ fn run_veripb(args: &[OsString], consume: &mut dyn FnMut(&str) -> bool) -> anyho
      })
-@@ -194,3 +215,50 @@ fn missing_dump_error(raw: &RawInvocation, flag: &str) -> anyhow::Error {
+ }
+ 
++/// Runs `veripb` through the host (see [`host`]), then reads the stdout it
++/// wrote a line at a time (see [`keep_lines`]) and its stderr whole.
++#[cfg(target_os = "wasi")]
++fn run_veripb(args: &[OsString], consume: &mut dyn FnMut(&str) -> bool) -> anyhow::Result<Output> {
++    let code = host::run(args)?;
++    let stdout = std::fs::File::open(host::STDOUT_PATH).context("failed to read veripb's stdout")?;
++    let stdout = keep_lines(std::io::BufReader::new(stdout), consume)
++        .context("failed to read veripb's stdout")?;
++    let stderr = std::fs::read(host::STDERR_PATH).context("failed to read veripb's stderr")?;
++    Ok(Output {
++        stdout,
++        stderr: String::from_utf8_lossy(&stderr).into_owned(),
++        success: code == 0,
++        code: Some(code),
++    })
++}
++
+ /// Reads `reader` a line at a time, returning the lines (newlines kept)
+ /// that `consume` does not take.
+ fn keep_lines(
+@@ -272,3 +293,42 @@ fn missing_dump_error(raw: &RawInvocation, flag: &str) -> anyhow::Error {
          super::parse::rejection_reason(&combined)
      )
  }
@@ -104,16 +85,12 @@ index f7d5e12..982f9c7 100644
 +        fn run_veripb(args_ptr: *const u8, args_len: usize) -> i32;
 +    }
 +
-+    const STDOUT_PATH: &str = "/.tmp/.veripb-stdout";
-+    const STDERR_PATH: &str = "/.tmp/.veripb-stderr";
++    pub const STDOUT_PATH: &str = "/.tmp/.veripb-stdout";
++    pub const STDERR_PATH: &str = "/.tmp/.veripb-stderr";
 +
-+    pub struct Output {
-+        pub stdout: Vec<u8>,
-+        pub stderr: Vec<u8>,
-+        pub code: i32,
-+    }
-+
-+    pub fn run(args: &[OsString]) -> anyhow::Result<Output> {
++    /// Runs `veripb` with `args` and returns its exit code; its output is in
++    /// [`STDOUT_PATH`] and [`STDERR_PATH`].
++    pub fn run(args: &[OsString]) -> anyhow::Result<i32> {
 +        let mut argv = Vec::new();
 +        for arg in args {
 +            let arg = arg
@@ -126,10 +103,6 @@ index f7d5e12..982f9c7 100644
 +        if code < 0 {
 +            anyhow::bail!("the host could not run veripb (code {code})");
 +        }
-+        Ok(Output {
-+            stdout: std::fs::read(STDOUT_PATH).context("failed to read veripb's stdout")?,
-+            stderr: std::fs::read(STDERR_PATH).context("failed to read veripb's stderr")?,
-+            code,
-+        })
++        Ok(code)
 +    }
 +}

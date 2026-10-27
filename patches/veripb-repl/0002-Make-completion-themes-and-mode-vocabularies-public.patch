@@ -54,7 +54,7 @@ index 21b4ecb..e99735f 100644
          name: "formula cancel",
          usage: ":formula cancel",
 diff --git a/src/tui/mod.rs b/src/tui/mod.rs
-index 8630f22..7cae859 100644
+index aba06aa..d94ca91 100644
 --- a/src/tui/mod.rs
 +++ b/src/tui/mod.rs
 @@ -17,11 +17,11 @@

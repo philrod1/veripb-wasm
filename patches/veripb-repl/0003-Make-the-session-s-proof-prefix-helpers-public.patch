@@ -10,10 +10,10 @@ run checker queries (such as show_database) on a prefix of the proof.
  1 file changed, 2 insertions(+), 2 deletions(-)
 
 diff --git a/src/session.rs b/src/session.rs
-index 5dcce0a..6004d57 100644
+index 5cb1a0d..6d73749 100644
 --- a/src/session.rs
 +++ b/src/session.rs
-@@ -265,7 +265,7 @@ impl Session {
+@@ -276,7 +276,7 @@ impl Session {
  
      /// Returns the preamble followed by `lines`, newline-terminated, ready
      /// for [`checker::check`] and friends.
@@ -22,7 +22,7 @@ index 5dcce0a..6004d57 100644
          let mut text = String::new();
          for line in self.preamble_lines() {
              text.push_str(&line);
-@@ -279,7 +279,7 @@ impl Session {
+@@ -290,7 +290,7 @@ impl Session {
      }
  
      /// Writes the current formula to a fresh temp `.opb` file.
