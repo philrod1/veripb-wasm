@@ -222,13 +222,15 @@ Measured on a 403,891-line circuit proof (62 MB) in the web build.
   TUI, a key or a click on a pane's title.
 
 - **`setlvl` and `wiplvl` in `:help`.** veripb's level rules are missing
-  from `help::RULES`, so `:help`, the rule completions and anything built on
-  the list leave them out. The web build adds entries in the same form
-  (`MORE_RULES` in `web-repl/src/glossary.rs`, dropped automatically once
-  `help::RULES` has them) and a "Levels" concept, and explains both rules in
-  plain English (`set_level` and `wipe_level` in `web-repl/src/teach.rs`:
-  the level in force, the `wiplvl` that clears it, and the constraints a
-  `wiplvl` deleted).
+  from `help::RULES`, so `:help`, the rule completions and the web Glossary
+  leave them out; entries in the same form would appear in all three. A
+  `usage` of `setlvl <level> ;` and `wiplvl <level> ;`; summaries such as
+  "set the level at which the constraints added from here are recorded" and
+  "delete every constraint recorded at this level or above" (core
+  constraints by a checked deletion, as with `del`). The web build already
+  explains both rules in plain English (`set_level` and `wipe_level` in
+  `web-repl/src/teach.rs`) and has a "Levels" concept, which the Glossary
+  links from these rules once they exist.
 
 ## Large output
 

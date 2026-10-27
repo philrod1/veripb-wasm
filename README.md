@@ -420,8 +420,7 @@ Enhanced mode:
 - **Glossary:** concepts for students new to pseudo-Boolean proofs
   (constraints, literals, unit propagation, slack, cutting planes, witness,
   proof goals, levels, …; written in `web-repl/src/glossary.rs`), and every proof
-  rule from veripb-repl's `:help` topics, plus `setlvl` and `wiplvl`, which
-  those lack (`MORE_RULES`, left out once `help::RULES` has them). Search matches terms and text;
+  rule from veripb-repl's `:help` topics. Search matches terms and text;
   entries link to each other ("See also"). Underlined terms in a plain-English
   explanation open their entry, and the modal's "? <rule>" button opens the
   line's rule.

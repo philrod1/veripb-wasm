@@ -1,6 +1,6 @@
 //! The glossary: concepts, written for students who are new to
 //! pseudo-Boolean proofs, and the proof rules from veripb-repl's `:help`
-//! topics (`help::RULES`), with the veripb rules it lacks (`MORE_RULES`).
+//! topics (`help::RULES`).
 //!
 //! Result: `[{id, term, group: "concept" | "rule", body: [text], example?,
 //! usage?, details?: [line], see: [id]}]`. Text marks code with backticks
@@ -315,8 +315,8 @@ const CONCEPTS: &[Concept] = &[
         term: "Levels",
         body: &[
             "A proof can record the constraints it adds at numbered levels, to delete them together later. \
-             [setlvl](g:rule-setlvl) `k` sets the current level: every constraint added after it, until the \
-             next `setlvl`, is recorded at level k. [wiplvl](g:rule-wiplvl) `k` deletes every constraint \
+             `setlvl k` sets the current level: every constraint added after it, until the \
+             next `setlvl`, is recorded at level k. `wiplvl k` deletes every constraint \
              recorded at level k or higher, in one step.",
             "Constraints added before the first `setlvl` are recorded at no level, and no `wiplvl` deletes \
              them. Deleting a [core](g:core) constraint this way is checked, as with [del](g:rule-del).",
@@ -325,7 +325,7 @@ const CONCEPTS: &[Concept] = &[
             "`setlvl 1;` … `setlvl 2;` … `wiplvl 2;` deletes what was added at level 2; a later \
              `wiplvl 1;` deletes what was added at level 1.",
         ),
-        see: &["rule-setlvl", "rule-wiplvl", "database"],
+        see: &["database", "rule-del"],
     },
     Concept {
         id: "assertion",
@@ -360,32 +360,6 @@ fn rule_see(name: &str) -> &'static [&'static str] {
     }
 }
 
-/// veripb rules `help::RULES` lacks, in its form; each is left out once
-/// `help::RULES` has it.
-const MORE_RULES: &[help::Topic] = &[
-    help::Topic {
-        name: "setlvl",
-        usage: "setlvl <level> ;",
-        summary: "set the level at which the constraints added from here are recorded",
-        details: &[
-            "Until the next setlvl, every constraint the proof adds is",
-            "recorded at this level, for a later wiplvl to delete.",
-            "Adds no constraint.",
-        ],
-    },
-    help::Topic {
-        name: "wiplvl",
-        usage: "wiplvl <level> ;",
-        summary: "delete every constraint recorded at this level or above",
-        details: &[
-            "Deletes the constraints added while a setlvl of <level> or",
-            "more was in force (not those already deleted). Core",
-            "constraints are deleted with a checked deletion, as with del.",
-            "The current level is unchanged.",
-        ],
-    },
-];
-
 pub fn glossary() -> Value {
     let concepts = CONCEPTS.iter().map(|c| {
         json!({
@@ -393,8 +367,7 @@ pub fn glossary() -> Value {
             "body": c.body, "example": c.example, "see": c.see,
         })
     });
-    let more = MORE_RULES.iter().filter(|m| help::RULES.iter().all(|t| t.name != m.name));
-    let rules = help::RULES.iter().chain(more).map(|t| {
+    let rules = help::RULES.iter().map(|t| {
         json!({
             "id": format!("rule-{}", t.name), "term": t.name, "group": "rule",
             "body": [t.summary], "usage": t.usage, "details": t.details, "see": rule_see(t.name),
