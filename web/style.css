@@ -362,6 +362,11 @@ aside input[type=file] { display: none; }
 .stats-table td:not(:first-child), .stats-table th:not(:first-child) { text-align: right; }
 .stats-table a { color: var(--accent); }
 
+/* Restart offer in the output, after a crash or :quit */
+.restart-offer { margin: 0.4rem 0; color: var(--muted); }
+.restart-offer .restart { font: inherit; color: var(--bg); background: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0.1rem 0.6rem; cursor: pointer; }
+.restart-offer .restart:disabled { opacity: 0.5; cursor: default; }
+
 /* Resource usage modal (the top bar's gauge) */
 .resources-modal { width: min(44rem, calc(100vw - 2rem)); font-size: 14px; }
 .resources-busy { font-size: 0.85em; }

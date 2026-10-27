@@ -241,9 +241,11 @@ export function createWasi(args, { stdout, stderr, root, env = [] }) {
  * `onProgress({run, line, settled})`, if given, is called as each veripb run
  * starts (`line` null) and, at most every 100 ms, with the proof line veripb
  * has read up to and the last line it has certainly accepted.
- * `stats.veripbRuns` counts veripb invocations.
+ * `stats.veripbRuns` counts veripb invocations. `sessionBase` starts web-repl's
+ * session count (`vr_session_base`): a REPL started again in the same page
+ * passes one above the previous REPL's.
  */
-export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutput, onProgress }) {
+export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutput, onProgress, sessionBase = 0 }) {
   const encoder = new TextEncoder();
   let repl;
   const { runVeripb, stats } = createVeripbRunner({
@@ -266,6 +268,7 @@ export function startRepl({ replModule, veripbModule, root, onLine, onVeripbOutp
   });
   wasi.initialize(repl);
   const mode = repl.exports.vr_init();
+  repl.exports.vr_session_base(sessionBase);
 
   function line(text) {
     const bytes = encoder.encode(text);

@@ -45,10 +45,12 @@ export class OutputView {
    * `onMode(mode)`, if given, runs after each `setMode` that leaves the
    * input ready. `progressTotal()`, if given, returns the proof's last line
    * number, for "line n of m" while a command runs. `onReady(ready)`, if
-   * given, runs whenever the input is enabled or disabled.
+   * given, runs whenever the input is enabled or disabled. `onEnded()`, if
+   * given, runs when the REPL fails or quits.
    */
-  constructor({ onSubmit, onTranscript, onMode, onReady, complete, progressTotal } = {}) {
+  constructor({ onSubmit, onTranscript, onMode, onReady, onEnded, complete, progressTotal } = {}) {
     this.onReady = onReady;
+    this.onEnded = onEnded;
     this.onSubmit = onSubmit;
     this.onMode = onMode;
     this.progressTotal = progressTotal;
@@ -381,6 +383,43 @@ export class OutputView {
   }
 
   /**
+   * The REPL failed (`text` says how) and can take no more input; with
+   * `onRestart` set (repl-client.js), offers to start a new REPL on the same
+   * files.
+   */
+  fail(text) {
+    this.#stopBusy();
+    const trailing = this.#endTrace();
+    if (trailing) this.out.appendChild(document.createTextNode(trailing));
+    this.append(text, "error");
+    this.prompt.textContent = "";
+    this.setReady(false);
+    this.#offerRestart();
+  }
+
+  #offerRestart() {
+    this.onEnded?.();
+    if (!this.onRestart) {
+      this.append("Reload the page to start again.", "note");
+      return;
+    }
+    const button = Object.assign(document.createElement("button"), {
+      type: "button", className: "restart", textContent: "Restart the REPL",
+      title: "Start a new REPL on the same files (the proof session is lost)",
+    });
+    button.addEventListener("click", () => {
+      button.disabled = true;
+      this.append("Restarting the REPL; your files are kept.", "note");
+      this.onRestart();
+    });
+    const line = Object.assign(document.createElement("div"), { className: "restart-offer" });
+    line.append(button, " Your files are kept; the proof session is not.");
+    this.out.appendChild(line);
+    this.out.scrollTop = this.out.scrollHeight;
+    button.focus();
+  }
+
+  /**
    * The REPL finished a command and is in prompt mode `mode` (or quit/failed).
    * Also used after a command the page answers itself, with the current mode.
    */
@@ -391,9 +430,10 @@ export class OutputView {
     this.#clearLoading();
     this.mode = mode;
     if (mode === MODE_QUIT || mode < 0) {
-      this.append(mode === MODE_QUIT ? "Session ended. Switch mode or reload the page to start again." : "Startup failed.", "note");
+      this.append(mode === MODE_QUIT ? "Session ended." : "Startup failed.", "note");
       this.prompt.textContent = "";
       this.setReady(false);
+      this.#offerRestart();
     } else {
       this.prompt.textContent = PROMPTS[mode];
       this.setReady(true);

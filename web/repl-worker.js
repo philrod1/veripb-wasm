@@ -3,6 +3,7 @@
 //
 // Page -> worker: {type: "line", text} | {type: "put", name, data} | {type: "delete", name}
 //                 | {type: "get", id, name} | {type: "dump", id} | {type: "resources", id}
+//                 | {type: "restart"}  a new REPL on the same files (after a crash or :quit)
 //                 | {type: "watch", on}          post session state after every line
 //                 | {type: "state", id} | {type: "preserved", id}
 //                 | {type: "breakpoint", index} toggle; posts state if watching
@@ -71,9 +72,9 @@ function recordVeripbOutput(stdout, stderr) {
 }
 const postFiles = () => post({ type: "files", files: listFiles(root) });
 
-// Time and memory for the resources view.
-const startedAt = performance.now();
-const commands = { count: 0, ms: 0, last: null };
+// Time and memory for the resources view (since the REPL last started).
+let startedAt = performance.now();
+let commands = { count: 0, ms: 0, last: null };
 /** Bytes held by the files under `dir`: `{files, bytes, allocated}`. */
 function usage(dir) {
   const total = { files: 0, bytes: 0, allocated: 0 };
@@ -107,11 +108,20 @@ async function compile(url) {
   return WebAssembly.compile(await response.arrayBuffer());
 }
 
+let modules = null;
+// Each restart starts web-repl's session count above the previous REPL's
+// (it bumps the count once per :load or :instance).
+let restarts = 0;
+const SESSIONS_PER_REPL = 4096;
+
 async function init() {
-  const [replModule, veripbModule] = await Promise.all([
+  const [replModule, veripbModule] = modules ?? await Promise.all([
     compile("pkg/repl.wasm"),
     compile("pkg/veripb.wasm"),
   ]);
+  modules = [replModule, veripbModule];
+  startedAt = performance.now();
+  commands = { count: 0, ms: 0, last: null };
   repl = startRepl({
     replModule,
     veripbModule,
@@ -120,6 +130,7 @@ async function init() {
     onVeripbOutput: recordVeripbOutput,
     // Posted while the REPL is still running: the page shows it at once.
     onProgress: (progress) => post({ type: "progress", ...progress }),
+    sessionBase: restarts * SESSIONS_PER_REPL,
   });
   flush();
   markReplReady();
@@ -190,6 +201,14 @@ onmessage = ({ data: message }) => {
         break;
       case "get":
         post({ type: "file", id: message.id, data: readFile(root, message.name) });
+        break;
+      case "restart":
+        // The old instance (and its memory) is dropped; the files stay.
+        restarts += 1;
+        repl = undefined;
+        pending = [];
+        pendingTrace = [];
+        init().catch((error) => post({ type: "fatal", text: String(error?.stack ?? error) }));
         break;
       case "resources":
         post({ type: "resources", id: message.id, resources: resources() });

@@ -6,11 +6,12 @@
 // views; `watch(on)` asks for state after every command.
 // `options.onUpdating()` runs when the worker starts computing a state to
 // post, and `options.onProgress({run, line})` with veripb's progress at any
-// time (also passed to the view).
+// time (also passed to the view). `options.onRestart()` runs when the page
+// starts a new REPL on the same files (the view's restart button).
 
 const STARTUP_TIMEOUT_MS = 15000;
 
-export function connectReplWorker(host, { what = "REPL", onState, onUpdating, onProgress } = {}) {
+export function connectReplWorker(host, { what = "REPL", onState, onUpdating, onProgress, onRestart } = {}) {
   const worker = new Worker(new URL("../repl-worker.js", import.meta.url), { type: "module" });
   let view = null;
   let started = false;
@@ -82,17 +83,27 @@ export function connectReplWorker(host, { what = "REPL", onState, onUpdating, on
         waiting.delete(message.id);
         break;
       case "fatal":
-        view?.append(`Internal error: ${message.text}\nReload the page to start again.`, "error");
-        view?.setReady(false);
+        view?.fail(`Internal error: ${message.text}`);
         break;
     }
   };
+
+  // A new REPL on the same files, after a crash or :quit. Its banner and
+  // prompt arrive as at startup.
+  function restart() {
+    started = false;
+    worker.postMessage({ type: "restart" });
+    onRestart?.();
+  }
 
   const putFile = (name, bytes) => worker.postMessage({ type: "put", name, data: bytes });
   for (const [name, bytes] of host.files) putFile(name, bytes);
 
   return {
-    attach(outputView) { view = outputView; },
+    attach(outputView) {
+      view = outputView;
+      view.onRestart = restart;
+    },
     line: (text) => worker.postMessage({ type: "line", text }),
     watch: (on) => worker.postMessage({ type: "watch", on }),
     state: () => request({ type: "state" }),

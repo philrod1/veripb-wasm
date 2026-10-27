@@ -555,6 +555,32 @@ await command(":verify");
 check("enhanced: extras shows the proof file's conclusion", await until(async () => (await extras()).includes("Proof fileconcludes UNSAT (not verified yet)")),
   (await extras()).slice(0, 240));
 
+// After :quit (as after a crash), Restart starts a new REPL on the same files.
+const filesBefore = await fileNames();
+await page.fill(".plain-in", ":quit");
+await page.press(".plain-in", "Enter");
+check("restart: offered after :quit", await until(async () => !!(await page.$(".restart-offer .restart"))));
+await page.click(".restart-offer .restart");
+check("restart: the prompt returns", await ready());
+check("restart: the files are kept", JSON.stringify(await fileNames()) === JSON.stringify(filesBefore));
+check("restart: the panes are emptied", await until(async () => (await page.textContent(".pane-proof .pane-title-text")) === "Proof"),
+  await page.textContent(".pane-proof .pane-title-text"));
+await command(":instance two-of-three");
+await command(":verify");
+check("restart: the new REPL works", await until(async () => (await page.textContent(".pane-proof .pane-title-text")).startsWith("Proof (4)")),
+  await page.textContent(".pane-proof .pane-title-text"));
+
+// A crash (the worker's "fatal" message, as when the REPL's WebAssembly
+// traps): the error, then the same restart offer, here sent from the worker.
+const replWorker = page.workers().find((w) => w.url().includes("repl-worker.js"));
+await replWorker.evaluate(() => postMessage({ type: "fatal", text: "RuntimeError: unreachable (test)" }));
+check("crash: the error is shown", await until(async () => (await page.textContent(".plain-out")).includes("Internal error: RuntimeError: unreachable (test)")));
+check("crash: the input is disabled", !!(await page.$(".plain-in[disabled]")));
+await page.locator(".restart-offer .restart").last().click();
+check("crash: Restart brings the prompt back", await ready());
+await command(":instance two-of-three");
+check("crash: and a new session loads", await until(async () => (await page.textContent(".pane-proof .pane-title-text")).startsWith("Proof (4)")));
+
 check("no page errors", errors.length === 0, errors.join(" | "));
 await browser.close();
 process.exit(failures ? 1 : 0);

@@ -246,6 +246,14 @@ thread_local! {
     static SESSIONS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
 }
 
+/// Starts the session count at `base`. A REPL started again in the same page
+/// (after a crash) passes a base above any count the previous one reached, so
+/// its stamps differ from those the page still holds.
+#[unsafe(no_mangle)]
+pub extern "C" fn vr_session_base(base: u32) {
+    SESSIONS.with(|n| n.set(u64::from(base)));
+}
+
 /// Marks that the session may have been replaced (see `SESSIONS`).
 pub(crate) fn new_session() {
     SESSIONS.with(|n| n.set(n.get() + 1));

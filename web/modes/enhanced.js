@@ -214,6 +214,8 @@ export function mount(root, host) {
   let commandBar = null;
   const view = new OutputView({
     complete: (text) => client.complete(text),
+    // The restart offer is in Output.
+    onEnded: () => selectTab("output"),
     // `:theme` recolours this page (the REPL itself answers "TUI only").
     onSubmit: (text) => {
       clearTimeout(databaseTimer);

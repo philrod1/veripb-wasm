@@ -169,6 +169,13 @@ choice is remembered):
 Switching modes starts a fresh REPL. Files are carried over; the proof
 session is not (`:save` it first).
 
+If the REPL crashes (for example, out of WebAssembly memory on a very
+large proof) or after `:quit`, plain and enhanced modes offer **Restart the
+REPL**: a new REPL in the same worker, on the same files (the proof session
+is lost). web-repl's session count starts above the previous REPL's
+(`vr_session_base`), so nothing the page cached for the old REPL is taken
+for the new one's.
+
 Leaving the page loses the session (files exist only in the tab), so
 Backspace outside a text field does nothing, a horizontal trackpad swipe
 does not go back (`overscroll-behavior-x`), and while there are files the
