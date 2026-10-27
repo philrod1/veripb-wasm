@@ -14,6 +14,7 @@ mod glossary;
 mod state;
 mod stats;
 mod teach;
+mod trace;
 mod views;
 
 use std::cell::RefCell;

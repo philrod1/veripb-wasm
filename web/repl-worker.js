@@ -65,8 +65,15 @@ function output(text) {
   pendingTrace.push(text.trim() !== "" && !/^s [A-Z]/.test(text) && veripbLines.has(text));
   if (pending.length >= OUT_BATCH) flush();
 }
+// Lines are recorded only during a command (the output being folded), and
+// not from an output larger than RECORD_LIMIT: a whole-proof trace can run to
+// gigabytes, past what one string may hold. Its lines are then not folded.
+const RECORD_LIMIT = 64 << 20;
+let inCommand = false;
 function recordVeripbOutput(stdout, stderr) {
+  if (!inCommand) return;
   for (const bytes of [stdout, stderr]) {
+    if (bytes.byteLength > RECORD_LIMIT) continue;
     for (const line of decoder.decode(bytes).split("\n")) veripbLines.add(line);
   }
 }
@@ -146,7 +153,13 @@ onmessage = ({ data: message }) => {
         veripbLines = new Set();
         const runs = repl.stats.veripbRuns;
         const t0 = performance.now();
-        const mode = repl.line(message.text);
+        inCommand = true;
+        let mode;
+        try {
+          mode = repl.line(message.text);
+        } finally {
+          inCommand = false;
+        }
         flush();
         const ms = performance.now() - t0;
         commands.count += 1;

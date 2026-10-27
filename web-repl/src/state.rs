@@ -9,8 +9,6 @@ use std::cell::RefCell;
 
 use crossterm::style::Color;
 use serde_json::{Value, json};
-use veripb_repl::checker::parse::constraint_ids_by_line;
-use veripb_repl::checker::{self, CheckOutcome};
 use veripb_repl::commands::{debug, edit, formula, help};
 use veripb_repl::session::Session;
 use veripb_repl::tui::complete;
@@ -357,24 +355,12 @@ thread_local! {
 }
 
 /// Runs `f` on what each checked proof line derived (display line -> IDs),
-/// from a traced run of the checked lines, cached until the session changes.
+/// from a traced run of the checked lines (`trace::line_ids`), cached until
+/// the session changes.
 fn with_line_ids<T>(session: &Session, f: impl FnOnce(&Result<std::collections::BTreeMap<usize, Vec<usize>>, String>) -> T) -> T {
     LINE_IDS.with_borrow_mut(|cache| {
         if cache.as_ref().is_none_or(|(generation, _)| *generation != stamp(session)) {
-            let checked = session.checked_len;
-            let traced = if checked == 0 {
-                Ok(Default::default())
-            } else {
-                let text = session.preamble_and_lines(&session.buffer[..checked]);
-                let from = session.preamble_lines().len() + 1;
-                session
-                    .formula_temp_file()
-                    .and_then(|formula| checker::check(formula.path(), &text, Some((from, from + checked - 1))))
-                    .map(|outcome| match outcome {
-                        CheckOutcome::Accepted { trace } | CheckOutcome::Rejected { trace, .. } => constraint_ids_by_line(&trace),
-                    })
-                    .map_err(|err| format!("{err:#}"))
-            };
+            let traced = crate::trace::line_ids(session).map_err(|err| format!("{err:#}"));
             *cache = Some((stamp(session), traced));
         }
         f(&cache.as_ref().expect("just filled").1)
