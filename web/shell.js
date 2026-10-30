@@ -159,7 +159,7 @@ async function addFiles(files) {
   for (const file of files) {
     const size = `${file.name} (${bytes(file.size)})`;
     if (file.size > MAX_FILE_BYTES) {
-      notes.push(`Error: ${size} is too large to load in the browser, whose REPL has 4 GiB of memory. Use the native veripb-repl for it.`);
+      notes.push(`Error: ${size} was not loaded: the web version supports files up to 2 GiB. The native veripb-repl supports larger ones.`);
       continue;
     }
     let data;
@@ -172,7 +172,7 @@ async function addFiles(files) {
     current.putFile(file.name, data);
     added.push(file.name);
     if (file.size > LARGE_FILE_BYTES) {
-      notes.push(`Warning: ${size} is large: loading or verifying it may run out of the REPL's 4 GiB of memory, which ends the REPL (a 220 MB proof needed about 1.1 GiB).`);
+      notes.push(`Warning: ${size} is large: the web version may run out of memory loading or verifying it. The native veripb-repl supports larger proofs.`);
     }
   }
   return { added, notes };

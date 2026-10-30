@@ -580,9 +580,9 @@ await page.evaluate(() => {
   }
 });
 const output = () => page.textContent(".plain-out");
-check("large files: past the limit refused", await until(async () => (await output()).includes("Error: huge.pbp (3.79 GiB) is too large to load in the browser")));
+check("large files: past the limit refused", await until(async () => (await output()).includes("Error: huge.pbp (3.79 GiB) was not loaded: the web version supports files up to 2 GiB.")));
 check("large files: a large one added, with a warning", (await output()).includes("Added large.pbp.")
-  && (await output()).includes("Warning: large.pbp (600 MiB) is large") && (await fileNames()).includes("large.pbp") && !(await fileNames()).includes("huge.pbp"));
+  && (await output()).includes("Warning: large.pbp (600 MiB) is large: the web version may run out of memory") && (await fileNames()).includes("large.pbp") && !(await fileNames()).includes("huge.pbp"));
 check("large files: a failed read reported", (await output()).includes("Error: the browser could not read unreadable.pbp (1.00 KiB): The requested file could not be read."));
 
 // After :quit (as after a crash), Restart starts a new REPL on the same files.
