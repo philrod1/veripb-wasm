@@ -11,7 +11,7 @@ const MODES = {
   classic: { label: "Classic (TUI)", load: () => import("./modes/classic.js") },
   enhanced: { label: "Enhanced", load: () => import("./modes/enhanced.js") },
 };
-import { createResources } from "./resources.js";
+import { bytes, createResources } from "./resources.js";
 
 const STORAGE_KEY = "veripb-repl-mode";
 const FILES_HIDDEN_KEY = "veripb-repl-files-hidden";
@@ -141,9 +141,47 @@ modeSelect.addEventListener("change", () => switchTo(modeSelect.value));
 const resources = createResources({ source: () => current?.resources?.() ?? null, files: () => fileListing });
 document.getElementById("resources").addEventListener("click", () => resources.open());
 
+// Files are read whole into this tab's memory, and the REPL's WebAssembly
+// memory is limited to 4 GiB: a file past MAX_FILE_BYTES is not read at all,
+// and one past LARGE_FILE_BYTES is added with a warning (a 220 MB proof took
+// the REPL to about 1.1 GiB through :source, :verify and the database).
+const MAX_FILE_BYTES = 2 * 1024 ** 3;
+const LARGE_FILE_BYTES = 512 * 1024 ** 2;
+
+/**
+ * Reads `files` (File objects) and adds them to the current mode. Returns the
+ * names added and notes for Output: files refused or unreadable, and
+ * warnings for large ones.
+ */
+async function addFiles(files) {
+  const added = [];
+  const notes = [];
+  for (const file of files) {
+    const size = `${file.name} (${bytes(file.size)})`;
+    if (file.size > MAX_FILE_BYTES) {
+      notes.push(`Error: ${size} is too large to load in the browser, whose REPL has 4 GiB of memory. Use the native veripb-repl for it.`);
+      continue;
+    }
+    let data;
+    try {
+      data = new Uint8Array(await file.arrayBuffer());
+    } catch (error) {
+      notes.push(`Error: the browser could not read ${size}: ${error.message}`);
+      continue;
+    }
+    current.putFile(file.name, data);
+    added.push(file.name);
+    if (file.size > LARGE_FILE_BYTES) {
+      notes.push(`Warning: ${size} is large: loading or verifying it may run out of the REPL's 4 GiB of memory, which ends the REPL (a 220 MB proof needed about 1.1 GiB).`);
+    }
+  }
+  return { added, notes };
+}
+
 document.getElementById("upload").addEventListener("change", async (event) => {
-  for (const file of event.target.files) current.putFile(file.name, new Uint8Array(await file.arrayBuffer()));
+  const { notes } = await addFiles([...event.target.files]);
   event.target.value = "";
+  for (const text of notes) current.note(text);
   current.focus();
 });
 
@@ -183,13 +221,10 @@ document.addEventListener("drop", async (event) => {
   event.preventDefault();
   dragDepth = 0;
   dropOverlay.hidden = true;
-  const added = [];
-  for (const file of event.dataTransfer.files) {
-    if (!file.size && !file.type) continue; // directories arrive as empty, typeless entries
-    current.putFile(file.name, new Uint8Array(await file.arrayBuffer()));
-    added.push(file.name);
-  }
+  // Directories arrive as empty, typeless entries.
+  const { added, notes } = await addFiles([...event.dataTransfer.files].filter((file) => file.size || file.type));
   if (added.length) current.note(`Added ${added.join(", ")}.`);
+  for (const text of notes) current.note(text);
   current.focus();
 });
 

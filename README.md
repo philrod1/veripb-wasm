@@ -211,6 +211,11 @@ Files panel (left; "Files" in the header hides and shows it, remembered):
 - **Delete:** × next to a file, after a confirmation.
 - **Drag and drop:** files dropped anywhere on the page are added, in every
   mode (base names only).
+- **Size limits:** files are read whole into the tab's memory, and the REPL
+  has 4 GiB of WebAssembly memory. A file over 2 GiB is refused, one over
+  512 MiB is added with a warning that loading or verifying it may run out
+  of memory (a 220 MB proof took the REPL to about 1.1 GiB), and a file the
+  browser cannot read is reported in Output.
 
 ```
 scripts/prepare.sh
@@ -525,7 +530,8 @@ exists.
 a verify run, carry-over of files between modes, and in enhanced mode the
 pane titles and statuses, the database filter, breakpoints, a splitter drag
 remembered across a reload, Tab completion, `:theme`, the transcript, and the Extras
-tab (objective bounds, `:check` verdict), the Preserved tab, and the pane filters.
+tab (objective bounds, `:check` verdict), the Preserved tab, the pane filters,
+and the size limits on added files.
 
 `compare-tui.py` replays each demo screenshot script, including its typed
 keys, clicks and snapshots, against two targets:

@@ -107,7 +107,7 @@ check("enhanced: explain modal leaves Output alone", (await page.textContent(".p
 check("enhanced: a rejected line has no plain-English view", await page.$eval(".explain-views", (e) => e.hidden));
 if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });
 await page.keyboard.press("Escape");
-check("enhanced: Esc closes the modal", await until(async () => !(await page.$eval(".explain-modal", (d) => d.open))));
+check("enhanced: Esc closes the modal", await until(async () => !(await page.$eval(".explain-modal:not(.stats-modal)", (d) => d.open))));
 await command(":explain 3");
 check("enhanced: :explain still prints to Output", (await page.textContent(".plain-out")).endsWith("ConstraintId 1: @x1_or_x2 1 x1 1 x2 >= 1\n"));
 await page.fill(".db-filter", "@x3_imp");
@@ -160,9 +160,9 @@ await page.click(".explain-plain .g-link:has-text('Reverse unit propagation')");
 const glossaryTitle = () => page.textContent(".glossary-entry h2");
 // openGlossary closes the modal first: wait for that, so a later fill isn't
 // undone by it (the Glossary may already show this entry from an earlier run).
-check("enhanced: a link opens the Glossary entry", await until(async () => !(await page.$eval(".explain-modal", (d) => d.open))
+check("enhanced: a link opens the Glossary entry", await until(async () => !(await page.$eval(".explain-modal:not(.stats-modal)", (d) => d.open))
   && (await page.isVisible(".tab-glossary")) && (await glossaryTitle()) === "Reverse unit propagation (RUP)"));
-check("enhanced: following a link closes the modal", !(await page.$eval(".explain-modal", (d) => d.open)));
+check("enhanced: following a link closes the modal", !(await page.$eval(".explain-modal:not(.stats-modal)", (d) => d.open)));
 await page.fill(".glossary-search", "witness");
 const glossaryItems = () => page.$$eval(".glossary-item", (items) => items.map((i) => i.textContent));
 check("enhanced: glossary search", await until(async () => (await glossaryItems()).includes("Witness") && !(await glossaryItems()).includes("Slack")),
@@ -172,7 +172,6 @@ check("enhanced: glossary entry", (await glossaryTitle()) === "Witness" && (awai
 await page.fill(".glossary-search", "setlvl");
 check("enhanced: the level rules are in the Glossary", await until(async () => (await glossaryItems()).includes("setlvl") && (await glossaryItems()).includes("Levels")),
   (await glossaryItems()).join(", "));
-await page.fill(".glossary-search", "");
 await page.fill(".glossary-search", "");
 await page.click(".glossary-item.rule:text-is('pol')");
 check("enhanced: rule entries come from :help", (await page.textContent(".glossary-usage")) === "pol <reverse-polish sequence> ;");
@@ -561,6 +560,30 @@ await command(":verify");
 // its wrong pol step), so the claim shows as not verified.
 check("enhanced: extras shows the intended conclusion", await until(async () => (await extras()).includes("IntendedUNSAT : @contradiction (not verified yet)")),
   (await extras()).slice(0, 240));
+
+// Large files: past 2 GiB refused, past 512 MiB added with a warning, and a
+// failed read reported. Each file's size and read are faked, since a
+// DataTransfer hands the page the same File objects.
+await page.evaluate(() => {
+  const transfer = new DataTransfer();
+  const fake = (name, size, unreadable = false) => {
+    const file = new File(["% small\n"], name);
+    Object.defineProperty(file, "size", { value: size });
+    if (unreadable) file.arrayBuffer = () => Promise.reject(new DOMException("The requested file could not be read.", "NotReadableError"));
+    transfer.items.add(file);
+  };
+  fake("huge.pbp", 3.79 * 1024 ** 3);
+  fake("large.pbp", 600 * 1024 ** 2);
+  fake("unreadable.pbp", 1024, true);
+  for (const type of ["dragenter", "dragover", "drop"]) {
+    document.body.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  }
+});
+const output = () => page.textContent(".plain-out");
+check("large files: past the limit refused", await until(async () => (await output()).includes("Error: huge.pbp (3.79 GiB) is too large to load in the browser")));
+check("large files: a large one added, with a warning", (await output()).includes("Added large.pbp.")
+  && (await output()).includes("Warning: large.pbp (600 MiB) is large") && (await fileNames()).includes("large.pbp") && !(await fileNames()).includes("huge.pbp"));
+check("large files: a failed read reported", (await output()).includes("Error: the browser could not read unreadable.pbp (1.00 KiB): The requested file could not be read."));
 
 // After :quit (as after a crash), Restart starts a new REPL on the same files.
 const filesBefore = await fileNames();
