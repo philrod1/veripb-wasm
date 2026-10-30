@@ -1,55 +1,47 @@
 FROM ubuntu:24.04
 
-ARG RUST_VERSION=stable
+ARG RUST_VERSION=1.95.0
 ARG USERNAME=dev
 ARG USER_UID=1000
 
 ENV DEBIAN_FRONTEND=noninteractive
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential curl git cmake pkg-config \
-    valgrind \
-    ripgrep fd-find \
+    openssh-client less \
+    valgrind ripgrep fd-find \
     sudo ca-certificates \
+  && ln -s /usr/bin/fdfind /usr/local/bin/fd \
   && rm -rf /var/lib/apt/lists/*
 
-# Node.js 22 LTS (required for Claude Code)
-RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
-  && apt-get install -y nodejs \
-  && rm -rf /var/lib/apt/lists/*
-
-RUN useradd -m -s /bin/bash -u $USER_UID $USERNAME \
-  && echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" >> /etc/sudoers
+# ubuntu:24.04 ships a default 'ubuntu' user that already owns UID 1000
+RUN userdel -r ubuntu 2>/dev/null || true \
+  && useradd -m -s /bin/bash -u $USER_UID $USERNAME \
+  && echo "$USERNAME ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/$USERNAME
 
 USER $USERNAME
 WORKDIR /home/$USERNAME
 
-ENV PATH="/home/$USERNAME/.cargo/bin:/home/$USERNAME/.npm-global/bin:$PATH"
+ENV PATH="/home/$USERNAME/.local/bin:/home/$USERNAME/.cargo/bin:$PATH" \
+    CARGO_TARGET_DIR=/home/$USERNAME/target
 
-# Configure npm to install globally without sudo
-RUN mkdir -p ~/.npm-global \
-  && npm config set prefix '~/.npm-global'
+# Pre-create volume mount points so named volumes inherit dev's ownership
+RUN mkdir -p ~/target ~/.cargo/registry ~/.claude
 
-# Rust
+# Rust (minimal profile skips the large rust-docs component)
 RUN curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | \
-    sh -s -- -y --default-toolchain 1.95.0
+    sh -s -- -y --profile minimal --default-toolchain $RUST_VERSION \
+  && rustup component add rust-analyzer clippy rustfmt rust-src
 
-RUN rustup component add rust-analyzer clippy rustfmt rust-src \
-  && cargo install --locked \
-      cargo-criterion \
-      cargo-watch \
-      iai-callgrind-runner \
-  && curl -LsSf https://get.nexte.st/latest/linux | tar zxf - -C /home/$USERNAME/.cargo/bin
+# Rust tooling as prebuilt binaries where available (falls back to compiling)
+RUN curl -L --proto '=https' --tlsv1.2 -sSf \
+      https://raw.githubusercontent.com/cargo-bins/cargo-binstall/main/install-from-binstall-release.sh | bash \
+  && cargo binstall -y --locked \
+      cargo-criterion hyperfine cargo-watch cargo-nextest iai-callgrind-runner \
+  && rm -rf ~/.cargo/registry/* ~/.cargo/git
 
-ARG HYPERFINE_VERSION=1.19.0
-RUN HYPERFINE_TARGET="$(uname -m)-unknown-linux-gnu" \
-  && curl -LsSf https://github.com/sharkdp/hyperfine/releases/download/v${HYPERFINE_VERSION}/hyperfine-v${HYPERFINE_VERSION}-${HYPERFINE_TARGET}.tar.gz \
-  | tar zxf - --strip-components=1 -C /home/$USERNAME/.cargo/bin hyperfine-v${HYPERFINE_VERSION}-${HYPERFINE_TARGET}/hyperfine
-
-RUN rustup target add wasm32-unknown-unknown wasm32-wasip1
-
-# Claude Code
-RUN npm install -g @anthropic-ai/claude-code
+# Claude Code native binary (no Node.js needed)
+RUN curl -fsSL https://claude.ai/install.sh | bash
 
 WORKDIR /workspace
 CMD ["bash"]

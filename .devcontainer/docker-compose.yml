@@ -1,19 +1,20 @@
-name: veripb-wasm
 services:
   rust-dev:
     build:
       context: .
       args:
         USERNAME: ${USER}
-        USER_UID: ${UID}
+        USER_UID: "${UID:?UID not set - add it to .env or run set -gx UID (id -u)}"
     volumes:
-      - ../../veripb-repl:/veripb-repl
       - ..:/workspace
       - cargo-cache:/home/${USER}/.cargo/registry
+      - cargo-target:/home/${USER}/target
       - ${HOME}/.claude:/home/${USER}/.claude
       - ${HOME}/.claude.json:/home/${USER}/.claude.json
     cap_drop:
       - ALL
+    security_opt:
+      - no-new-privileges:true
     stdin_open: true
     tty: true
     environment:
@@ -21,3 +22,4 @@ services:
 
 volumes:
   cargo-cache:
+  cargo-target:
