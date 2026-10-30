@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Phil Rodgers <philip.rodgers@glasgow.ac.uk>
+Date: Fri, 30 Oct 2026 13:10:33 +0000
+Subject: [PATCH 4/5] Make the session's formula temp file public
+
+Visibility only: Session::formula_temp_file becomes pub, so a frontend can
+run its own checker queries (such as a traced run) on the session's
+formula.
+---
+ src/session.rs | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/session.rs b/src/session.rs
+index 0976d10..ed72f53 100644
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -442,7 +442,7 @@ impl Session {
+ 
+     /// The current formula in a temp `.opb` file, written once per
+     /// `FormulaLines::epoch`.
+-    fn formula_temp_file(&self) -> anyhow::Result<std::rc::Rc<tempfile::NamedTempFile>> {
++    pub fn formula_temp_file(&self) -> anyhow::Result<std::rc::Rc<tempfile::NamedTempFile>> {
+         let epoch = self.formula.epoch();
+         let mut cached = self.formula_file.borrow_mut();
+         if let Some((cached_epoch, file)) = &*cached

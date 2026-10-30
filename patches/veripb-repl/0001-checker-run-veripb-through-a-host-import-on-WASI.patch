@@ -1,21 +1,22 @@
 From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
 From: Phil Rodgers <philip.rodgers@glasgow.ac.uk>
-Date: Wed, 21 Oct 2026 11:07:07 +0000
-Subject: [PATCH 1/4] checker: run veripb through a host import on WASI
+Date: Fri, 30 Oct 2026 13:10:18 +0000
+Subject: [PATCH 1/5] checker: run veripb through a host import on WASI
 
-WASI has no subprocesses. On `target_os = "wasi"`, `invoke::run` passes
-the veripb arguments to the host import `veripb_host.run_veripb` and reads
-veripb's stdout and stderr back from files the host writes. Other targets
-still spawn the `veripb` binary.
+WASI has no subprocesses or threads. On `target_os = "wasi"`, `run_veripb`
+passes the veripb arguments, and the watched file and its limit, to the
+host import `veripb_host.run_veripb`, which stops veripb once that file
+passes the limit. It reads veripb's stdout and stderr back from files the
+host writes. Other targets still spawn the `veripb` binary.
 ---
- src/checker/invoke.rs | 62 ++++++++++++++++++++++++++++++++++++++++++-
- 1 file changed, 61 insertions(+), 1 deletion(-)
+ src/checker/invoke.rs | 103 +++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 102 insertions(+), 1 deletion(-)
 
 diff --git a/src/checker/invoke.rs b/src/checker/invoke.rs
-index 8a9d098..7cba19f 100644
+index 846cd2d..13a1a8a 100644
 --- a/src/checker/invoke.rs
 +++ b/src/checker/invoke.rs
-@@ -2,11 +2,14 @@
+@@ -2,13 +2,16 @@
  //! `veripb`, and returns its raw output.
  
  use std::ffi::{OsStr, OsString};
@@ -27,43 +28,62 @@ index 8a9d098..7cba19f 100644
  
  use anyhow::Context;
  
+ use super::ProofText;
+ 
 +#[cfg(not(target_os = "wasi"))]
  /// Returns the `veripb` binary to invoke: `$VERIPB_REPL_VERIPB_BIN` if
  /// set, otherwise `"veripb"` resolved via `$PATH`.
  fn veripb_binary() -> std::ffi::OsString {
-@@ -101,6 +104,7 @@ struct Output {
+@@ -283,11 +286,13 @@ struct Output {
+ }
+ 
+ /// How often a [`Watch`]ed file's size is checked.
++#[cfg(not(target_os = "wasi"))]
+ const WATCH_INTERVAL: std::time::Duration = std::time::Duration::from_millis(20);
  
  /// Runs `veripb` with `args`, reading its stdout a line at a time as it is
- /// written (see [`keep_lines`]) and its stderr whole.
+ /// written (see [`keep_lines`]) and its stderr whole. Stops it if `watch`'s
+ /// file grows past its limit.
 +#[cfg(not(target_os = "wasi"))]
- fn run_veripb(args: &[OsString], consume: &mut dyn FnMut(&str) -> bool) -> anyhow::Result<Output> {
-     let mut child = std::process::Command::new(veripb_binary())
-         .args(args)
-@@ -135,6 +139,23 @@ fn run_veripb(args: &[OsString], consume: &mut dyn FnMut(&str) -> bool) -> anyho
+ fn run_veripb(
+     args: &[OsString],
+     consume: &mut dyn FnMut(&str) -> bool,
+@@ -356,6 +361,34 @@ fn run_veripb(
      })
  }
  
 +/// Runs `veripb` through the host (see [`host`]), then reads the stdout it
-+/// wrote a line at a time (see [`keep_lines`]) and its stderr whole.
++/// wrote a line at a time (see [`keep_lines`]) and its stderr whole. The
++/// host stops it if `watch`'s file grows past its limit.
 +#[cfg(target_os = "wasi")]
-+fn run_veripb(args: &[OsString], consume: &mut dyn FnMut(&str) -> bool) -> anyhow::Result<Output> {
-+    let code = host::run(args)?;
++fn run_veripb(
++    args: &[OsString],
++    consume: &mut dyn FnMut(&str) -> bool,
++    watch: Option<Watch<'_>>,
++) -> anyhow::Result<Output> {
++    INVOCATIONS.with(|count| count.set(count.get() + 1));
++    let run = host::run(args, watch)?;
 +    let stdout = std::fs::File::open(host::STDOUT_PATH).context("failed to read veripb's stdout")?;
 +    let stdout = keep_lines(std::io::BufReader::new(stdout), consume)
 +        .context("failed to read veripb's stdout")?;
 +    let stderr = std::fs::read(host::STDERR_PATH).context("failed to read veripb's stderr")?;
++    let (code, stopped) = match run {
++        host::Run::Exited(code) => (Some(code), false),
++        host::Run::Stopped => (None, true),
++    };
 +    Ok(Output {
 +        stdout,
 +        stderr: String::from_utf8_lossy(&stderr).into_owned(),
-+        success: code == 0,
-+        code: Some(code),
++        success: code == Some(0),
++        code,
++        stopped,
 +    })
 +}
 +
  /// Reads `reader` a line at a time, returning the lines (newlines kept)
  /// that `consume` does not take.
  fn keep_lines(
-@@ -272,3 +293,42 @@ fn missing_dump_error(raw: &RawInvocation, flag: &str) -> anyhow::Error {
+@@ -503,3 +536,71 @@ fn missing_dump_error(raw: &RawInvocation, flag: &str) -> anyhow::Error {
          super::parse::rejection_reason(&combined)
      )
  }
@@ -76,21 +96,40 @@ index 8a9d098..7cba19f 100644
 +
 +    use anyhow::Context;
 +
++    use super::Watch;
++
 +    #[link(wasm_import_module = "veripb_host")]
 +    unsafe extern "C" {
 +        /// Runs `veripb` with the given arguments (NUL-terminated UTF-8
-+        /// strings, without `argv[0]`) and returns its exit code, or a
-+        /// negative value if it could not be run. Writes its stdout and
-+        /// stderr to [`STDOUT_PATH`] and [`STDERR_PATH`].
-+        fn run_veripb(args_ptr: *const u8, args_len: usize) -> i32;
++        /// strings, without `argv[0]`) and returns its exit code, [`STOPPED`],
++        /// or another negative value if it could not be run. Writes its stdout
++        /// and stderr to [`STDOUT_PATH`] and [`STDERR_PATH`]. If `watch_len`
++        /// is not 0, `watch_ptr` holds a UTF-8 path, and `veripb` is stopped
++        /// once that file grows past `limit` bytes.
++        fn run_veripb(
++            args_ptr: *const u8,
++            args_len: usize,
++            watch_ptr: *const u8,
++            watch_len: usize,
++            limit: u64,
++        ) -> i32;
 +    }
++
++    /// What the host returns when it stopped `veripb` at the watch limit.
++    const STOPPED: i32 = -2;
 +
 +    pub const STDOUT_PATH: &str = "/.tmp/.veripb-stdout";
 +    pub const STDERR_PATH: &str = "/.tmp/.veripb-stderr";
 +
-+    /// Runs `veripb` with `args` and returns its exit code; its output is in
-+    /// [`STDOUT_PATH`] and [`STDERR_PATH`].
-+    pub fn run(args: &[OsString]) -> anyhow::Result<i32> {
++    /// How a host run ended.
++    pub enum Run {
++        Exited(i32),
++        Stopped,
++    }
++
++    /// Runs `veripb` with `args`; its output is in [`STDOUT_PATH`] and
++    /// [`STDERR_PATH`].
++    pub fn run(args: &[OsString], watch: Option<Watch<'_>>) -> anyhow::Result<Run> {
 +        let mut argv = Vec::new();
 +        for arg in args {
 +            let arg = arg
@@ -99,10 +138,20 @@ index 8a9d098..7cba19f 100644
 +            argv.extend_from_slice(arg.as_bytes());
 +            argv.push(0);
 +        }
-+        let code = unsafe { run_veripb(argv.as_ptr(), argv.len()) };
-+        if code < 0 {
-+            anyhow::bail!("the host could not run veripb (code {code})");
++        let (watched, limit) = match watch {
++            Some(watch) => {
++                let path = watch.path.to_str();
++                (path.with_context(|| format!("non-UTF-8 path {:?}", watch.path))?, watch.limit)
++            }
++            None => ("", 0),
++        };
++        let code = unsafe {
++            run_veripb(argv.as_ptr(), argv.len(), watched.as_ptr(), watched.len(), limit)
++        };
++        match code {
++            STOPPED => Ok(Run::Stopped),
++            code if code < 0 => anyhow::bail!("the host could not run veripb (code {code})"),
++            code => Ok(Run::Exited(code)),
 +        }
-+        Ok(code)
 +    }
 +}

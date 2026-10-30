@@ -231,7 +231,8 @@ for (const stem of preservedStems) {
   const runs = () => s.repl.stats.veripbRuns;
   let before = runs();
   const objective = s.repl.extrasObjective();
-  expect("the objective section runs veripb once", String(runs() - before), "1");
+  // :verify's own run already gave the bounds.
+  expect("the objective section runs no veripb", String(runs() - before), "0");
   before = runs();
   expect("asked again, it is cached", JSON.stringify(s.repl.extrasObjective()) === JSON.stringify(objective) && runs() === before, true);
   const typed = s.run(":check").lines;
@@ -288,7 +289,7 @@ for (const stem of preservedStems) {
   expect("and no conclusion tried twice (SAT, UNSAT, the bounds, BOUNDS)", verdicts.wrongRuns <= 4, true);
 
   // Bare :save finds its conclusion the same way; the Extras Status shows the
-  // file's conclusion beside the one veripb accepted.
+  // intended conclusion (the file's) and whether veripb accepted it.
   const s = session([...demoFiles, ["right.pbp", proof("BOUNDS -3 -3")]]);
   s.run(":load clique.opb");
   s.run(":source right.pbp");
@@ -299,8 +300,8 @@ for (const stem of preservedStems) {
   expect("bare :save: the verdict and the file", saved.join(" | "), "Running VeriPB version 3.0.2 | s VERIFIED BOUNDS -3 <= obj <= -3 | Saved 3 line(s) to out.pbp (conclusion BOUNDS -3 -3).");
   before = s.repl.stats.veripbRuns;
   const status = s.repl.extrasStatus();
-  expect("Status: the file's conclusion", status.fileConclusion, "BOUNDS -3 -3");
-  expect("Status: the conclusion veripb accepted", status.conclusion, "BOUNDS -3 -3");
+  expect("Status: the intended conclusion", status.intended, "BOUNDS -3 -3");
+  expect("Status: veripb accepted it", status.intendedVerified, true);
 
   // A new session counts its generation from 0 again: nothing cached for the
   // old one may answer for it. Both formulas below are loaded with no proof,
@@ -312,7 +313,7 @@ for (const stem of preservedStems) {
   expect("the first session's database", twoRows, 4);
   expect("a replaced session's database rows are not reused", s.repl.view({ pane: "database", start: 0, count: 1e9 }).rows.length, 3);
   expect("nor its Objective section", s.repl.extrasObjective().lines.join(" ") !== twoObjective && s.repl.extrasObjective().lines[0]?.startsWith("Objective: min"), true);
-  expect("nor its file conclusion", String(s.repl.extrasStatus().fileConclusion), "null");
+  expect("nor its intended conclusion", String(s.repl.extrasStatus().intended), "null");
 }
 
 // Pane statistics (vr_pane_stats) agree with the panes and the summary.

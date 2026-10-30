@@ -3,3 +3,4 @@ target/
 /.devcontainer/.env
 /web/pkg/
 .DS_Store
+__pycache__/

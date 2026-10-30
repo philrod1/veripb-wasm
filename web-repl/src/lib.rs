@@ -9,8 +9,6 @@
 //! The mode handling matches `veripb_repl::plain::run`, except that errors
 //! are printed and the session continues.
 
-mod check;
-mod glossary;
 mod state;
 mod stats;
 mod teach;
@@ -41,9 +39,6 @@ pub(crate) struct State {
     edit: Option<edit::EditState>,
     formula: Option<formula::FormulaEditState>,
     debug: Option<debug::DebugState>,
-    /// The conclusion the last sourced proof file closes with (hint IDs
-    /// dropped), for bare `:check` to try first; see `check::guesses`.
-    pub(crate) conclusion: Option<String>,
 }
 
 impl State {
@@ -92,11 +87,10 @@ impl State {
         // `:check` and `:objective` answer from the proof as it stands: asked
         // again before the session changes, the output they gave is shown
         // again rather than worked out anew (the same cache serves the
-        // Extras tab). A bare `:check` or `:save` tries the likely
-        // conclusions first (`check::guesses`). Otherwise output goes to stdout as ever; for
-        // these commands and those that load a proof, a copy is kept.
+        // Extras tab). Otherwise output goes to stdout as ever; for these
+        // commands, a copy is kept.
         let name = command_name(line);
-        let key = cached_command(line);
+        let key = self.session.as_ref().and_then(|session| cached_command(session, line));
         if let (Some(key), Some(session)) = (&key, &self.session)
             && let Some(lines) = state::recall(key, state::stamp(session))
         {
@@ -105,31 +99,13 @@ impl State {
             }
             return Ok(self.mode());
         }
-        let keep = key.is_some() || matches!(name, Some("source" | "instance" | "load"));
-        let mut tee = Tee { out, lines: Vec::new(), keep };
-        let save_path = (name == Some("save")).then(|| bare_save_path(line)).flatten();
-        let flow = match (&key, &self.session, save_path) {
-            (Some(key), Some(session), _) if key == "check " => {
-                let guesses = check::guesses(session, self.conclusion.as_deref());
-                let found = check::bare(session, &guesses, &mut tee)?;
-                state::remember("check-conclusion", state::stamp(session), &found.into_iter().collect::<Vec<_>>());
-                Flow::Continue
-            }
-            (_, Some(session), Some(path)) => {
-                let guesses = check::guesses(session, self.conclusion.as_deref());
-                check::bare_save(session, path, &guesses, &mut tee)?;
-                Flow::Continue
-            }
-            _ => commands::dispatch(&mut self.session, line, &mut tee)?,
-        };
+        let mut tee = Tee { out, lines: Vec::new(), keep: key.is_some() };
+        let flow = commands::dispatch(&mut self.session, line, &mut tee)?;
         if let (Some(key), Some(session)) = (&key, &self.session) {
             state::remember(key, state::stamp(session), &tee.lines);
         }
         if matches!(name, Some("instance" | "load")) {
             state::new_session();
-        }
-        if matches!(name, Some("source" | "instance" | "load")) {
-            self.note_loaded(&tee.lines);
         }
         match flow {
             Flow::Quit => return Ok(MODE_QUIT),
@@ -162,37 +138,6 @@ impl Output for Tee<'_> {
     }
 }
 
-impl State {
-    /// After `:source`, `:instance` or `:load`: keep the conclusion of the
-    /// proof file just read (its "Loaded N line(s) from <path> into the
-    /// buffer" line names it), or forget the old one when a new formula
-    /// replaced the proof.
-    fn note_loaded(&mut self, lines: &[String]) {
-        for line in lines {
-            if let Some(path) = line
-                .strip_prefix("Loaded ")
-                .and_then(|rest| rest.split_once(" line(s) from "))
-                .and_then(|(_, rest)| rest.split_once(" into the buffer"))
-                .map(|(path, _)| path)
-            {
-                self.conclusion = check::file_conclusion(Path::new(path));
-                return;
-            }
-            if line.starts_with("Loaded ") && line.contains(" constraints from ") {
-                self.conclusion = None;
-            }
-        }
-    }
-}
-
-/// The file of a `:save <file>` with no conclusion; else `None`.
-fn bare_save_path(line: &str) -> Option<&str> {
-    let rest = line.trim().strip_prefix(':')?;
-    let mut words = rest.split_whitespace();
-    let (_, path) = (words.next()?, words.next()?);
-    words.next().is_none().then_some(path)
-}
-
 /// The command `line` names, in full or by a unique prefix (as
 /// `commands::dispatch` resolves it), if it is a command.
 fn command_name(line: &str) -> Option<&'static str> {
@@ -206,20 +151,28 @@ fn command_name(line: &str) -> Option<&'static str> {
     Some(topic.name)
 }
 
-/// The cache key (`state::OUTPUTS`) when `line` is `:check [<conclusion>]`
-/// ("check <conclusion>") or `:objective` with no argument ("objective"),
-/// the command named in full or by a unique prefix (as `commands::dispatch`
-/// resolves it); else `None`.
-fn cached_command(line: &str) -> Option<String> {
+/// The cache key (`state::OUTPUTS`) when `line` is `:check <conclusion>`
+/// ("check <conclusion>"), a bare `:check` (`bare_check_key`) or `:objective`
+/// with no argument ("objective"), the command named in full or by a unique
+/// prefix (as `commands::dispatch` resolves it); else `None`.
+fn cached_command(session: &Session, line: &str) -> Option<String> {
     let name = command_name(line)?;
     let rest = line.trim().strip_prefix(':')?;
     let args = rest.split_once(char::is_whitespace).map_or("", |(_, args)| args);
     let args = args.split_whitespace().collect::<Vec<_>>().join(" ");
     match name {
+        "check" if args.is_empty() => Some(bare_check_key(session)),
         "check" => Some(format!("check {args}")),
         "objective" if args.is_empty() => Some("objective".to_string()),
         _ => None,
     }
+}
+
+/// The cache key of a bare `:check`, whose answer also depends on the
+/// session's intended conclusion (`:conclusion`).
+pub(crate) fn bare_check_key(session: &Session) -> String {
+    let intended = session.intended_conclusion.as_deref().unwrap_or("none");
+    format!("check, intending {intended}")
 }
 
 /// Sets up the temp directory and an empty session. Returns the prompt

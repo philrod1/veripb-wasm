@@ -22,11 +22,13 @@ sys.dont_write_bytecode = True  # no __pycache__ inside the submodule
 import tuishot  # noqa: E402
 
 NATIVE_TARGET = os.environ.get("NATIVE_TARGET_DIR", os.path.expanduser("~/.cache/veripb-native"))
-TEMP_NAME = re.compile(r"/\.?tmp/\.tmp[A-Za-z0-9]{6}")
+# A temp file (native /tmp, web /.tmp), or the named pipe the native TUI
+# passes the proof through (/tmp/.veripb-replXXXXXX/proof.pbp).
+TEMP_NAME = re.compile(r"/\.?tmp/\.tmp[A-Za-z0-9]{6}|/tmp/\.veripb-repl[A-Za-z0-9]{6}/proof")
 
 
 def normalise(screen):
-    """Temp-file paths replaced (native /tmp, web /.tmp); on those lines the
+    """Temp-file paths replaced (see TEMP_NAME); on those lines the
     padding before a pane border is collapsed, since the paths differ in
     length."""
     lines = []

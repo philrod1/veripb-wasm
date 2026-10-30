@@ -313,6 +313,7 @@ aside input[type=file] { display: none; }
 .suggestion .right { color: var(--muted); overflow: hidden; text-overflow: ellipsis; }
 .suggestion.selected { background: var(--cursor-bg, color-mix(in srgb, var(--accent) 22%, transparent)); }
 .suggestion.selected .left { color: var(--cursor-accent); }
+.suggestion.more { color: var(--muted); cursor: default; }
 
 /* Stats modal (enhanced mode): click a pane's title */
 .pane-title-text.stats-link { cursor: pointer; border-radius: 3px; }

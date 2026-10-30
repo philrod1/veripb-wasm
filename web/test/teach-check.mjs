@@ -1,11 +1,12 @@
-// Checks the plain-English explanations (web-repl/src/teach.rs), returned
-// as `plain` by explain(line):
+// Checks the plain-English explanations (veripb-repl's `teach`, as JSON by
+// web-repl/src/teach.rs), returned as `plain` by explain(line):
 //   - content: sample rup, pol, red, a, setlvl and wiplvl lines give the
 //     expected steps
 //   - sweep: every checked rup, pol, red, a, setlvl and wiplvl line of veripb's correct
 //     version-3 instances gets one (implication syntax excepted), and each
 //     rup replay reaches its conflict, and its glossary links exist
 //   - glossary: concepts and rules, every link and see-also exists
+//   - checker view: explain(line)'s `lines` hold the checker's account only
 //
 // Usage: node web/test/teach-check.mjs   (after scripts/build-web.sh)
 // Exit status 1 on any failure.
@@ -39,10 +40,16 @@ function session(dir, base, edits = []) {
   return repl;
 }
 
-// Glossary and constraint links read as their text.
-const unlink = (t) => t.replace(/\[([^\]]+)\]\([gc]:[\w-]+\)/g, "$1");
-const text = (plain) => unlink(plain.blocks.map((b) => (b.kind === "steps" ? b.items.join("\n") : b.text)).join("\n"));
+// Markup runs read as their text, code in backticks.
+const flat = (runs) => runs.map((r) => (r.t === "code" ? `\`${r.text}\`` : r.text)).join("");
+const text = (plain) => plain.blocks.map((b) => (b.kind === "steps" ? b.items.map(flat).join("\n") : flat(b.text))).join("\n");
 const steps = (plain) => plain.blocks.find((b) => b.kind === "steps")?.items ?? [];
+// Glossary ids linked anywhere in `value` (runs nested in any JSON).
+const linkIds = (value) => {
+  if (Array.isArray(value)) return value.flatMap(linkIds);
+  if (!value || typeof value !== "object") return [];
+  return value.t === "term" ? [value.id] : Object.values(value).flatMap(linkIds);
+};
 
 // ---- Content ----
 
@@ -94,11 +101,17 @@ content(levels, 7, "levels 7", { title: "set level", phrases: ["Before it, the l
 content(levels, 9, "levels 9", { title: "set level", phrases: ["No later `wiplvl` deletes level 0"] });
 content(levels, 11, "levels 11", { title: "wipe level", phrases: ["line 7 (`setlvl 1`)", "deletes 1 constraint: constraint 7."] });
 
+// ---- Checker view ----
+
+const checker = chain.explain(3);
+check("checker view: no plain-English part", !checker.lines.some((l) => l.startsWith("Checker:") || l.includes("reverse unit propagation")),
+  checker.lines.slice(0, 3).join(" | "));
+check("checker view: the hints rup needed", checker.lines.some((l) => l.startsWith("Line 3 needed:")), checker.lines.join(" | "));
+
 // ---- Glossary ----
 
 const glossary = chain.glossary();
 const ids = new Set(glossary.map((e) => e.id));
-const linkIds = (value) => [...JSON.stringify(value).matchAll(/\]\(g:([\w-]+)\)/g)].map((m) => m[1]);
 const concepts = glossary.filter((e) => e.group === "concept");
 const rules = glossary.filter((e) => e.group === "rule");
 check(`glossary: ${concepts.length} concepts, ${rules.length} rules`, concepts.length >= 20 && ["rup", "pol", "red", "a"].every((r) => ids.has(`rule-${r}`)));
@@ -107,6 +120,8 @@ check("glossary: rule entries carry :help's usage", rules.find((e) => e.term ===
 const broken = glossary.flatMap((e) => [...linkIds([e.body, e.example]), ...e.see].filter((id) => !ids.has(id)).map((id) => `${e.id} -> ${id}`));
 check("glossary: every link and see-also exists", !broken.length, broken.join(", "));
 check("glossary: ids are unique", ids.size === glossary.length);
+check("glossary: search text without markup", glossary.every((e) => e.search === e.search.toLowerCase() && !e.search.includes("](g:"))
+  && glossary.find((e) => e.id === "rule-setlvl")?.search.includes("setlvl"));
 
 // ---- Sweep ----
 

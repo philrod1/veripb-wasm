@@ -14,7 +14,7 @@ patch series and applied into `work/`.
 | Path | Contents |
 |---|---|
 | `upstream/veripb` | submodule: `https://gitlab.com/MIAOresearch/software/VeriPB.git`, branch `main` |
-| `upstream/veripb-repl` | submodule: `https://github.com/philrod1/veripb-repl.git`, branch `main` |
+| `upstream/veripb-repl` | submodule: `https://github.com/philrod1/veripb-repl.git`, branch `dev` |
 | `upstream/crossterm` | submodule: `https://github.com/crossterm-rs/crossterm.git`, tag `0.29` (the crates.io 0.29.0 release) |
 | `patches/<name>/` | local changes, one `git format-patch` file per change, applied in name order |
 | `scripts/prepare.sh` | creates the trees in `work/` (table below) |
@@ -24,7 +24,7 @@ patch series and applied into `work/`.
 | `repl-core/` | wrapper crate for the veripb-repl core; enables `getrandom`'s `wasm_js` backend |
 | `wasi-run/` | Node.js `node:wasi` runners for the WASI binary and WASI test binaries |
 | `bigint-probe/` | prints `malachite-bigint` and `i128` results, for diffing native against wasm |
-| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state` (a session summary; `vr_state_quick` without the database), `vr_view` (a window of a pane's rows, filtered; `src/views.rs`), `vr_find` (one constraint by label or ID), `vr_preserved`, `vr_explain` (`:explain <n>`'s output, plus the plain-English explanation from `src/teach.rs`), `vr_extras` (`:check` and `:objective` output, bounds), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, `vr_glossary` (concepts plus `help::RULES`), `vr_line_ids` (the constraint IDs checked proof lines in a range derived), `vr_buffer_edit` (one undoable proof-line edit), plus `vr_toggle_breakpoint` and `vr_result_ptr` |
+| `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state` (a session summary; `vr_state_quick` without the database), `vr_view` (a window of a pane's rows, filtered; `src/views.rs`), `vr_find` (one constraint by label or ID), `vr_preserved`, `vr_explain` (`:explain <n>`'s checker output, and the plain-English explanation from veripb-repl's `teach`, as JSON by `src/teach.rs`), `vr_extras` (`:check` and `:objective` output, bounds), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, `vr_glossary` (veripb-repl's `teach::glossary`), `vr_line_ids` (the constraint IDs checked proof lines in a range derived, from one streamed trace; `src/trace.rs`), `vr_buffer_edit` (one undoable proof-line edit), plus `vr_toggle_breakpoint` and `vr_result_ptr` |
 | `web-tui/` | the veripb-repl TUI as a `wasm32-wasip1` command, built against `work/crossterm` |
 | `web/` | browser page: mode menu, plain and classic modes, veripb in Web Workers |
 | `scripts/build-web.sh` | builds `web/pkg/` (generated, not tracked) |
@@ -59,10 +59,11 @@ Trees in `work/`:
 
 | Patch | Change |
 |---|---|
-| `0001-checker-run-veripb-through-a-host-import-on-WASI` | On `target_os = "wasi"`, `checker::invoke::run` calls the host import `veripb_host.run_veripb` instead of spawning `veripb`; veripb's stdout and stderr are read from `/.tmp/.veripb-stdout` and `/.tmp/.veripb-stderr`. |
+| `0001-checker-run-veripb-through-a-host-import-on-WASI` | On `target_os = "wasi"`, `checker::invoke::run_veripb` calls the host import `veripb_host.run_veripb` instead of spawning `veripb`; veripb's stdout and stderr are read from `/.tmp/.veripb-stdout` and `/.tmp/.veripb-stderr`. A watched file and its size limit (as for `:explain`'s elaboration, 256 MiB) go to the host, which stops veripb once the file passes the limit. |
 | `0002-Make-completion-themes-and-mode-vocabularies-public` | Visibility only: `tui::complete` and `tui::theme` become `pub mod`; `formula::MODE_VOCABULARY`, `debug::MODE_VOCABULARY` and `edit::READONLY_DURING_EDIT` become `pub`. |
-| `0003-Make-the-session-s-proof-prefix-helpers-public` | Visibility only: `Session::preamble_and_lines` and `Session::formula_temp_file` become `pub`, for checker queries on a proof prefix. |
-| `0004-Make-the-session-s-undo-snapshots-public` | Visibility only: `Snapshot`, `Session::snapshot`, `Session::push_undo` and `Session::generation` become `pub`, so a frontend can record a buffer edit as one undoable action. |
+| `0003-Make-the-session-s-undo-points-public` | Visibility only: `Session::begin_undo_point` and `Session::end_undo_point` become `pub`, so a frontend can record buffer edits as one undoable action. |
+| `0004-Make-the-session-s-formula-temp-file-public` | Visibility only: `Session::formula_temp_file` becomes `pub`, for a traced run of the checked lines (`web-repl/src/trace.rs`). |
+| `0005-Make-explain-s-parts-public` | Visibility only: `commands::explain::target`, `print_checker` and `print_rejection` become `pub`, so the explain modal's Checker view shows the checker's account without the plain-English part. |
 
 `patches/crossterm/`:
 
@@ -250,13 +251,7 @@ Plain mode:
   formula, the proof or its checked prefix), they show the output they gave
   last time rather than running veripb again; `:check` is kept per
   conclusion. The header then shows 0 veripb runs.
-- **Bare `:check` and bare `:save`** try the likely conclusion first: the one the sourced
-  proof file closes with (`conclusion …;`, without hint IDs), then `UNSAT`
-  if the database already shows a contradiction, and `SAT` if a solution is
-  logged and there is no objective; then the REPL's own order (`UNSAT`,
-  `SAT`, `BOUNDS v v`), each conclusion once (`web-repl/src/check.rs`). The
-  verdict is veripb's, as before; when the guess is right, it takes one
-  veripb run instead of up to four.
+- **Bare `:check` and bare `:save`** try the proof's intended conclusion first (the one the sourced proof file closes with, or `:conclusion`'s), then veripb-repl's own candidates.
 - **Timing:** the header shows the last command's duration and veripb run
   count.
 
@@ -325,7 +320,7 @@ Enhanced mode:
   - Each commit (`x`, `dd`, `o`/`O`, Enter, a join, and each changed line on
     Esc) is one `:undo` action and marks the line and those after it
     unchecked, as in the TUI (`vr_buffer_edit`), except that retyping a `%`
-    comment as a comment keeps every line checked. Hover a line for "explain": a modal
+    comment or blank line as one keeps every line checked. Hover a line for "explain": a modal
   for that line, which leaves Output untouched (Copy; Esc, Close or a click
   outside closes it). `:explain` typed at the prompt prints to Output as usual.
 - **Explain modal:** for a checked `rup`, `pol`, `red`, `a`, `setlvl` or `wiplvl` line, "Plain
@@ -336,7 +331,9 @@ Enhanced mode:
   unchecked assertion means; for `setlvl`, the level before it and the
   `wiplvl` that deletes it; for `wiplvl`, the `setlvl` lines it covers and
   the constraints it deleted (the database before and after the line, two
-  veripb runs). "Checker" shows `:explain <n>`'s output. The
+  veripb runs). The text comes from veripb-repl's `teach`; its links open
+  a Glossary entry, show a constraint, or explain another line. "Checker"
+  shows the checker's part of `:explain <n>`'s output. The
   choice is remembered. Other rules, rejected lines and implication syntax
   (`==>`, `<==`) show the checker view only.
 - **Command buttons** above the prompt: Verify, Check, Undo and Debug at the
@@ -358,7 +355,9 @@ Enhanced mode:
   The Formula and Database statistics also count constraints by kind
   (clause, cardinality, general, equality, implication, trivial,
   contradiction) and give the terms per constraint and the largest
-  coefficient. The counts come from `vr_pane_stats` (`web-repl/src/stats.rs`);
+  coefficient, and each pane's size in bytes with its longest line or
+  constraint. The counts come from veripb-repl's `stats`, through
+  `vr_pane_stats` (`web-repl/src/stats.rs`);
   the Database's need its rows, as the pane does.
 - **Jumps:** click a Formula or Proof line's number to scroll the Database
   pane to the constraints it gave rise to (they flash); click a Database
@@ -411,16 +410,16 @@ Enhanced mode:
   reopening the tab, or opening it after those commands, runs nothing.
   - **Status:** `:check`'s verdict (`s VERIFIED …` or `NOT YET
     CONCLUDED`), the proof's checked and unchecked counts, a rejected
-    line's reason, the conclusion the sourced proof file claims (verified
-    or not yet), and the veripb version.
+    line's reason, the intended conclusion (the sourced proof file's, or
+    `:conclusion`'s; verified or not yet), and the veripb version.
   - **Objective:** `:objective`'s report: the objective, the best value
     found so far, and the best value with checked-deletion guarantees.
   - **Summary:** formula constraints and variables; database size, core
     and derived; labels; breakpoints; the prompt mode.
 - **Glossary:** concepts for students new to pseudo-Boolean proofs
   (constraints, literals, unit propagation, slack, cutting planes, witness,
-  proof goals, levels, …; written in `web-repl/src/glossary.rs`), and every proof
-  rule from veripb-repl's `:help` topics. Search matches terms and text;
+  proof goals, levels, …) and every proof rule from veripb-repl's `:help`
+  topics, from veripb-repl's `teach::glossary`. Search matches terms and text;
   entries link to each other ("See also"). Underlined terms in a plain-English
   explanation open their entry, and the modal's "? <rule>" button opens the
   line's rule.
@@ -429,7 +428,8 @@ Enhanced mode:
 - **Tab completion:** the TUI's completer (`tui::complete`) and its rules.
   - **The strip:** the suggestion strip above the command line updates as
     you type.
-  - **Keys:** ↑/↓ move the highlight. Tab inserts the highlighted
+  - **Keys:** ↑/↓ move the highlight. Past the completer's limit, the
+    last row counts the candidates left out. Tab inserts the highlighted
     candidate, or the only one, or the candidates' longest common prefix;
     it never submits. Esc hides the strip.
   - **What it completes:** commands and rule names, files for

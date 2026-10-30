@@ -1,0 +1,43 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Phil Rodgers <philip.rodgers@glasgow.ac.uk>
+Date: Fri, 30 Oct 2026 13:10:33 +0000
+Subject: [PATCH 5/5] Make :explain's parts public
+
+Visibility only: commands::explain::target, print_checker and
+print_rejection become pub, so a frontend can show the checker's account
+apart from the plain-English explanation it already has.
+---
+ src/commands/explain.rs | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/commands/explain.rs b/src/commands/explain.rs
+index 6537e4b..a920119 100644
+--- a/src/commands/explain.rs
++++ b/src/commands/explain.rs
+@@ -55,7 +55,7 @@ pub fn run(session: &Session, args: &str, out: &mut dyn Output) {
+ 
+ /// The display line `:explain <args>` explains, and whether it is the
+ /// pending rejected line; `None`, saying why, if there is none.
+-pub(crate) fn target(session: &Session, args: &str, out: &mut dyn Output) -> Option<(usize, bool)> {
++pub fn target(session: &Session, args: &str, out: &mut dyn Output) -> Option<(usize, bool)> {
+     let arg = args.trim();
+     let rejected_line = session
+         .known_bad
+@@ -101,7 +101,7 @@ fn explain_checked(session: &Session, n: usize, out: &mut dyn Output) {
+ /// The checker's account of checked line `n`: its trace, and for `rup` the
+ /// hints it needed, or `replay_hints` (the plain-English replay's) when
+ /// veripb's account of them passes the limit.
+-pub(crate) fn print_checker(
++pub fn print_checker(
+     session: &Session,
+     n: usize,
+     replay_hints: Option<&[RupHint]>,
+@@ -167,7 +167,7 @@ pub(crate) fn print_checker(
+ 
+ /// Prints the rejection reason (`known_bad`) for line `n`, then
+ /// [`Session::diagnose_rejected_rup`]'s findings for a `rup` line.
+-pub(crate) fn print_rejection(session: &Session, n: usize, out: &mut dyn Output) {
++pub fn print_rejection(session: &Session, n: usize, out: &mut dyn Output) {
+     let reason = session.known_bad.as_deref().unwrap_or_default();
+     outln!(out, "Line {n}{REJECTED_INFIX}{reason}");
+     help::print_rejection_hint(out, &session.buffer[session.checked_len]);

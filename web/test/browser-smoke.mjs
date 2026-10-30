@@ -153,6 +153,7 @@ check("enhanced: explain shows plain English first", await until(async () => (aw
 check("enhanced: plain-English steps", (await page.$$(".explain-plain:not([hidden]) li")).length === 4);
 await page.click(".explain-view:has-text('Checker')");
 check("enhanced: Checker shows :explain's output", (await page.isVisible(".explain-body")) && (await page.textContent(".explain-body")).includes("Line 3 needed:"));
+check("enhanced: Checker leaves out the plain English", !(await page.textContent(".explain-body")).includes("Suppose"));
 await page.click(".explain-view:has-text('Plain English')");
 check("enhanced: explain offers the rule's glossary entry", (await page.textContent(".explain-rule")) === "? rup");
 await page.click(".explain-plain .g-link:has-text('Reverse unit propagation')");
@@ -168,6 +169,10 @@ check("enhanced: glossary search", await until(async () => (await glossaryItems(
   `search ${JSON.stringify(await page.inputValue(".glossary-search"))}: ${(await glossaryItems()).join(", ")}`);
 await page.click(".glossary-item:has-text('Witness')");
 check("enhanced: glossary entry", (await glossaryTitle()) === "Witness" && (await page.textContent(".glossary-see")).includes("Redundance-based strengthening"));
+await page.fill(".glossary-search", "setlvl");
+check("enhanced: the level rules are in the Glossary", await until(async () => (await glossaryItems()).includes("setlvl") && (await glossaryItems()).includes("Levels")),
+  (await glossaryItems()).join(", "));
+await page.fill(".glossary-search", "");
 await page.fill(".glossary-search", "");
 await page.click(".glossary-item.rule:text-is('pol')");
 check("enhanced: rule entries come from :help", (await page.textContent(".glossary-usage")) === "pol <reverse-polish sequence> ;");
@@ -462,6 +467,8 @@ await page.click(".pane-proof .pane-title-text");
 await page.waitForSelector(".stats-modal[open] .stat-tiles");
 const legend = await page.$$eval(".stats-modal .donut-legend li .legend-name", (names) => names.map((n) => n.textContent));
 check("stats: the Proof title opens a donut of its rules", legend.length > 0 && (await page.$$(".stats-modal .donut path, .stats-modal .donut circle")).length === legend.length, legend.join(","));
+const proofTiles = await page.textContent(".stats-modal .stat-tiles");
+check("stats: the proof's text and its longest line", /Text.*longest: line \d+/.test(proofTiles), proofTiles);
 await page.hover(".stats-modal .donut-legend li >> nth=0");
 check("stats: hovering a rule shows its share in the middle", (await page.textContent(".stats-modal .donut-label")) === legend[0]);
 await page.keyboard.press("Escape");
@@ -533,7 +540,7 @@ await page.click('.tab:has-text("Extras")');
 const extras = () => page.textContent(".tab-extras");
 check("enhanced: extras summary", await until(async () => (await extras()).includes("Prompt") && (await extras()).includes("core")));
 check("enhanced: extras has no preserved section", !(await extras()).includes("Preserved set"));
-check("enhanced: no proof-file line for conclusion NONE", await until(async () => (await extras()).includes("Status") && !(await extras()).includes("Proof file")));
+check("enhanced: no intended conclusion for conclusion NONE", await until(async () => (await extras()).includes("Status") && !(await extras()).includes("Intended")));
 
 // Status and objective: demo 04 (clique) proves optimality.
 await dropFiles([demo("clique.opb")]);
@@ -545,14 +552,14 @@ for (const text of ["@colour_bound pol @better @no_15 + @no_34 + ;", "@contradic
 check("enhanced: extras verdict", await until(async () => (await page.textContent(".tab-extras .verdict")) === "s VERIFIED BOUNDS -3 <= obj <= -3"),
   await page.textContent(".tab-extras .verdict"));
 check("enhanced: extras veripb version", (await extras()).includes("veripb3.0"));
-// The proof file's own conclusion, beside what veripb accepted.
+// The intended conclusion (the proof file's), and whether veripb accepted it.
 await dropFiles([demo("two-of-three.opb"), demo("two-of-three.pbp")]);
 await until(async () => (await fileNames()).includes("two-of-three.pbp"));
 await command(":instance two-of-three");
 await command(":verify");
 // This demo's proof claims UNSAT but derives no contradiction (demo 02 finds
 // its wrong pol step), so the claim shows as not verified.
-check("enhanced: extras shows the proof file's conclusion", await until(async () => (await extras()).includes("Proof fileconcludes UNSAT (not verified yet)")),
+check("enhanced: extras shows the intended conclusion", await until(async () => (await extras()).includes("IntendedUNSAT : @contradiction (not verified yet)")),
   (await extras()).slice(0, 240));
 
 // After :quit (as after a crash), Restart starts a new REPL on the same files.

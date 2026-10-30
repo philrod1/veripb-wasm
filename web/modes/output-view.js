@@ -40,7 +40,8 @@ export class OutputView {
   /**
    * `onSubmit(text)` runs an input line; the view disables input until
    * `setMode`. `complete(text)`, if given, returns (a promise of) the REPL's
-   * completion result `{candidates: [{line, left, right}], selected, common}`
+   * completion result `{candidates: [{line, left, right}], selected, common,
+   * omitted}`
    * and turns on the suggestion strip and Tab completion (`suggest`).
    * `onMode(mode)`, if given, runs after each `setMode` that leaves the
    * input ready. `progressTotal()`, if given, returns the proof's last line
@@ -193,6 +194,7 @@ export class OutputView {
     this.candidates = [];
     this.selected = null;
     this.common = "";
+    this.omitted = 0;
     this.browsingHistory = false;
     let candidatesFor = null;
     let generation = 0;
@@ -215,7 +217,9 @@ export class OutputView {
           this.#setLine(c.line);
         });
         return row;
-      }));
+      }), ...(this.omitted ? [Object.assign(document.createElement("div"), {
+        className: "suggestion more", textContent: `… (+${this.omitted.toLocaleString()} more)`,
+      })] : []));
       this.strip.querySelector(".selected")?.scrollIntoView({ block: "nearest" });
     };
 
@@ -235,6 +239,7 @@ export class OutputView {
       }
       this.candidates = result?.candidates ?? [];
       this.common = result?.common ?? "";
+      this.omitted = result?.omitted ?? 0;
       if (this.selected != null && this.selected >= this.candidates.length) this.selected = null;
       if (this.selected == null) this.selected = result?.selected ?? null;
       render();

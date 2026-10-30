@@ -65,7 +65,8 @@ function working(live) {
       rows.push(["veripb memory", meter(u.veripbMemory, WASM_LIMIT)]);
       rows.push(["veripb output so far", bytes(u.stdoutBytes)]);
     } else {
-      rows.push([`veripb run ${u.run}`, `finished after ${duration(u.runMs)}; the REPL has been working since, ${duration(age)}`]);
+      const ended = u.stopped ? "stopped at its size limit" : "finished";
+      rows.push([`veripb run ${u.run}`, `${ended} after ${duration(u.runMs)}; the REPL has been working since, ${duration(age)}`]);
       rows.push(["veripb output", `${bytes(u.stdoutBytes)} (read by the REPL)`]);
     }
     rows.push(["REPL memory", meter(u.replMemory, WASM_LIMIT)]);

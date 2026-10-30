@@ -1,0 +1,34 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Phil Rodgers <philip.rodgers@glasgow.ac.uk>
+Date: Fri, 30 Oct 2026 13:10:33 +0000
+Subject: [PATCH 3/5] Make the session's undo points public
+
+Visibility only: Session::begin_undo_point and end_undo_point become pub,
+so a frontend outside the crate can record buffer edits as one undoable
+action, as the TUI's Vim mode does.
+---
+ src/session.rs | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/src/session.rs b/src/session.rs
+index 385b19e..0976d10 100644
+--- a/src/session.rs
++++ b/src/session.rs
+@@ -1326,7 +1326,7 @@ impl Session {
+     /// Starts an undo point for the action about to run: if the action
+     /// changes [`Self::change_stamp`], [`Self::end_undo_point`] makes the
+     /// state before it an `:undo` entry. Ends any point still open.
+-    pub(crate) fn begin_undo_point(&mut self) {
++    pub fn begin_undo_point(&mut self) {
+         self.end_undo_point();
+         let (buffer, formula) = self.take_hunks();
+         self.record(Some(Default::default()));
+@@ -1341,7 +1341,7 @@ impl Session {
+     /// Ends the point [`Self::begin_undo_point`] started, keeping it as an
+     /// `:undo` entry if anything changed since. Clears the redo history if
+     /// so.
+-    pub(crate) fn end_undo_point(&mut self) {
++    pub fn end_undo_point(&mut self) {
+         let Some(point) = self.pending_point.take() else {
+             return;
+         };

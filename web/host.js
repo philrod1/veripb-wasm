@@ -31,12 +31,21 @@ function reserve(file, size) {
   grown.set(file.data);
   file.data = grown.subarray(0, size);
 }
+// The file a veripb run may grow only to `limit` bytes, if any (see
+// createVeripbRunner's watch): a write past that throws STOPPED, which ends the
+// run.
+let watching = null;
+const STOPPED = Symbol("stopped at the watch limit");
+function checkWatch(file) {
+  if (watching && file === watching.file && file.data.byteLength > watching.limit) throw STOPPED;
+}
 OpenFile.prototype.fd_write = function (data) {
   if (this.file.readonly) return { ret: wasiDefs.ERRNO_BADF, nwritten: 0 };
   const at = Number(this.file_pos);
   reserve(this.file, at + data.byteLength);
   this.file.data.set(data, at);
   this.file_pos += BigInt(data.byteLength);
+  checkWatch(this.file);
   return { ret: 0, nwritten: data.byteLength };
 };
 // The file a veripb run reads its proof from, and what to tell of each read
@@ -62,6 +71,7 @@ OpenFile.prototype.fd_pwrite = function (data, offset) {
   if (this.file.readonly) return { ret: wasiDefs.ERRNO_BADF, nwritten: 0 };
   reserve(this.file, Number(offset) + data.byteLength);
   this.file.data.set(data, Number(offset));
+  checkWatch(this.file);
   return { ret: 0, nwritten: data.byteLength };
 };
 
@@ -122,26 +132,32 @@ export function listFiles(root) {
 /**
  * The `veripb_host.run_veripb` import: runs veripb on `root` with the
  * NUL-terminated argv found in `memory()` (the calling module's memory) and
- * returns its exit code, or -1 if veripb could not be run. veripb's stdout
- * and stderr go to /.tmp/.veripb-stdout and /.tmp/.veripb-stderr.
+ * returns its exit code, -2 if it was stopped at the watch limit, or -1 if
+ * veripb could not be run. veripb's stdout and stderr go to
+ * /.tmp/.veripb-stdout and /.tmp/.veripb-stderr. The watch: a UTF-8 path
+ * (`watchPtr`, `watchLen`; none if `watchLen` is 0) to an existing file, and
+ * `limit`, the most bytes veripb may write to it. Once it writes more, the
+ * run stops and the file is emptied.
  * Hooks: `onRun()` before each run, `onOutput(stdout, stderr)` after it,
  * `onError(message)` on failure. `stats` has `veripbRuns`, `veripbMs` (wall
  * time in veripb), `lastVeripb` (`{ms, memoryBytes}` of the latest run) and
  * `peakVeripbMemory` (the largest memory a run grew to).
- * `onUsage({phase, run, runMs, veripbMemory, stdoutBytes, replMemory})`, if
- * given, is called with each progress report and as each run ends (`phase`
- * "veripb", then "repl"): the run's time so far, its memory and output size,
- * and the calling module's memory. It is the only news while a long command
- * holds the worker.
+ * `onUsage({phase, run, runMs, veripbMemory, stdoutBytes, replMemory,
+ * stopped})`, if given, is called with each progress report and as each run
+ * ends (`phase` "veripb", then "repl"): the run's time so far, its memory and
+ * output size, the calling module's memory, and whether the run was stopped
+ * at the watch limit. It is the only news while a long command holds the
+ * worker.
  */
 export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput, onError, onProgress, onUsage }) {
   const decoder = new TextDecoder();
   const stats = { veripbRuns: 0, veripbMs: 0, lastVeripb: null, peakVeripbMemory: 0 };
-  function runVeripb(ptr, len) {
+  function runVeripb(ptr, len, watchPtr = 0, watchLen = 0, limit = 0n) {
     try {
       onRun?.();
       const bytes = new Uint8Array(memory().buffer, ptr >>> 0, len >>> 0);
       const args = decoder.decode(bytes).split("\0").slice(0, -1);
+      const watchPath = watchLen >>> 0 ? decoder.decode(new Uint8Array(memory().buffer, watchPtr >>> 0, watchLen >>> 0)) : null;
       // Regular files, not terminals: veripb then writes no colour codes,
       // as with the pipes a native subprocess gets.
       const stdout = new File([]);
@@ -150,8 +166,9 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
       const run = stats.veripbRuns + 1;
       let instance = null;
       let started = performance.now();
+      let stopped = false;
       const usage = (phase) => onUsage?.({
-        phase, run, runMs: performance.now() - started,
+        phase, run, runMs: performance.now() - started, stopped,
         veripbMemory: instance?.exports.memory.buffer.byteLength ?? 0,
         stdoutBytes: stdout.data.byteLength, replMemory: memory().buffer.byteLength,
       });
@@ -190,12 +207,21 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
       instance = new WebAssembly.Instance(veripbModule, {
         wasi_snapshot_preview1: wasi.wasiImport,
       });
+      const watched = watchPath === null ? null : fileAt(root, watchPath);
+      if (watchPath !== null && !watched) throw new Error(`no file ${watchPath} to watch`);
+      watching = watched && { file: watched, limit: Number(limit) };
       started = performance.now();
       const code = (() => {
         try {
           return wasi.start(instance);
+        } catch (e) {
+          if (e !== STOPPED) throw e;
+          stopped = true;
+          watched.data = new Uint8Array(0);
+          return -2;
         } finally {
           reading = null;
+          watching = null;
           const ms = performance.now() - started;
           const memoryBytes = instance.exports.memory.buffer.byteLength;
           stats.veripbMs += ms;

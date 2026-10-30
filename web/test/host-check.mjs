@@ -1,7 +1,9 @@
 // Checks host.js's fixes to the WASI shim's in-memory files: many small
 // writes take linear time (the shim alone copies the whole file on every
 // write), and readFile returns just a file's bytes; and startRepl's
-// onProgress, which reports the proof line a veripb run has read up to.
+// onProgress, which reports the proof line a veripb run has read up to; and
+// the veripb runner's watch, which stops a run whose watched file grows past
+// its limit.
 //
 // Usage: node web/test/host-check.mjs
 // Exit status 1 on any failure.
@@ -10,7 +12,7 @@ import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { File, OpenFile } from "../vendor/browser_wasi_shim/index.js";
-import { createRoot, writeFile, readFile, startRepl } from "../host.js";
+import { createRoot, writeFile, readFile, startRepl, createVeripbRunner } from "../host.js";
 
 const web = join(dirname(fileURLToPath(import.meta.url)), "..");
 
@@ -64,6 +66,32 @@ const runs = new Set(progress.map((p) => p.run));
 const lines = progress.filter((p) => p.line).map((p) => p.line);
 check("progress during :verify", runs.size >= 1 && progress[0].line === null && lines.length >= 1 && lines.every((n) => n >= 1 && n <= 12),
   JSON.stringify(progress));
+
+// The watch: veripb is stopped (-2) once the watched file passes the limit,
+// and the file is emptied; under the limit, the run ends as usual.
+const instances = join(web, "..", "upstream/veripb/tests/instances/correct/version3");
+const veripbModule = await WebAssembly.compile(readFileSync(join(web, "pkg/veripb.wasm")));
+function elaborate(limit) {
+  const fs = createRoot();
+  for (const ext of ["opb", "pbp"]) writeFile(fs, `f.${ext}`, readFileSync(join(instances, `set_level_withdraw.${ext}`)));
+  writeFile(fs, ".tmp/elaborated", new Uint8Array());
+  const memory = new WebAssembly.Memory({ initial: 1 });
+  const put = (text, at) => {
+    const bytes = new TextEncoder().encode(text);
+    new Uint8Array(memory.buffer).set(bytes, at);
+    return bytes.length;
+  };
+  const argsLen = put("f.opb\0f.pbp\0--elaborate\0/.tmp/elaborated\0", 0);
+  const watchLen = put("/.tmp/elaborated", 1024);
+  const usage = [];
+  const { runVeripb } = createVeripbRunner({ veripbModule, root: fs, memory: () => memory, onUsage: (u) => usage.push(u) });
+  const code = runVeripb(0, argsLen, 1024, watchLen, BigInt(limit));
+  return { code, bytes: fs.get(".tmp").contents.get("elaborated").data.byteLength, stopped: usage.at(-1)?.stopped };
+}
+const stopped = elaborate(10);
+check("watch: stopped past the limit", stopped.code === -2 && stopped.bytes === 0 && stopped.stopped === true, JSON.stringify(stopped));
+const finished = elaborate(1 << 20);
+check("watch: a run under the limit", finished.code === 0 && finished.bytes > 10 && finished.stopped === false, JSON.stringify(finished));
 
 console.log(failures ? `${failures} failures` : "all passed");
 process.exit(failures ? 1 : 0);

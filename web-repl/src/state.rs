@@ -154,7 +154,8 @@ fn database_json(session: &Session) -> Value {
 /// Tab-completion candidates for the input line `text` (UTF-8, `len` bytes
 /// at `ptr`), from the TUI's completer (`tui::complete`), with the command
 /// vocabulary of the current prompt mode as the TUI uses it:
-/// `{candidates: [{line, left, right}], selected: index | null, common}`.
+/// `{candidates: [{line, left, right}], selected: index | null, common,
+/// omitted}`, `omitted` counting the candidates left out past the limit.
 ///
 /// # Safety
 /// `ptr` must point to `len` readable bytes.
@@ -178,14 +179,16 @@ pub unsafe extern "C" fn vr_complete(ptr: *const u8, len: usize) -> i32 {
         } else {
             None
         };
-        let candidates = complete::suggestions(&text, state.session.as_ref(), vocabulary.as_deref());
+        let suggestions = complete::suggestions(&text, state.session.as_ref(), vocabulary.as_deref());
+        let candidates = &suggestions.candidates;
         set_result(json!({
             "candidates": candidates
                 .iter()
                 .map(|c| json!({ "line": c.line, "left": c.left, "right": c.right }))
                 .collect::<Vec<_>>(),
-            "selected": complete::default_selection(&candidates),
-            "common": complete::common_line_prefix(&candidates),
+            "selected": complete::default_selection(candidates),
+            "common": suggestions.common_line_prefix(),
+            "omitted": suggestions.omitted,
         }))
     })
 }
@@ -261,7 +264,7 @@ pub(crate) fn new_session() {
 /// its generation in the low 32. Every cache here is keyed by it, and the
 /// page sees it as `generation`; it fits a JavaScript number.
 pub(crate) fn stamp(session: &Session) -> u64 {
-    (SESSIONS.with(std::cell::Cell::get) << 32) | (session.generation & 0xffff_ffff)
+    (SESSIONS.with(std::cell::Cell::get) << 32) | (session.state_key().1 & 0xffff_ffff)
 }
 
 /// The count of buffer edits applied so far (see `EDITS`).
@@ -269,16 +272,10 @@ pub(crate) fn edits() -> u64 {
     EDITS.with(std::cell::Cell::get)
 }
 
-/// A whole-line comment: `%` first, after any spaces.
-fn is_comment(text: &str) -> bool {
-    text.trim_start().starts_with('%')
-}
-
 /// One edit to the proof buffer, recorded as one undoable action, as the
-/// TUI's Vim mode records each commit. Retyping a comment as a comment keeps
-/// the checked prefix, the rejection and the database (a comment changes
-/// nothing veripb checks); `Session::set_line` would retract the prefix to
-/// that line, as every other edit does. `json` is `{op, index, text?,
+/// TUI's Vim mode records each commit. Edits retract the checked prefix to
+/// the line, except that retyping a comment or blank line as one keeps it
+/// (`Session::set_line`). `json` is `{op, index, text?,
 /// after?}`, with `index` a buffer index:
 ///   set: line `index` becomes `text` (no-op, and no undo entry, if equal)
 ///   insert: `text` becomes a new line before `index` (`index` = buffer
@@ -308,20 +305,14 @@ pub unsafe extern "C" fn vr_buffer_edit(ptr: *const u8, len: usize) -> i32 {
             return set_result(Value::Null);
         };
         let in_buffer = index < session.buffer.len();
-        let before = (session.generation, session.buffer.len(), in_buffer.then(|| session.buffer[index].clone()));
+        let before = (session.state_key(), session.buffer.len(), in_buffer.then(|| session.buffer[index].clone()));
         let result = match edit["op"].as_str() {
             Some("set") if in_buffer && session.buffer[index] == text => Ok(()),
-            Some("set") if in_buffer && is_comment(&session.buffer[index]) && is_comment(text) => {
-                let snapshot = session.snapshot();
-                session.buffer[index] = text.to_string();
-                session.push_undo(snapshot);
-                Ok(())
-            }
             Some("set" | "delete" | "split") if !in_buffer => Err(anyhow::anyhow!("no proof line at buffer index {index}")),
             Some("join") if index + 1 >= session.buffer.len() => Err(anyhow::anyhow!("no proof line after buffer index {index}")),
             Some("insert") if index > session.buffer.len() => Err(anyhow::anyhow!("no proof line at buffer index {index}")),
             Some(op @ ("set" | "insert" | "delete" | "split" | "join")) => {
-                let (generation, snapshot) = (session.generation, session.snapshot());
+                session.begin_undo_point();
                 let result = match op {
                     "set" => session.set_line(index, text),
                     "insert" => session.insert_line(index, text),
@@ -329,14 +320,12 @@ pub unsafe extern "C" fn vr_buffer_edit(ptr: *const u8, len: usize) -> i32 {
                     "join" => session.set_line(index, text).and_then(|()| session.delete_line(index + 1)),
                     _ => session.set_line(index, text).and_then(|()| session.insert_line(index + 1, after)),
                 };
-                if session.generation != generation {
-                    session.push_undo(snapshot);
-                }
+                session.end_undo_point();
                 result
             }
             _ => Err(anyhow::anyhow!("unknown edit")),
         };
-        let after = (session.generation, session.buffer.len(), in_buffer.then(|| session.buffer.get(index).cloned()).flatten());
+        let after = (session.state_key(), session.buffer.len(), in_buffer.then(|| session.buffer.get(index).cloned()).flatten());
         if before != after {
             EDITS.with(|n| n.set(n.get() + 1));
         }
@@ -400,7 +389,7 @@ pub extern "C" fn vr_source(id: usize) -> i32 {
         if (1..=session.formula_constraint_count()).contains(&id) {
             let meta = usize::from(session.objective.is_some()) + usize::from(session.preserved.is_some());
             let found = session.formula.iter().zip(session.formula_first_ids()).position(|(text, first)| {
-                (first..first + veripb_repl::checker::parse::formula_line_constraints(text).max(1)).contains(&id)
+                (*first..*first + veripb_repl::checker::parse::formula_line_constraints(text).max(1)).contains(&id)
             });
             return set_result(match found {
                 Some(i) => json!({ "pane": "formula", "position": meta + i, "line": i + 1 }),
@@ -417,11 +406,11 @@ pub extern "C" fn vr_source(id: usize) -> i32 {
     })
 }
 
-/// The glossary (`glossary::glossary`): concepts, and the proof rules from
+/// The glossary (`teach::glossary`): concepts, and the proof rules from
 /// `help::RULES`.
 #[unsafe(no_mangle)]
 pub extern "C" fn vr_glossary() -> i32 {
-    set_result(crate::glossary::glossary())
+    set_result(crate::teach::glossary())
 }
 
 /// Collects output lines, for running a command's own reporting.
@@ -465,36 +454,38 @@ pub(crate) fn recall(key: &str, generation: u64) -> Option<Vec<String>> {
     OUTPUTS.with_borrow(|cache| cache.as_ref().filter(|(g, _)| *g == generation).and_then(|(_, m)| m.get(key).cloned()))
 }
 
-/// The Extras tab's Status: bare `:check`'s output (`check::bare`)
-/// as `{status, lines, version, conclusion, fileConclusion}` or `{error}`;
-/// `null` without a session. `conclusion` is the one veripb accepted, when
-/// known; `fileConclusion` the one the sourced proof file closes with.
-/// Runs veripb (`:check`'s probes) unless this session generation's result
-/// is known, from here or from `:check` at the prompt.
+/// The Extras tab's Status: bare `:check`'s output (`commands::check::run`)
+/// as `{status, lines, version, intended, intendedVerified}` or `{error}`;
+/// `null` without a session. `intended` is the session's intended
+/// conclusion (from the sourced proof file, or `:conclusion`), and
+/// `intendedVerified` whether veripb accepted it. Runs veripb (`:check`'s
+/// probes) unless this session generation's result is known, from here or
+/// from `:check` at the prompt.
 #[unsafe(no_mangle)]
 pub extern "C" fn vr_extras_status() -> i32 {
     STATE.with_borrow(|state| {
         let Some(session) = &state.session else {
             return set_result(Value::Null);
         };
-        let with_conclusions = |mut status: Value| {
-            status["conclusion"] = json!(recall("check-conclusion", stamp(session)).and_then(|c| c.first().cloned()));
-            status["fileConclusion"] = json!(state.conclusion);
-            status
-        };
-        if let Some(lines) = recall("check ", stamp(session)) {
-            return set_result(with_conclusions(status_json(&lines)));
-        }
-        let mut lines = Lines(Vec::new());
-        let guesses = crate::check::guesses(session, state.conclusion.as_deref());
-        set_result(match crate::check::bare(session, &guesses, &mut lines) {
-            Ok(found) => {
-                remember("check ", stamp(session), &lines.0);
-                remember("check-conclusion", stamp(session), &found.into_iter().collect::<Vec<_>>());
-                with_conclusions(status_json(&lines.0))
+        let key = crate::bare_check_key(session);
+        let lines = match recall(&key, stamp(session)) {
+            Some(lines) => lines,
+            None => {
+                let mut lines = Lines(Vec::new());
+                if let Err(e) = veripb_repl::commands::check::run(session, "", &mut lines) {
+                    return set_result(json!({ "error": format!("{e:#}") }));
+                }
+                remember(&key, stamp(session), &lines.0);
+                lines.0
             }
-            Err(e) => json!({ "error": format!("{e:#}") }),
-        })
+        };
+        let mut status = status_json(&lines);
+        // A failed intended conclusion is reported before any other is tried.
+        let intended_failed = lines.iter().any(|l| l.starts_with("(the intended conclusion "));
+        let verified = status["status"].as_str().is_some_and(|s| s.starts_with("s VERIFIED"));
+        status["intended"] = json!(session.intended_conclusion);
+        status["intendedVerified"] = json!(session.intended_conclusion.is_some() && verified && !intended_failed);
+        set_result(status)
     })
 }
 
@@ -518,17 +509,31 @@ pub extern "C" fn vr_extras_objective() -> i32 {
     })
 }
 
-/// `:explain <line>`'s output (`commands::explain::run`) as `{lines, plain}`,
-/// with `plain` the plain-English explanation (`teach::explain`) or `null`; or
-/// `null` without a session. Read-only; runs veripb.
+/// `:explain <line>` as `{lines, plain}`: `lines` the checker's account
+/// (`commands::explain`'s, without the plain-English part), `plain` the
+/// plain-English explanation (`teach::explain`) or `null`; or `null` without
+/// a session. Read-only; runs veripb.
 #[unsafe(no_mangle)]
 pub extern "C" fn vr_explain(line: usize) -> i32 {
     STATE.with_borrow(|state| {
         let Some(session) = &state.session else {
             return set_result(Value::Null);
         };
+        use veripb_repl::commands::explain;
         let mut lines = Lines(Vec::new());
-        veripb_repl::commands::explain::run(session, &line.to_string(), &mut lines);
-        set_result(json!({ "lines": lines.0, "plain": crate::teach::explain(session, line) }))
+        let plain = match explain::target(session, &line.to_string(), &mut lines) {
+            Some((n, true)) => {
+                explain::print_rejection(session, n, &mut lines);
+                None
+            }
+            Some((n, false)) => {
+                let plain = crate::teach::explain(session, n);
+                let replay_hints = plain.as_ref().and_then(|(e, _)| e.replay_hints.as_deref());
+                explain::print_checker(session, n, replay_hints, &mut lines);
+                plain.map(|(_, json)| json)
+            }
+            None => None,
+        };
+        set_result(json!({ "lines": lines.0, "plain": plain }))
     })
 }

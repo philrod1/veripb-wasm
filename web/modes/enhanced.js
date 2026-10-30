@@ -18,6 +18,7 @@ import { createLinks } from "./links.js";
 import { createVim } from "./vim.js";
 import { createVirtualList } from "./vlist.js";
 import { createLineList } from "./linelist.js";
+import { bytes } from "../resources.js";
 
 const LAYOUT_KEY = "veripb-repl-enhanced-layout";
 const EXPLAIN_VIEW_KEY = "veripb-repl-enhanced-explain-view";
@@ -644,9 +645,9 @@ export function mount(root, host) {
       facts(
         ["Proof", progress],
         ...(p.rejected ? [["Rejected", `line ${p.rejected.n}: ${p.rejected.message}`]] : []),
-        // What the sourced file claims, beside what veripb accepted.
-        ...(conclusion.fileConclusion
-          ? [["Proof file", `concludes ${conclusion.fileConclusion}${conclusion.conclusion === conclusion.fileConclusion ? " (verified)" : " (not verified yet)"}`]]
+        // The conclusion the proof means to reach (its file's, or :conclusion's).
+        ...(conclusion.intended
+          ? [["Intended", `${conclusion.intended}${conclusion.intendedVerified ? " (verified)" : " (not verified yet)"}`]]
           : []),
         ...(conclusion.version ? [["veripb", conclusion.version]] : []),
       ));
@@ -732,6 +733,14 @@ export function mount(root, host) {
   explainDialog.addEventListener("close", () => view.focus());
   explainCopy.addEventListener("click", () =>
     navigator.clipboard?.writeText(plainBody.hidden ? explainBody.textContent : plainText(plainBody)));
+
+  /** Explains proof line `n` (a display line), showing it in the Proof pane. */
+  async function openLine(n) {
+    const row = (await client.view({ pane: "proof", start: n - 1, count: 1, query: "" }))?.rows?.[0];
+    if (!row || row.n !== n) return;
+    jumpToRow("proof", n - 1);
+    openExplain(row);
+  }
 
   async function openExplain(line) {
     const mine = ++explainSeq;
@@ -928,7 +937,8 @@ export function mount(root, host) {
     return [
       tiles(["Constraints", number(s.constraints)], ["Variables", number(s.variables)],
         ["Lines", number(s.lines), s.twoConstraintLines ? `${number(s.twoConstraintLines)} give two constraints` : null],
-        ["Labelled", number(s.labelled), percent(s.labelled, s.lines)]),
+        ["Labelled", number(s.labelled), percent(s.labelled, s.lines)],
+        ["Text", bytes(s.bytes), s.longest ? `longest: constraint ${s.longest.ids}, ${bytes(s.longest.bytes)}` : null]),
       ...shapeSections(s, "Lines"),
       statsSection("Also", facts(
         ["Objective", s.objectiveTerms == null ? "none" : `${number(s.objectiveTerms)} term${s.objectiveTerms === 1 ? "" : "s"}`],
@@ -943,7 +953,8 @@ export function mount(root, host) {
     return [
       tiles(["Constraints", number(s.count)], ["Core", number(s.core), percent(s.core, s.count)],
         ["Derived", number(s.count - s.core), percent(s.count - s.core, s.count)],
-        ["Labelled", number(s.labelled), percent(s.labelled, s.count)]),
+        ["Labelled", number(s.labelled), percent(s.labelled, s.count)],
+        ["Text", bytes(s.bytes), s.longest ? `longest: constraint ${s.longest.id}, ${bytes(s.longest.bytes)}` : null]),
       statsSection("Core and derived", partsBar([{ name: "core", count: s.core }, { name: "derived", count: s.count - s.core }])),
       statsSection("Where they came from", partsBar([{ name: "formula", count: s.fromFormula }, { name: "proof", count: fromProof }]),
         el("p", { className: "muted stats-note", textContent: `${number(s.fromFormula)} of the formula's ${number(s.formulaConstraints)} constraints are still in the database; the highest constraint ID is ${number(s.highestId)}.` })),
@@ -968,7 +979,8 @@ export function mount(root, host) {
     return [
       tiles(["Lines", number(s.lines), s.preamble ? `plus ${number(s.preamble)} preamble` : null],
         ["Checked", number(s.checked), s.rejected ? "then a rejected line" : percent(s.checked, s.lines)],
-        ["Rules used", number(used.length)], ["Labelled", number(s.labelled), percent(s.labelled, s.lines)]),
+        ["Rules used", number(used.length)], ["Labelled", number(s.labelled), percent(s.labelled, s.lines)],
+        ["Text", bytes(s.bytes), s.longest ? `longest: line ${s.longest.line}, ${bytes(s.longest.bytes)}` : null]),
       s.lines
         ? el("div", { className: "stats-pair" }, statsSection("Lines by rule", donut(s.rules, s.lines, "lines")), statsSection("Every rule", table))
         : el("p", { className: "muted", textContent: "The proof is empty." }),
@@ -1014,8 +1026,7 @@ export function mount(root, host) {
   });
   let glossaryCurrent = null;
   try { glossaryCurrent = localStorage.getItem(GLOSSARY_KEY); } catch {}
-  const flat = (entry) => [entry.term, entry.usage, ...(entry.body ?? []), entry.example, ...(entry.details ?? [])]
-    .filter(Boolean).join(" ").replace(/\]\(g:[\w-]+\)/g, "").toLowerCase();
+  const flat = (entry) => entry.search ?? "";
   function renderGlossaryList() {
     const query = glossarySearch.value.trim().toLowerCase();
     const groups = [["concept", "Concepts"], ["rule", "Proof rules"]];
@@ -1043,7 +1054,7 @@ export function mount(root, host) {
     if (entry.details?.length) parts.push(el("pre", { className: "glossary-details", textContent: entry.details.join("\n") }));
     const see = (entry.see ?? []).filter((id) => glossary.has(id));
     if (see.length) {
-      const links = see.flatMap((id, i) => [i ? ", " : "", ...inline(`[${glossary.get(id).term}](g:${id})`)]);
+      const links = see.flatMap((id, i) => [i ? ", " : "", ...inline([{ t: "term", text: glossary.get(id).term, id }])]);
       parts.push(el("p", { className: "glossary-see" }, el("strong", { textContent: "See also: " }), ...links));
     }
     glossaryEntry.replaceChildren(...parts);
@@ -1229,21 +1240,27 @@ export function mount(root, host) {
   };
 
   // ---- Rendering ----
-  // Text with `code` spans and [glossary links](g:<id>) (teach.rs and
-  // glossary.rs markup).
-  // [constraint 3](c:3) and `@label` spans are constraint refs.
-  const inline = (text) => text.split(/(`[^`]*`|\[[^\]]+\]\([gc]:[\w-]+\))/).filter(Boolean).map((part) => {
-    if (part.startsWith("`")) {
-      const code = part.slice(1, -1);
-      return /^@\S+$/.test(code) ? el("code", {}, refSpan(code, { kind: "label", value: code })) : el("code", { textContent: code });
-    }
-    const constraint = part.match(/^\[([^\]]+)\]\(c:(\d+)\)$/);
-    if (constraint) return refSpan(constraint[1], { kind: "id", value: Number(constraint[2]) });
-    const link = part.match(/^\[([^\]]+)\]\(g:([\w-]+)\)$/);
-    if (!link) return part;
-    const a = el("a", { href: "#", className: "g-link", textContent: link[1], title: "Look it up in the Glossary" });
-    a.addEventListener("click", (event) => { event.preventDefault(); openGlossary(link[2]); });
+  // Markup runs (web-repl/src/teach.rs): text, code, glossary terms, and
+  // links to a constraint or a proof line. Constraint links and `@label`
+  // code are constraint refs.
+  const link = (text, title, follow) => {
+    const a = el("a", { href: "#", className: "g-link", textContent: text, title });
+    a.addEventListener("click", (event) => { event.preventDefault(); follow(); });
     return a;
+  };
+  const inline = (runs) => runs.map((run) => {
+    switch (run.t) {
+      case "code":
+        return /^@\S+$/.test(run.text) ? el("code", {}, refSpan(run.text, { kind: "label", value: run.text })) : el("code", { textContent: run.text });
+      case "constraint":
+        return refSpan(run.text, { kind: "id", value: run.id });
+      case "term":
+        return link(run.text, "Look it up in the Glossary", () => openGlossary(run.id));
+      case "line":
+        return link(run.text, `Explain line ${run.line}`, () => openLine(run.line));
+      default:
+        return run.text;
+    }
   });
   const renderBlock = (block) =>
     block.kind === "steps" ? el("ol", {}, ...block.items.map((item) => el("li", {}, ...inline(item))))
