@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 # Builds web/pkg/: veripb.wasm (WASI command), repl.wasm (web-repl WASI
-# reactor, enhanced mode) and the veripb-repl demo files. Needs work/ from
-# scripts/prepare.sh; does not run it, since that resets work/.
+# reactor, the Verify tab), cps.wasm (cp-solver's CLI, a WASI command, the
+# Solver tab), the veripb-repl demo files and cp-solver's example models.
+# Needs work/ from scripts/prepare.sh; does not run it, since that resets
+# work/.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -27,15 +29,19 @@ fi
 
 (cd "$root/work/veripb" && cargo build --release --bin veripb --no-default-features --target wasm32-wasip1)
 (cd "$root/web-repl" && cargo build --release --target wasm32-wasip1)
+(cd "$root/upstream/cp-solver" && cargo build --release -p cli --bin cps --target wasm32-wasip1)
 
 rm -rf "$pkg"
 mkdir -p "$pkg/demos"
 cp "$out/veripb.wasm" "$pkg/veripb.wasm"
 cp "$out/web_repl.wasm" "$pkg/repl.wasm"
+cp "$out/cps.wasm" "$pkg/cps.wasm"
 cp "$root/work/veripb-repl/demos/files/"* "$pkg/demos/"
 mkdir -p "$pkg/examples"
 cp "$root/work/veripb-repl/examples/"* "$pkg/examples/"
-for set in demos examples; do
+mkdir -p "$pkg/models"
+cp "$root/upstream/cp-solver/examples/"*.scp "$pkg/models/"
+for set in demos examples models; do
     (cd "$pkg/$set" && ls | grep -v '^index.json$' | sed 's/.*/"&"/' | paste -sd, - | sed 's/.*/[&]/') > "$pkg/$set/index.json"
 done
 
