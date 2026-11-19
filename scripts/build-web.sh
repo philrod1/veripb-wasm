@@ -1,10 +1,9 @@
 #!/usr/bin/env bash
 # Builds web/pkg/: veripb.wasm (WASI command), repl.wasm (web-repl WASI
-# reactor, the Verify tab), cps.wasm (cp-solver's CLI, a WASI command, the
-# Solver tab), scp-check.wasm (cp-solver's model checker, the Solver tab's
-# diagnostics), the veripb-repl demo files and cp-solver's example models.
-# Needs work/ from scripts/prepare.sh; does not run it, since that resets
-# work/.
+# reactor, the Verify tab), cps.wasm (cp-solver's CLI, a WASI command: the
+# Solver tab's solving and checking), the veripb-repl demo files and
+# cp-solver's example models. Needs work/ from scripts/prepare.sh; does not
+# run it, since that resets work/.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,14 +30,12 @@ fi
 (cd "$root/work/veripb" && cargo build --release --bin veripb --no-default-features --target wasm32-wasip1)
 (cd "$root/web-repl" && cargo build --release --target wasm32-wasip1)
 (cd "$root/upstream/cp-solver" && cargo build --release -p cli --bin cps --target wasm32-wasip1)
-(cd "$root/scp-check" && cargo build --release --target wasm32-wasip1)
 
 rm -rf "$pkg"
 mkdir -p "$pkg/demos"
 cp "$out/veripb.wasm" "$pkg/veripb.wasm"
 cp "$out/web_repl.wasm" "$pkg/repl.wasm"
 cp "$out/cps.wasm" "$pkg/cps.wasm"
-cp "$out/scp-check.wasm" "$pkg/scp-check.wasm"
 cp "$root/work/veripb-repl/demos/files/"* "$pkg/demos/"
 mkdir -p "$pkg/examples"
 cp "$root/work/veripb-repl/examples/"* "$pkg/examples/"

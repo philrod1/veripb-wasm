@@ -665,7 +665,7 @@ check("editor: a good model has no problems", await until(async () => (await pro
 
 await page.fill(".solver-editor", "( (version 1) (variables (x 0 1))");
 await page.keyboard.press("Control+Enter");
-check("solver: a broken model shows cps's error", await until(async () => (await page.textContent(".solver-errors")).includes("cps: /nqueens_8.scp: ")),
+check("solver: a broken model shows cps's problems", await until(async () => (await page.textContent(".solver-errors")).includes("/nqueens_8.scp:1:1: error: ")),
   await page.textContent(".solver-errors"));
 check("solver: and its result is an error", (await resultTitle()).startsWith("Result: error"), await resultTitle());
 

@@ -8,7 +8,7 @@ modified. Local changes are kept as patch series and applied into `work/`.
 | Target | What |
 |---|---|
 | `wasm32-unknown-unknown` | veripb library (browser), veripb-repl core without the TUI |
-| `wasm32-wasip1` | veripb command-line binary, run under a WASI runtime; veripb-repl's line interface as a WASI reactor (`web-repl`, the page's Verify tab); cp-solver's `cps` command-line binary and `scp-check` (the Solver tab) |
+| `wasm32-wasip1` | veripb command-line binary, run under a WASI runtime; veripb-repl's line interface as a WASI reactor (`web-repl`, the page's Verify tab); cp-solver's `cps` command-line binary (the Solver tab: solving, and `--check` for its diagnostics) |
 
 ## Layout
 
@@ -26,7 +26,6 @@ modified. Local changes are kept as patch series and applied into `work/`.
 | `repl-core/` | wrapper crate for the veripb-repl core; enables `getrandom`'s `wasm_js` backend |
 | `wasi-run/` | Node.js `node:wasi` runners for the WASI binary and WASI test binaries |
 | `bigint-probe/` | prints `malachite-bigint` and `i128` results, for diffing native against wasm |
-| `scp-check/` | cp-solver's `lang::check_scp` as a `wasm32-wasip1` command, built against `upstream/cp-solver`: `scp-check <model.scp>` prints every problem in the model as JSON (`[{kind, message, start, end}]`, positions as `{line, column}`), for the Solver tab's diagnostics |
 | `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state` (a session summary; `vr_state_quick` without the database), `vr_view` (a window of a pane's rows, filtered; `src/views.rs`), `vr_find` (one constraint by label or ID), `vr_preserved`, `vr_explain` (`:explain <n>`'s checker output, and the plain-English explanation from veripb-repl's `teach`, as JSON by `src/teach.rs`), `vr_extras` (`:check` and `:objective` output, bounds), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, `vr_glossary` (veripb-repl's `teach::glossary`), `vr_line_ids` (the constraint IDs checked proof lines in a range derived, from one streamed trace; `src/trace.rs`), `vr_buffer_edit` (one undoable proof-line edit), plus `vr_toggle_breakpoint` and `vr_result_ptr` |
 | `web/` | browser page: Solver and Verify tabs, cps and veripb in Web Workers |
 | `scripts/build-web.sh` | builds `web/pkg/` (generated, not tracked) |
@@ -94,12 +93,11 @@ export CARGO_TARGET_DIR=~/.cache/veripb-wasm-target
 (cd veripb-wasm && cargo build --release --target wasm32-unknown-unknown)
 (cd work/veripb && cargo build --release --bin veripb --no-default-features --target wasm32-wasip1)
 (cd upstream/cp-solver && cargo build --release -p cli --bin cps --target wasm32-wasip1)
-(cd scp-check && cargo build --release --target wasm32-wasip1)
 (cd repl-core && cargo check --target wasm32-unknown-unknown)
 ```
 
 The WASI binaries are `$CARGO_TARGET_DIR/wasm32-wasip1/release/veripb.wasm`
-and `cps.wasm` and `scp-check.wasm` beside it.
+and `cps.wasm` beside it.
 
 ## Update an upstream
 
@@ -247,7 +245,7 @@ Solver tab:
     after), constraint names and kinds, integers, and parentheses, with a
     `)` that closes nothing marked. Models over 256 KiB are shown plain.
   - **Problems:** once typing pauses (0.3 s), cp-solver's own checker
-    (`lang::check_scp`, as `pkg/scp-check.wasm`) reads the model and lists
+    (`cps --check --json`) reads the model and lists
     every problem below the editor: its line and column, what kind
     (`syntax`, `error`, or `not supported yet`) and cp-solver's message. Each
     is underlined on its first line and its line number is marked; click
@@ -275,8 +273,9 @@ Solver tab:
     on screen; the filter box shows only the lines containing its text.
     Past 200,000 lines the rest are counted, not kept, and the last is
     shown.
-  - **Errors:** cps's error messages (a syntax error, an unsupported
-    constraint, an optimisation problem) above the list, in red.
+  - **Errors:** what cps reports when it cannot solve the model (each
+    problem as `path:line:column: kind: message`, or an optimisation
+    problem) above the list, in red.
   - **Files:** on success, `<stem>.opb` and `<stem>.pbp` are added to the
     files panel, replacing any of the same name.
 - **Stop:** ends a solve that is still running. The lines printed so far
@@ -521,9 +520,9 @@ How it works:
   model, posts cps's stdout and stderr lines in batches as they come, then
   posts the `.opb` and `.pbp` it wrote. Stop terminates the worker; the next
   solve starts another. The editor's checks run in `check-worker.js`, a
-  worker of their own so a solve does not hold them up: `pkg/scp-check.wasm`
-  on the model, its JSON posted back; an answer for text since changed is
-  dropped.
+  worker of their own so a solve does not hold them up: `cps --check
+  --json` (`pkg/cps.wasm`) on the model, its JSON posted back; an answer for
+  text since changed is dropped.
 - **Running veripb:** for each veripb invocation, `host.js` creates a fresh
   veripb instance on the same filesystem, with regular files as
   stdout/stderr. It copies those to `/.tmp/.veripb-stdout` and
@@ -542,7 +541,7 @@ node web/test/transcript.mjs <files-dir> [<dump-dir>] < script.txt
 node web/test/state-check.mjs    # web-repl's JSON views vs the REPL's own :list, :show and :preserved output
 node --max-old-space-size=6000 web/test/large-check.mjs   # opt-in, ~7 GB RAM: a 1.1M-line proof through the views
 node web/test/host-check.mjs     # host.js's fixes to the WASI shim's in-memory files (linear-time writes)
-node web/test/solver-check.mjs   # pkg/cps.wasm on pkg/models: its proofs verify with pkg/veripb.wasm; output as native cps with CPS=<cps>; pkg/scp-check.wasm's problems
+node web/test/solver-check.mjs   # pkg/cps.wasm on pkg/models: its proofs verify with pkg/veripb.wasm; output as native cps with CPS=<cps>; cps --check's problems
 node web/test/refs-check.mjs     # which words of a proof line are constraint refs (modes/refs.js)
 node web/test/teach-check.mjs    # plain-English explanations: sample lines, and a sweep of veripb's correct instances
 CHROME=<chrome> [PLAYWRIGHT_CORE=<dir>] node web/test/browser-smoke.mjs [url]   # the page in a browser
