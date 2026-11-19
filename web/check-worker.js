@@ -6,7 +6,9 @@
 // Page -> worker: {type: "check", id, text} | {type: "constraints"}
 // Worker -> page: {type: "check", id, errors: [{kind, message, start: {line, column}, end}]}
 //                 | {type: "constraints", kinds: [{keyword, arguments, summary, example}]}
-//                 | {type, id?, fatal}  cps.wasm could not be loaded or run
+//                 | {type, id?, fatal, unsupported}  cps.wasm could not be loaded or
+//                   run; `unsupported` if this cps has no such option (an older
+//                   cp-solver)
 
 import { createRoot, runCommand, writeFile } from "./host.js";
 
@@ -27,7 +29,13 @@ async function cps(args, root) {
     onStdout: (line) => out.push(line),
     onStderr: (line) => err.push(line),
   });
-  if (exit !== 0 && exit !== 1) throw new Error(err.join("\n") || `exit ${exit}`);
+  // An older cps rejects the option (with exit status 1 or 2).
+  const unsupported = err.some((line) => line.includes("unknown option"));
+  if (unsupported || (exit !== 0 && exit !== 1)) {
+    const error = new Error(err.join("\n") || `exit ${exit}`);
+    error.unsupported = unsupported;
+    throw error;
+  }
   return JSON.parse(out.join("\n"));
 }
 
@@ -41,6 +49,6 @@ onmessage = async ({ data: { type, id, text } }) => {
       postMessage({ type, id, errors: await cps(["--check", "--json", "/model.scp"], root) });
     }
   } catch (e) {
-    postMessage({ type, id, fatal: String(e) });
+    postMessage({ type, id, fatal: String(e), unsupported: !!e.unsupported });
   }
 };

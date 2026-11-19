@@ -13,4 +13,4 @@
 [submodule "upstream/cp-solver"]
 	path = upstream/cp-solver
 	url = https://github.com/philrod1/cp-solver.git
-	branch = dev
+	branch = main

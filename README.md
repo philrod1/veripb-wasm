@@ -17,7 +17,7 @@ modified. Local changes are kept as patch series and applied into `work/`.
 | `upstream/veripb` | submodule: `https://gitlab.com/MIAOresearch/software/VeriPB.git`, branch `main` |
 | `upstream/veripb-repl` | submodule: `https://github.com/philrod1/veripb-repl.git`, branch `dev` |
 | `upstream/crossterm` | submodule: `https://github.com/crossterm-rs/crossterm.git`, tag `0.29` (the crates.io 0.29.0 release) |
-| `upstream/cp-solver` | submodule: `https://github.com/philrod1/cp-solver.git`, branch `dev`; built as it is, with no patches and no `work/` tree |
+| `upstream/cp-solver` | submodule: `https://github.com/philrod1/cp-solver.git`, branch `main`: the cp-solver of release builds, built as it is, with no patches and no `work/` tree (test builds use `dev`: `work/cp-solver-dev`) |
 | `patches/<name>/` | local changes, one `git format-patch` file per change, applied in name order |
 | `scripts/prepare.sh` | creates the trees in `work/` (table below) |
 | `scripts/refresh-patches.sh` | regenerates a patch series from the commits in a `work/` tree |
@@ -39,6 +39,7 @@ Trees in `work/`:
 | `veripb-repl` | `upstream/veripb-repl` | `patches/veripb-repl/`, then TUI stripped | `repl-core` |
 | `veripb-repl-tui` | `upstream/veripb-repl` | `patches/veripb-repl/`, TUI kept | `web-repl` |
 | `crossterm` | `upstream/crossterm` | `patches/crossterm/` | `web-repl` (`[patch.crates-io]`; veripb-repl-tui depends on it) |
+| `cp-solver-dev` | cp-solver's `dev` branch, its newest commit (fetched by `build-web.sh`, not `prepare.sh`) | none | test builds of `pkg/cps.wasm` |
 
 ## Local changes
 
@@ -92,7 +93,7 @@ scripts/prepare.sh
 export CARGO_TARGET_DIR=~/.cache/veripb-wasm-target
 (cd veripb-wasm && cargo build --release --target wasm32-unknown-unknown)
 (cd work/veripb && cargo build --release --bin veripb --no-default-features --target wasm32-wasip1)
-(cd upstream/cp-solver && cargo build --release -p cli --bin cps --target wasm32-wasip1)
+(cd upstream/cp-solver && cargo build --release -p cli --bin cps --target wasm32-wasip1)   # main; build-web.sh uses dev
 (cd repl-core && cargo check --target wasm32-unknown-unknown)
 ```
 
@@ -220,11 +221,27 @@ Files panel (left; "Files" in the header hides and shows it, remembered):
 
 ```
 scripts/prepare.sh
-scripts/build-web.sh
+scripts/build-web.sh [--release]       # cp-solver: dev's newest commit; with --release, upstream/cp-solver (main)
 scripts/serve.py [port] [address]      # default 8000 127.0.0.1; then open http://localhost:8000
-scripts/deploy.sh [dir]                # on a web server: submodules, prepare, build, copy web/ to dir (default /var/www/html)
-scripts/update-upstream.sh <veripb|veripb-repl|crossterm|cp-solver> [ref]   # move a submodule to its branch head (or ref), re-apply patches, build, test; stops before committing
+scripts/deploy.sh [dir]                # on a web server: submodules, prepare, build --release, copy web/ to dir (default /var/www/html)
+scripts/update-upstream.sh <veripb|veripb-repl|crossterm|cp-solver> [ref]   # move a submodule to its branch head (or ref), re-apply patches, build --release, test; stops before committing
 ```
+
+cp-solver differs between test and release builds:
+- **Release** (`build-web.sh --release`, as `deploy.sh` and
+  `update-upstream.sh` run it): the `upstream/cp-solver` submodule's
+  commit, which follows cp-solver's `main` branch. Move it with
+  `scripts/update-upstream.sh cp-solver`.
+- **Test** (`build-web.sh`): the newest commit of cp-solver's `dev` branch,
+  fetched on each build into `work/cp-solver-dev`. If the fetch fails
+  (offline), the commit already there is built, with a warning.
+
+`web/pkg/build.json` records which (`{"cpSolver": {"branch", "commit",
+"url"}}`), and the Solver tab shows it at the right of its model bar
+(`cp-solver main · a0b9a6f`, a link to the commit; a dev build in amber).
+Should the release's cps lack an option the page uses, that feature is left
+out: without `--check` there is no Problems list, without `--constraints`
+no kind completion or signatures.
 
 `serve.py` sends `Cross-Origin-Opener-Policy: same-origin`,
 `Cross-Origin-Embedder-Policy: require-corp` and `Cache-Control: no-cache`.

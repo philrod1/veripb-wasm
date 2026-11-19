@@ -108,7 +108,9 @@ export function createScpEditor({ onInput, onSolve }) {
   let checkTimer = null;
   // The text the latest check was asked about.
   let pendingText = null;
+  let checksUnsupported = false;
   function scheduleCheck() {
+    if (checksUnsupported) return;
     clearTimeout(checkTimer);
     problems.classList.add("stale");
     checkTimer = setTimeout(check, CHECK_DELAY);
@@ -125,6 +127,13 @@ export function createScpEditor({ onInput, onSolve }) {
         return;
       }
       if (data.id !== checkId) return;
+      // A cps without --check: no Problems list, and no more checks.
+      if (data.unsupported) {
+        checksUnsupported = true;
+        clearTimeout(checkTimer);
+        problems.hidden = true;
+        return;
+      }
       checkFailed = data.fatal ?? null;
       setDiagnostics(data.errors ?? []);
     };

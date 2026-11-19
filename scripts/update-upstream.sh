@@ -67,7 +67,7 @@ if [ -n "$trees" ] && ! "$root/scripts/prepare.sh" $trees; then
 fi
 
 echo "== Building web/pkg"
-"$root/scripts/build-web.sh" > /dev/null
+"$root/scripts/build-web.sh" --release > /dev/null
 
 failed=""
 run() {

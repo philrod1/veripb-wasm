@@ -59,9 +59,20 @@ export function mount(root, host) {
   const saveButton = button("Save", "Save the model to the files panel (Ctrl+S)");
   const saveAsButton = button("Save as…", "Save the model to the files panel under a new name");
   const downloadButton = button("Download", "Download the model");
+  // Which cp-solver this page was built from (pkg/build.json, by build-web.sh).
+  const buildInfo = el("a", { className: "solver-build", target: "_blank", rel: "noopener", hidden: true });
   const bar = el("div", { className: "solver-bar" },
     el("span", { className: "solver-bar-label", textContent: "Model" }), nameText, picker, examples,
-    newButton, openButton, upload, saveButton, saveAsButton, downloadButton);
+    newButton, openButton, upload, saveButton, saveAsButton, downloadButton, buildInfo);
+  fetch("pkg/build.json").then((r) => (r.ok ? r.json() : null)).then((build) => {
+    const cp = build?.cpSolver;
+    if (!cp) return;
+    buildInfo.textContent = `cp-solver ${cp.branch} · ${cp.commit}`;
+    buildInfo.title = `Built from cp-solver's ${cp.branch} branch, commit ${cp.commit}`;
+    buildInfo.href = `${cp.url}/commit/${cp.commit}`;
+    buildInfo.classList.toggle("dev", cp.branch !== "main");
+    buildInfo.hidden = false;
+  }).catch(() => {});
 
   // ---- Editor (modes/scp-editor.js) ----
   const scp = createScpEditor({ onInput: () => renderState(), onSolve: () => solve() });

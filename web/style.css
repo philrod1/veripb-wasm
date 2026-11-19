@@ -511,3 +511,7 @@ aside input[type=file] { display: none; }
 .solver-signature .arguments { color: var(--fg); }
 .solver-signature .summary { color: var(--muted); }
 .scp-complete .detail { margin-left: auto; color: var(--muted); }
+.solver-build { margin-left: auto; color: var(--muted); text-decoration: none; font-size: 0.9em; }
+.solver-build:hover { text-decoration: underline; }
+.solver-build.dev { color: var(--label); }
+.solver-build[hidden] { display: none; }
