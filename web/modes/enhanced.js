@@ -7,7 +7,7 @@
 // (modes/vlist.js) that fetches only the rows on screen, filtered in the REPL
 // (src/views.rs), so a proof of any size costs the page only what it shows.
 //
-// Implements the mode interface described in modes/plain.js.
+// Implements the mode interface described in shell.js.
 
 import { OutputView, PROMPTS, resolveCommand, setCommands } from "./output-view.js";
 import { applyStoredOrSystem, resetTheme, setPalettes, storedTheme, themeCommand, themeNames } from "./themes.js";

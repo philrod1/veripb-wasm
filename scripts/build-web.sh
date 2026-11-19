@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 # Builds web/pkg/: veripb.wasm (WASI command), repl.wasm (web-repl WASI
-# reactor, plain and enhanced modes), tui.wasm (web-tui WASI command, classic mode) and
-# the veripb-repl demo files. Needs work/ from scripts/prepare.sh; does not
-# run it, since that resets work/.
+# reactor, enhanced mode) and the veripb-repl demo files. Needs work/ from
+# scripts/prepare.sh; does not run it, since that resets work/.
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
@@ -28,13 +27,11 @@ fi
 
 (cd "$root/work/veripb" && cargo build --release --bin veripb --no-default-features --target wasm32-wasip1)
 (cd "$root/web-repl" && cargo build --release --target wasm32-wasip1)
-(cd "$root/web-tui" && cargo build --release --target wasm32-wasip1)
 
 rm -rf "$pkg"
 mkdir -p "$pkg/demos"
 cp "$out/veripb.wasm" "$pkg/veripb.wasm"
 cp "$out/web_repl.wasm" "$pkg/repl.wasm"
-cp "$out/web-tui.wasm" "$pkg/tui.wasm"
 cp "$root/work/veripb-repl/demos/files/"* "$pkg/demos/"
 mkdir -p "$pkg/examples"
 cp "$root/work/veripb-repl/examples/"* "$pkg/examples/"

@@ -1,4 +1,4 @@
-// Browser smoke test for all three modes, against a running scripts/serve.py.
+// Browser smoke test of the page, against a running scripts/serve.py.
 //
 // Usage: CHROME=<chrome or chrome-headless-shell> [PLAYWRIGHT_CORE=<path to playwright-core>] \
 //          node web/test/browser-smoke.mjs [base-url]   (default http://127.0.0.1:8000/)
@@ -56,38 +56,20 @@ async function dropFiles(files) {
 }
 const demo = (name) => [name, readFileSync(join(web, "pkg/demos", name), "utf8")];
 
-// ---- Plain ----
-await page.goto(`${base}?mode=plain`);
-check("plain: REPL starts", await ready());
+// ---- Enhanced ----
+await page.goto(`${base}?mode=enhanced`);
+check("enhanced: REPL starts", await ready());
 await dropFiles([demo("two-of-three.opb"), demo("two-of-three.pbp")]);
-check("plain: dropped files listed", await until(async () => (await fileNames()).includes("two-of-three.pbp")));
+check("enhanced: dropped files listed", await until(async () => (await fileNames()).includes("two-of-three.pbp")));
 await command(":instance two-of-three");
 await command(":verify");
-const plainOut = await page.textContent(".plain-out");
-check("plain: :verify", plainOut.includes("Verified 4 line(s)."));
-check("plain: veripb output folded", (await page.$$(".plain-out details.trace")).length === 1);
-await page.type(".plain-in", ":ve");
-await sleep(150);
-check("plain: no suggestion strip", (await page.$$(".suggest")).length === 0);
-await page.fill(".plain-in", "");
-
-// ---- Classic ----
-await page.selectOption("#mode", "classic");
-const screen = () => page.evaluate(() => [...document.querySelectorAll(".xterm-rows > div")].map((r) => r.textContent).join("\n"));
-check("classic: TUI draws", await until(async () => (await screen()).includes("pbp>")));
-check("classic: files carried over", (await fileNames()).includes("two-of-three.pbp"));
-await page.click(".classic-term");
-await page.keyboard.type(":instance two-of-three\n:verify\n", { delay: 5 });
-check("classic: :verify", await until(async () => (await screen()).includes("Verified 4 line")));
+check("enhanced: :verify", (await page.textContent(".plain-out")).includes("Verified 4 line(s)."));
+check("enhanced: veripb output folded", (await page.$$(".plain-out details.trace")).length === 1);
 await page.click("#examples");
-check("classic: example files loaded", await until(async () => (await fileNames()).includes("tiny_unsat.opb")));
+check("enhanced: example files loaded", await until(async () => (await fileNames()).includes("tiny_unsat.opb")));
 await fileRow("tiny_unsat.opb").locator(".file-name").dblclick();
-check("classic: double-click :load", await until(async () => (await screen()).includes("from tiny_unsat.opb")));
-
-// ---- Enhanced ----
-await page.selectOption("#mode", "enhanced");
-check("enhanced: REPL starts", await ready());
-check("enhanced: files carried over", (await fileNames()).includes("two-of-three.pbp"));
+check("enhanced: double-click :load", await until(async () => (await page.textContent(".plain-out")).includes("from tiny_unsat.opb")));
+await ready();
 await dropFiles([demo("chain.opb"), demo("chain.pbp")]);
 check("enhanced: dropped files listed", await until(async () => (await fileNames()).includes("chain.pbp")));
 await command(":instance chain");

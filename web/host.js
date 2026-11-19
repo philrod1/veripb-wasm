@@ -267,7 +267,7 @@ export function createWasi(args, { stdout, stderr, root, env = [] }) {
 }
 
 /**
- * Instantiates the REPL (plain and enhanced modes) and returns
+ * Instantiates the REPL (enhanced mode) and returns
  * { mode, line(text) -> mode, state(), preserved(), toggleBreakpoint(index),
  *   complete(text), themes(), commands(), glossary(), extrasStatus(), extrasObjective(), explain(line), paneStats(pane),
  *   lineIds(first, last), source(id), view({pane, start, count, query?, core?, derived?}),

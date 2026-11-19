@@ -1,4 +1,4 @@
-// Page-side connection to repl-worker.js, shared by plain and enhanced modes.
+// Page-side connection to repl-worker.js, used by enhanced mode.
 //
 // connectReplWorker(host, options) starts the worker, sends host.files, and
 // returns a client. `attach(view)` routes output, prompt modes and errors to

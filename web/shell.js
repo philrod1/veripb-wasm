@@ -1,14 +1,20 @@
-// Page shell: mode menu, status line and files panel. Each mode is a module
-// with `mount(root, host)` (interface described in modes/plain.js).
+// Page shell: mode menu, status line and files panel.
 //
-// Mode choice: `?mode=<name>` in the URL, else the last choice, else plain.
+// Mode interface:
+//   mount(root, host) -> instance, or a Promise of one
+//     root: element to render into (emptied by the shell on unmount)
+//     host: { files: Map<name, Uint8Array>, setStatus(text), setFiles([{name, size}]) }
+//   instance: { putFile(name, bytes), deleteFile(name), getFile(name) -> Promise<Uint8Array|null>,
+//               snapshot() -> Promise<Map<name, Uint8Array>>, run(command), note(text), focus(), unmount(),
+//               resources?() -> Promise (see resources.js) }
+//     run(command): runs a REPL line as if typed at the prompt.
+//
+// Mode choice: `?mode=<name>` in the URL, else the last choice, else enhanced.
 // Switching modes starts a fresh REPL; files are carried over, the proof
 // session is not.
 
-// `load` imports the mode's module on first use (classic pulls in xterm.js).
+// `load` imports the mode's module on first use.
 const MODES = {
-  plain: { label: "Plain", load: () => import("./modes/plain.js") },
-  classic: { label: "Classic (TUI)", load: () => import("./modes/classic.js") },
   enhanced: { label: "Enhanced", load: () => import("./modes/enhanced.js") },
 };
 import { bytes, createResources } from "./resources.js";
@@ -40,7 +46,7 @@ function initialMode() {
   const fromUrl = new URLSearchParams(location.search).get("mode");
   let stored = null;
   try { stored = localStorage.getItem(STORAGE_KEY); } catch {}
-  return [fromUrl, stored, "plain"].find((name) => MODES[name]?.load);
+  return [fromUrl, stored, "enhanced"].find((name) => MODES[name]?.load);
 }
 
 async function switchTo(name) {

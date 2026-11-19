@@ -8,7 +8,7 @@
 #   <ref>: a commit, tag or branch of the submodule's origin (default: the
 #   branch named in .gitmodules).
 # Environment:
-#   SKIP_PARITY=1  skip web/test/compare.sh and compare-tui.py (they build
+#   SKIP_PARITY=1  skip web/test/compare.sh (it builds
 #                  veripb and veripb-repl natively)
 #   CHROME=<path>  also run web/test/browser-smoke.mjs, under scripts/serve.py
 #                  on SMOKE_PORT (default 8790); PLAYWRIGHT_CORE as for that test
@@ -80,9 +80,8 @@ run node "$root/web/test/refs-check.mjs"
 run node "$root/web/test/host-check.mjs"
 if [ -z "${SKIP_PARITY:-}" ]; then
     run "$root/web/test/compare.sh"
-    run python3 "$root/web/test/compare-tui.py"
 else
-    echo "== Parity tests skipped (SKIP_PARITY)"
+    echo "== Parity test skipped (SKIP_PARITY)"
 fi
 if [ -n "${CHROME:-}" ]; then
     port="${SMOKE_PORT:-8790}"
