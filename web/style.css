@@ -490,11 +490,24 @@ aside input[type=file] { display: none; }
 .solver-problems-list .what.kind-unsupported { color: var(--label); }
 .solver-problems-list .message { overflow: hidden; text-overflow: ellipsis; }
 .scp-complete {
-  position: absolute; z-index: 5; list-style: none; margin: 0; padding: 0.15rem 0; min-width: 10rem; max-height: 12em; overflow: auto;
+  position: absolute; z-index: 5; min-width: 10rem; max-width: min(36rem, 90%);
   background: var(--bg); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
 }
+.scp-options { list-style: none; margin: 0; padding: 0.15rem 0; max-height: 12em; overflow: auto; }
+.scp-option-note {
+  padding: 0.2rem 0.5rem; border-top: 1px solid var(--border); color: var(--muted); white-space: normal; line-height: 1.4;
+}
+.scp-option-note[hidden] { display: none; }
 .scp-complete[hidden] { display: none; }
 .scp-complete li { display: flex; gap: 1.5rem; padding: 0 0.5rem; cursor: pointer; line-height: 1.5; }
 .scp-complete li[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); }
 .scp-complete .name { color: var(--variable); }
+.scp-complete .name.kind { color: var(--cursor-accent); }
+.solver-signature {
+  flex: none; padding: 0.15rem 0.6rem; border-top: 1px solid var(--border); background: var(--panel);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.solver-signature[hidden] { display: none; }
+.solver-signature .arguments { color: var(--fg); }
+.solver-signature .summary { color: var(--muted); }
 .scp-complete .detail { margin-left: auto; color: var(--muted); }

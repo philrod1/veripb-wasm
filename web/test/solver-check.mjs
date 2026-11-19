@@ -4,7 +4,7 @@
 // verify with pkg/veripb.wasm. A broken model must fail with cps's error and
 // write no files, reporting each problem. `cps --check --json` must find no
 // problems in the examples and every problem, with its place, in broken
-// models.
+// models. `cps --constraints --json` must list the constraint kinds.
 //
 // Usage: [CPS=<native cps>] node web/test/solver-check.mjs
 // Exit status 1 on any failure.
@@ -99,6 +99,12 @@ const solvedTwo = run(cps, ["cps", "/two.scp"], solveTwo);
 check("solving reports every problem too", solvedTwo.exit === 1 && solvedTwo.err.join("\n") === "/two.scp:2:23: error: duplicate variable 'x'\n/two.scp:3:19: unsupported: unsupported constraint 'frob'", solvedTwo.err.join(" | "));
 const unclosed = checkModel("( (version 1)\n  (variables (x 0 1)\n");
 check("check: a syntax error", unclosed?.length === 1 && unclosed[0].kind === "syntax" && unclosed[0].message.includes("unclosed"), JSON.stringify(unclosed));
+
+// `cps --constraints --json` (the editor's kind completion and signatures).
+const listed = run(cps, ["cps", "--constraints", "--json"], createRoot());
+const kinds = listed.exit === 0 ? JSON.parse(listed.out.join("\n")) : [];
+check("constraints: listed", kinds.length > 0 && kinds.some((k) => k.keyword === "all_different"), kinds.map((k) => k.keyword).join(" "));
+check("constraints: each with arguments, summary and example", kinds.every((k) => Array.isArray(k.arguments) && k.summary && typeof k.example === "string"));
 
 console.log(failures ? `${failures} failed` : "all passed");
 process.exit(failures ? 1 : 0);

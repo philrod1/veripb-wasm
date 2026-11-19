@@ -255,11 +255,16 @@ Solver tab:
     shaded. Typing `(` before whitespace, a `)` or the end adds the `)`;
     typing `)` there steps over it, and Backspace between the two deletes
     both.
-  - **Completion:** where a variable can stand (a constraint's arguments,
-    an objective), typing offers the model's variables that start with
-    what is typed, with their bounds; Ctrl+Space offers them all. ↑/↓
-    choose, Enter or Tab inserts, Esc closes. Constraint kinds are not
-    offered: cp-solver does not publish a list of them.
+  - **Completion:** typing offers what starts with what is typed;
+    Ctrl+Space offers everything that fits there. ↑/↓ choose, Enter or Tab
+    inserts, Esc closes.
+    - Where a constraint's kind goes: the kinds cps accepts (`cps
+      --constraints --json`), with their arguments, and for the one chosen
+      what it says and an example. A kind is inserted with a space after it.
+    - Where a variable can stand (a constraint's arguments, an objective):
+      the model's variables, with their bounds.
+  - **Signature:** inside a constraint, the line below the editor shows its
+    kind, its arguments and what it says (hover for an example).
   - **Keys:** Tab inserts two spaces; after Esc, Tab moves the focus on.
     Ctrl+Enter (⌘+Enter) solves.
 - **Solve:** runs `cps <stem>.scp --proof <stem>` (cp-solver's
@@ -522,7 +527,8 @@ How it works:
   solve starts another. The editor's checks run in `check-worker.js`, a
   worker of their own so a solve does not hold them up: `cps --check
   --json` (`pkg/cps.wasm`) on the model, its JSON posted back; an answer for
-  text since changed is dropped.
+  text since changed is dropped. It also asks once for `cps --constraints
+  --json`, for completion and signatures.
 - **Running veripb:** for each veripb invocation, `host.js` creates a fresh
   veripb instance on the same filesystem, with regular files as
   stdout/stderr. It copies those to `/.tmp/.veripb-stdout` and
@@ -541,7 +547,7 @@ node web/test/transcript.mjs <files-dir> [<dump-dir>] < script.txt
 node web/test/state-check.mjs    # web-repl's JSON views vs the REPL's own :list, :show and :preserved output
 node --max-old-space-size=6000 web/test/large-check.mjs   # opt-in, ~7 GB RAM: a 1.1M-line proof through the views
 node web/test/host-check.mjs     # host.js's fixes to the WASI shim's in-memory files (linear-time writes)
-node web/test/solver-check.mjs   # pkg/cps.wasm on pkg/models: its proofs verify with pkg/veripb.wasm; output as native cps with CPS=<cps>; cps --check's problems
+node web/test/solver-check.mjs   # pkg/cps.wasm on pkg/models: its proofs verify with pkg/veripb.wasm; output as native cps with CPS=<cps>; cps --check's problems; cps --constraints
 node web/test/refs-check.mjs     # which words of a proof line are constraint refs (modes/refs.js)
 node web/test/teach-check.mjs    # plain-English explanations: sample lines, and a sweep of veripb's correct instances
 CHROME=<chrome> [PLAYWRIGHT_CORE=<dir>] node web/test/browser-smoke.mjs [url]   # the page in a browser

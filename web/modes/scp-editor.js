@@ -1,10 +1,12 @@
 // The Solver tab's model editor: a textarea with line numbers, highlighting
 // (modes/scp-syntax.js), live diagnostics from cp-solver's checker
-// (check-worker.js), bracket matching, auto-closed brackets and completion of
-// variable names.
+// (check-worker.js), bracket matching, auto-closed brackets, completion of
+// variable names and constraint kinds, and the signature of the constraint
+// at the caret (kinds from `cps --constraints --json`).
 //
-// createScpEditor({ onInput, onSolve }) -> { edit, problems, textarea, refresh(), focus() }
-//   edit: the editing area; problems: the Problems list, to place below it;
+// createScpEditor({ onInput, onSolve }) -> { edit, signature, problems, textarea, refresh(), focus() }
+//   edit: the editing area; signature and problems: the constraint at the
+//   caret and the Problems list, to place below it in that order;
 //   onInput(): after each change to the text; onSolve(): Ctrl+Enter.
 //   refresh(): redraw and re-check after the text is set from outside.
 //
@@ -58,10 +60,14 @@ export function createScpEditor({ onInput, onSolve }) {
   textarea.setAttribute("aria-label", "Model");
   textarea.setAttribute("autocapitalize", "off");
   textarea.setAttribute("autocomplete", "off");
-  const popup = el("ul", { className: "scp-complete", hidden: true });
-  popup.setAttribute("role", "listbox");
+  const options = el("ul", { className: "scp-options" });
+  options.setAttribute("role", "listbox");
+  const optionNote = el("div", { className: "scp-option-note", hidden: true });
+  const popup = el("div", { className: "scp-complete", hidden: true }, options, optionNote);
   const edit = el("div", { className: "solver-edit" }, gutter, el("div", { className: "solver-code" }, highlight, textarea, popup));
 
+  // The constraint at the caret: its kind, arguments and what it says.
+  const signature = el("div", { className: "solver-signature", hidden: true });
   const problemsTitle = el("span", { className: "solver-problems-title" });
   const problemsList = el("ul", { className: "solver-problems-list" });
   const problems = el("div", { className: "solver-problems" }, problemsTitle, problemsList);
@@ -107,23 +113,32 @@ export function createScpEditor({ onInput, onSolve }) {
     problems.classList.add("stale");
     checkTimer = setTimeout(check, CHECK_DELAY);
   }
+  // The constraint kinds cps accepts (`cps --constraints --json`), asked for
+  // once: [{keyword, arguments, summary, example}].
+  let kinds = [];
+  function startWorker() {
+    worker = new Worker(new URL("../check-worker.js", import.meta.url), { type: "module" });
+    worker.onmessage = ({ data }) => {
+      if (data.type === "constraints") {
+        kinds = data.kinds ?? [];
+        updateSignature();
+        return;
+      }
+      if (data.id !== checkId) return;
+      checkFailed = data.fatal ?? null;
+      setDiagnostics(data.errors ?? []);
+    };
+    worker.onerror = (event) => {
+      checkFailed = event.message ?? "the checker could not start";
+      setDiagnostics([]);
+    };
+    worker.postMessage({ type: "constraints" });
+  }
   function check() {
-    if (!worker) {
-      worker = new Worker(new URL("../check-worker.js", import.meta.url), { type: "module" });
-      worker.onmessage = ({ data }) => {
-        if (data.id !== checkId) return;
-        checkFailed = data.fatal ?? null;
-        setDiagnostics(data.errors ?? []);
-      };
-      worker.onerror = (event) => {
-        checkFailed = event.message ?? "the checker could not start";
-        setDiagnostics([]);
-      };
-    }
     checkId += 1;
     const text = textarea.value;
     pendingText = text;
-    worker.postMessage({ id: checkId, text });
+    worker.postMessage({ type: "check", id: checkId, text });
   }
   function setDiagnostics(errors) {
     const text = pendingText;
@@ -191,6 +206,7 @@ export function createScpEditor({ onInput, onSolve }) {
   }
   document.addEventListener("selectionchange", () => {
     if (document.activeElement === textarea || bracket) updateBracket();
+    if (document.activeElement === textarea) updateSignature();
     if (closeAt !== null && (textarea.selectionStart > closeAt || textarea.value[closeAt] !== ")")) closeAt = null;
     if (!popup.hidden && textarea.selectionStart !== caretAtShow) closeCompletion();
   });
@@ -206,7 +222,24 @@ export function createScpEditor({ onInput, onSolve }) {
     lengthBefore = textarea.value.length;
   });
 
-  // ---- Completion: the model's variables, where a variable can stand ----
+  // ---- Signature: the kind of the constraint the caret is in ----
+  function updateSignature() {
+    const text = textarea.value;
+    const at = textarea.selectionStart;
+    const ctx = kinds.length && text.length <= HIGHLIGHT_LIMIT ? completionContext(text, at) : null;
+    const kind = ctx && kinds.find((k) => k.keyword === ctx.constraint);
+    signature.hidden = !kind;
+    if (!kind) return;
+    signature.replaceChildren(
+      el("span", { className: "scp-kind", textContent: kind.keyword }), " ",
+      el("span", { className: "arguments", textContent: kind.arguments.join(" ") }),
+      el("span", { className: "summary", textContent: ` · ${kind.summary}` }));
+    signature.title = `${kind.keyword} ${kind.arguments.join(" ")}: ${kind.summary}. For example: (c ${kind.keyword} ${kind.example})`;
+  }
+
+  // ---- Completion: where a variable can stand, the model's variables;
+  // where a constraint's kind goes, the kinds cps accepts ----
+  // [{label, detail, insert, note}]
   let items = [];
   let selected = 0;
   let completeFrom = 0;
@@ -219,16 +252,29 @@ export function createScpEditor({ onInput, onSolve }) {
     const at = textarea.selectionStart;
     if (at !== textarea.selectionEnd) { closeCompletion(); return; }
     const ctx = completionContext(textarea.value, at);
-    if (!ctx.wantsVariable || (!explicit && !ctx.prefix)) { closeCompletion(); return; }
-    items = ctx.variables.filter((v) => v.name.startsWith(ctx.prefix) && v.name !== ctx.prefix).slice(0, MAX_SUGGESTIONS);
+    if (!explicit && !ctx.prefix) { closeCompletion(); return; }
+    const matches = (label) => label.startsWith(ctx.prefix) && label !== ctx.prefix;
+    // After a kind, a space, unless one follows already.
+    const space = /\s/.test(textarea.value[at] ?? "") ? "" : " ";
+    items = ctx.wantsKind
+      ? kinds.filter((k) => matches(k.keyword)).map((k) => ({
+        label: k.keyword, detail: k.arguments.join(" "), insert: k.keyword + space,
+        note: `${k.summary} · e.g. (c ${k.keyword} ${k.example})`,
+      }))
+      : ctx.wantsVariable
+        ? ctx.variables.filter((v) => matches(v.name)).map((v) => ({
+          label: v.name, detail: v.lo !== null && v.hi !== null ? `${v.lo}..${v.hi}` : "", insert: v.name,
+        }))
+        : [];
+    items = items.slice(0, MAX_SUGGESTIONS);
     if (!items.length) { closeCompletion(); return; }
     completeFrom = ctx.start;
     selected = 0;
     caretAtShow = at;
-    popup.replaceChildren(...items.map((v, i) => {
+    options.replaceChildren(...items.map((choice, i) => {
       const item = el("li", {},
-        el("span", { className: "name", textContent: v.name }),
-        el("span", { className: "detail", textContent: v.lo !== null && v.hi !== null ? `${v.lo}..${v.hi}` : "" }));
+        el("span", { className: `name${ctx.wantsKind ? " kind" : ""}`, textContent: choice.label }),
+        el("span", { className: "detail", textContent: choice.detail }));
       item.setAttribute("role", "option");
       item.addEventListener("mousedown", (event) => { event.preventDefault(); selected = i; accept(); });
       return item;
@@ -238,8 +284,11 @@ export function createScpEditor({ onInput, onSolve }) {
     popup.hidden = false;
   }
   function showSelected() {
-    [...popup.children].forEach((item, i) => item.setAttribute("aria-selected", String(i === selected)));
-    popup.children[selected]?.scrollIntoView({ block: "nearest" });
+    [...options.children].forEach((item, i) => item.setAttribute("aria-selected", String(i === selected)));
+    options.children[selected]?.scrollIntoView({ block: "nearest" });
+    const note = items[selected]?.note;
+    optionNote.hidden = !note;
+    optionNote.textContent = note ?? "";
   }
   function place(at) {
     const style = getComputedStyle(textarea);
@@ -254,7 +303,7 @@ export function createScpEditor({ onInput, onSolve }) {
     const top = parseFloat(style.paddingTop) + (line + 1) * lineHeight - textarea.scrollTop;
     popup.style.left = `${Math.max(0, left)}px`;
     // Above the line if there is no room below it.
-    const height = Math.min(items.length, 8) * lineHeight + 8;
+    const height = (Math.min(items.length, 8) + (items[0]?.note ? 3 : 0)) * lineHeight + 8;
     const below = top + height <= textarea.clientHeight || top < height;
     popup.style.top = below ? `${top}px` : "";
     popup.style.bottom = below ? "" : `${textarea.clientHeight - top + lineHeight}px`;
@@ -267,7 +316,7 @@ export function createScpEditor({ onInput, onSolve }) {
     if (!choice) return;
     textarea.setSelectionRange(completeFrom, at);
     accepting = true;
-    insert(textarea, choice.name);
+    insert(textarea, choice.insert);
     accepting = false;
   }
 
@@ -343,8 +392,11 @@ export function createScpEditor({ onInput, onSolve }) {
     }
   });
 
+  startWorker();
+
   return {
     edit,
+    signature,
     problems,
     textarea,
     refresh() {

@@ -69,7 +69,7 @@ export function mount(root, host) {
   const editorPane = el("section", { className: "pane pane-model" },
     el("header", { className: "pane-head" }, el("span", { className: "pane-title-text", textContent: "Model (.scp)" }),
       el("span", { className: "solver-hint", textContent: "Ctrl+Space completes · Ctrl+Enter solves" })),
-    scp.edit, scp.problems);
+    scp.edit, scp.signature, scp.problems);
 
   // ---- Result ----
   const resultTitle = el("span", { className: "pane-title-text", textContent: "Result" });

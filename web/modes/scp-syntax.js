@@ -14,10 +14,11 @@
 // highlightScp(text, marks) -> HTML: `text` with each token in a span.
 //   marks: [{from, to, cls}] (string offsets), classes added to the text
 //   in [from, to), such as an error's span or a matched bracket.
-// completionContext(text, offset) -> {start, prefix, wantsVariable,
-//   variables: [{name, lo, hi}]}: the atom being typed at `offset` (from
-//   `start`; empty between atoms), whether a variable can stand there, and
-//   every variable the model declares.
+// completionContext(text, offset) -> {start, prefix, wantsVariable, wantsKind,
+//   constraint, variables: [{name, lo, hi}]}: the atom being typed at
+//   `offset` (from `start`; empty between atoms), whether a variable or a
+//   constraint kind can stand there, the kind of the constraint the caret is
+//   in (or null), and every variable the model declares.
 // matchingBracket(text, offset) -> [open, close] | null: the bracket just
 //   before `offset` (or else just after it) and its partner.
 // solutionLine(line) -> Element: a line of cps's output, with each
@@ -32,10 +33,11 @@ const escape = (text) => text.replace(/[&<>]/g, (c) => (c === "&" ? "&amp;" : c 
 
 /**
  * Walks `text`, calling visit({type, text, at, cls, depth, pos, section,
- * after}) for each token: type "space", "open", "close" or "atom"; for an
- * atom, `depth` and `pos` place it (its list's depth, its index there) in
- * `section`. after() gives the state the token leaves: {depth, next,
- * section}, `next` being the index the next item in the open list would
+ * constraint, after}) for each token: type "space", "open", "close" or
+ * "atom"; for an atom, `depth` and `pos` place it (its list's depth, its
+ * index there) in `section`, and `constraint` is the kind of the constraint
+ * it is in. after() gives the state the token leaves: {depth, next, section,
+ * constraint}, `next` being the index the next item in the open list would
  * take. Returns the declared variables, in order, as [{name, lo, hi}].
  */
 function walk(text, visit) {
@@ -44,7 +46,8 @@ function walk(text, visit) {
   let section = null;
   const declared = new Map();
   let declaring = null;
-  const after = () => ({ depth: stack.length, next: stack.at(-1)?.items ?? 0, section });
+  let constraint = null;
+  const after = () => ({ depth: stack.length, next: stack.at(-1)?.items ?? 0, section, constraint });
   for (const m of text.matchAll(TOKEN)) {
     const [, space, paren, atom] = m;
     const at = m.index;
@@ -53,13 +56,14 @@ function walk(text, visit) {
     if (paren === "(") {
       if (top) top.items += 1;
       stack.push({ items: 0 });
+      if (stack.length === 3) constraint = null;
       visit({ type: "open", text: "(", at, cls: "scp-paren", after });
       continue;
     }
     if (paren === ")") {
       const closed = stack.pop();
       if (stack.length < 2) section = null;
-      if (stack.length < 3) declaring = null;
+      if (stack.length < 3) { declaring = null; constraint = null; }
       visit({ type: "close", text: ")", at, cls: closed ? "scp-paren" : "scp-bad", after });
       continue;
     }
@@ -76,6 +80,7 @@ function walk(text, visit) {
     } else if (section === "constraints" && depth === 3 && pos === 0) {
       cls = "scp-name";
     } else if (section === "constraints" && depth === 3 && pos === 1) {
+      constraint = atom;
       cls = "scp-kind";
     } else if (INTEGER.test(atom)) {
       if (declaring && depth === 3 && pos === 1) declaring.lo = atom;
@@ -86,7 +91,7 @@ function walk(text, visit) {
     } else if (section === "prob_type") {
       cls = "scp-kind";
     }
-    visit({ type: "atom", text: atom, at, cls, depth, pos, section, after });
+    visit({ type: "atom", text: atom, at, cls, depth, pos, section, constraint, after });
   }
   return [...declared.values()];
 }
@@ -123,11 +128,12 @@ export function completionContext(text, offset) {
     else if (end <= offset) state = token.after();
   });
   const where = atom
-    ? { start: atom.at, prefix: text.slice(atom.at, offset), depth: atom.depth, pos: atom.pos, section: atom.section }
-    : { start: offset, prefix: "", depth: state.depth, pos: state.next, section: state.section };
+    ? { start: atom.at, prefix: text.slice(atom.at, offset), depth: atom.depth, pos: atom.pos, section: atom.section, constraint: atom.constraint }
+    : { start: offset, prefix: "", depth: state.depth, pos: state.next, section: state.section, constraint: state.constraint };
   const wantsVariable = (where.section === "constraints" && (where.depth > 3 || (where.depth === 3 && where.pos >= 2)))
     || (where.section === "prob_type" && where.depth >= 3 && where.pos >= 1);
-  return { start: where.start, prefix: where.prefix, wantsVariable, variables };
+  const wantsKind = where.section === "constraints" && where.depth === 3 && where.pos === 1;
+  return { start: where.start, prefix: where.prefix, wantsVariable, wantsKind, constraint: where.constraint, variables };
 }
 
 export function matchingBracket(text, offset) {
