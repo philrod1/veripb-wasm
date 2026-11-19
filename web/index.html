@@ -14,8 +14,8 @@
     <button id="files-toggle" type="button" aria-controls="files-panel" aria-pressed="true"
       title="Show or hide the files panel">Files</button>
     <h1>veripb-repl</h1>
-    <label>mode <select id="mode" aria-label="Interface mode"></select></label>
-    <span class="about">VeriPB REPL in WebAssembly</span>
+    <nav id="tabs" role="tablist" aria-label="Tabs"></nav>
+    <span class="about">CP solving and VeriPB proof checking in WebAssembly</span>
     <span id="status"></span>
     <button id="resources" type="button" title="Resource usage" aria-label="Resource usage"><svg viewBox="0 0 16 16" width="14" height="14" aria-hidden="true"><path d="M2 12a6 6 0 1 1 12 0" fill="none" stroke="currentColor" stroke-width="1.5"/><path d="M8 12l3-4" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></svg></button>
   </header>
@@ -24,8 +24,8 @@
     <h2>Files</h2>
     <button id="demos" type="button">Load demo files</button>
     <button id="examples" type="button">Load example files</button>
-    <label class="button" for="upload">Upload .opb / .pbp…</label>
-    <input id="upload" type="file" multiple accept=".opb,.pbp,.txt">
+    <label class="button" for="upload">Upload .scp / .opb / .pbp…</label>
+    <input id="upload" type="file" multiple accept=".scp,.opb,.pbp,.txt">
     <ul id="files"></ul>
   </aside>
   <div id="drop-overlay" hidden>Drop files to add them</div>

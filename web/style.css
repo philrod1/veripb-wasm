@@ -33,10 +33,14 @@ body {
 header { grid-area: head; display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 1rem; border-bottom: 1px solid var(--border); }
 header h1 { font-size: 1rem; margin: 0; }
 header .about { color: var(--muted); }
-header select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.1rem 0.3rem; }
+#tabs { display: flex; gap: 0.25rem; }
+#tabs button[aria-selected="true"] { background: var(--panel); border-color: var(--accent); color: var(--fg); font-weight: 600; }
+#tabs button[aria-selected="false"] { color: var(--muted); }
 #status { color: var(--muted); margin-left: auto; }
 #resources { display: inline-flex; align-items: center; padding: 0.2rem 0.35rem; }
 #mode-root { grid-area: main; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.mode-tab { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+#mode-root > [hidden] { display: none; }
 body.files-hidden { grid-template-columns: 1fr; grid-template-areas: "head" "main"; }
 body.files-hidden aside { display: none; }
 header button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.1rem 0.5rem; cursor: pointer; }
@@ -57,6 +61,7 @@ aside input[type=file] { display: none; }
 }
 #files .file-kind.kind-f { background: var(--echo); }
 #files .file-kind.kind-p { background: var(--accent); }
+#files .file-kind.kind-m { background: var(--label); }
 #files button.file-name {
   flex: 1; min-width: 0; width: auto; margin: 0; padding: 0; border: none; background: none; text-align: left;
   color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: none;
@@ -102,7 +107,7 @@ aside input[type=file] { display: none; }
 #drop-overlay[hidden] { display: none; }
 
 /* Enhanced mode */
-#mode-root.enhanced { display: grid; grid-template-rows: 0.58fr 6px 0.42fr; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+.mode-tab.enhanced { display: grid; grid-template-rows: 0.58fr 6px 0.42fr; grid-template-columns: minmax(0, 1fr); min-height: 0; }
 .enh-top { display: grid; min-height: 0; }
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .pane-head {
@@ -402,3 +407,44 @@ aside input[type=file] { display: none; }
 .explain-line { margin: 0; padding: 0.5rem 0.9rem; border-bottom: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
 .explain-body { margin: 0; padding: 0.6rem 0.9rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .explain-body .error { color: var(--error); }
+
+/* Solver tab (modes/solver.js) */
+.solver-bar, .solver-actions {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 0.4rem 0.75rem;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.solver-actions { border-bottom: none; border-top: 1px solid var(--border); }
+.solver-bar button, .solver-bar select, .solver-actions button {
+  font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 0.1rem 0.5rem; cursor: pointer;
+}
+.solver-bar select { padding: 0.1rem 0.3rem; max-width: 14rem; }
+.solver-bar-label { color: var(--muted); }
+.solver-name { font-weight: 600; margin-right: 0.5rem; }
+.solver-actions button.primary:not(:disabled) { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.solver-actions button:disabled { cursor: default; opacity: 0.5; }
+.solver-actions button[hidden] { display: none; }
+.solver-message { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.solver-main { flex: 1; display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; }
+.solver-hint { margin-left: auto; font-size: 0.9em; }
+.solver-edit { flex: 1; display: flex; min-height: 0; background: var(--bg); }
+.solver-gutter, .solver-editor { font: inherit; line-height: 1.5; margin: 0; padding: 0.5rem 0; }
+.solver-gutter {
+  flex: none; min-width: 3.5ch; padding-left: 0.5rem; padding-right: 0.5rem; overflow: hidden; text-align: right;
+  color: var(--muted); background: var(--panel); border-right: 1px solid var(--border); user-select: none;
+}
+.solver-editor {
+  flex: 1; min-width: 0; padding-left: 0.6rem; padding-right: 0.6rem; resize: none; border: none; outline: none;
+  color: var(--fg); background: transparent; white-space: pre; overflow: auto; tab-size: 2;
+}
+.solver-errors {
+  margin: 0; padding: 0.5rem 0.75rem; color: var(--error); white-space: pre-wrap; word-break: break-word;
+  border-bottom: 1px solid var(--border); max-height: 40%; overflow: auto;
+}
+.solver-errors[hidden] { display: none; }
+.solver-output { flex: 1; min-height: 0; overflow: auto; padding: 0.25rem 0; position: relative; overscroll-behavior-x: none; }
+@media (max-width: 700px) {
+  .solver-main { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .solver-main .splitter { display: none; }
+  .solver-hint { display: none; }
+}

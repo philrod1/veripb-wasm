@@ -245,6 +245,22 @@ export function createVeripbRunner({ veripbModule, root, memory, onRun, onOutput
 }
 
 /**
+ * Runs `module`, a WASI command, with `args` (argv[0] included) on `root`
+ * and returns its exit code. Its stdout and stderr go to `onStdout(line)`
+ * and `onStderr(line)` a line at a time. A trap (a Rust panic, for one)
+ * throws.
+ */
+export function runCommand(module, args, root, { onStdout, onStderr }) {
+  const wasi = createWasi(args, {
+    stdout: ConsoleStdout.lineBuffered(onStdout),
+    stderr: ConsoleStdout.lineBuffered(onStderr),
+    root,
+  });
+  const instance = new WebAssembly.Instance(module, { wasi_snapshot_preview1: wasi.wasiImport });
+  return wasi.start(instance);
+}
+
+/**
  * A WASI instance for a REPL module on `root`: empty stdin, `stdout` and
  * `stderr` as given (shim Fds), the root directory preopened as "/".
  */
