@@ -1,4 +1,4 @@
-// Module worker for plain and enhanced modes: owns the filesystem and the
+// Module worker for enhanced mode: owns the filesystem and the
 // REPL; the page sends input lines and file operations and receives output.
 //
 // Page -> worker: {type: "line", text} | {type: "put", name, data} | {type: "delete", name}

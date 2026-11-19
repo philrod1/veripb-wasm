@@ -1,4 +1,4 @@
-// REPL output pane and command line, shared by plain and enhanced modes.
+// REPL output pane and command line, used by enhanced mode.
 //
 // Output lines arrive in batches with per-line `trace` flags (repl-worker.js):
 // veripb's own lines are collected into a <details> block per run of

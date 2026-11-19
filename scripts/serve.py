@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Serves web/ over HTTP with the headers every mode can use: cross-origin
-isolation (needed by classic mode for SharedArrayBuffer) and no caching.
+"""Serves web/ over HTTP with cross-origin isolation headers and no
+caching.
 
 Usage: scripts/serve.py [port] [address]   (default: 8000 127.0.0.1)
 """

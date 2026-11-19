@@ -1,5 +1,5 @@
 //! veripb-repl's line interface as a `wasm32-wasip1` reactor, for the
-//! page's plain and enhanced modes.
+//! page's enhanced mode.
 //!
 //! The host calls `vr_init` once, then `vr_line` for each input line. All
 //! output goes to stdout. veripb itself runs through the host import

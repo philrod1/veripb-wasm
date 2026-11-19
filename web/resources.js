@@ -6,8 +6,8 @@
 // with the other figures from its last answer.
 //
 // createResources({ source, files }) -> { open() }
-//   source(): the current mode's `resources()` Promise, or null if the mode
-//   has none (classic); files(): the files panel's list, used then.
+//   source(): the REPL's `resources()` Promise, or null before the REPL has
+//   started; files(): the files panel's list, used then.
 
 // One WebAssembly memory (the REPL's, or a veripb run's) can grow to 4 GiB.
 const WASM_LIMIT = 4 * 1024 ** 3;
@@ -88,7 +88,7 @@ function render(r, files) {
   if (r) memory.push(["Files", `${bytes(r.filesystem.bytes)} (${bytes(r.filesystem.allocated)} allocated)`]);
   if (page) memory.push(["Page JavaScript heap", `${bytes(page.usedJSHeapSize)} of ${bytes(page.jsHeapSizeLimit)}`]);
   if (navigator.deviceMemory) memory.push(["Device memory", `at least ${navigator.deviceMemory} GiB`]);
-  parts.push(section("Memory", ...(r ? [] : [el("p", { className: "muted stats-note", textContent: "The REPL's own figures are shown in Plain and Enhanced modes." })]),
+  parts.push(section("Memory", ...(r ? [] : [el("p", { className: "muted stats-note", textContent: "The REPL has not started yet." })]),
     facts(...memory),
     el("p", { className: "muted stats-note", textContent: "Each WebAssembly memory (the REPL's, and each veripb run's) can grow to 4 GiB and never shrinks." })));
 

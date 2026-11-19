@@ -33,10 +33,14 @@ body {
 header { grid-area: head; display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 1rem; border-bottom: 1px solid var(--border); }
 header h1 { font-size: 1rem; margin: 0; }
 header .about { color: var(--muted); }
-header select { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.1rem 0.3rem; }
+#tabs { display: flex; gap: 0.25rem; }
+#tabs button[aria-selected="true"] { background: var(--panel); border-color: var(--accent); color: var(--fg); font-weight: 600; }
+#tabs button[aria-selected="false"] { color: var(--muted); }
 #status { color: var(--muted); margin-left: auto; }
 #resources { display: inline-flex; align-items: center; padding: 0.2rem 0.35rem; }
 #mode-root { grid-area: main; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+.mode-tab { flex: 1; display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+#mode-root > [hidden] { display: none; }
 body.files-hidden { grid-template-columns: 1fr; grid-template-areas: "head" "main"; }
 body.files-hidden aside { display: none; }
 header button { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px; padding: 0.1rem 0.5rem; cursor: pointer; }
@@ -57,6 +61,7 @@ aside input[type=file] { display: none; }
 }
 #files .file-kind.kind-f { background: var(--echo); }
 #files .file-kind.kind-p { background: var(--accent); }
+#files .file-kind.kind-m { background: var(--label); }
 #files button.file-name {
   flex: 1; min-width: 0; width: auto; margin: 0; padding: 0; border: none; background: none; text-align: left;
   color: var(--accent); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; user-select: none;
@@ -74,12 +79,7 @@ aside input[type=file] { display: none; }
   aside { border-right: none; border-top: 1px solid var(--border); max-height: 30vh; }
 }
 
-/* Classic mode */
-.classic-term { flex: 1; min-height: 0; padding: 0.25rem; background: #000; }
-.classic-unavailable { padding: 1rem 1.5rem; max-width: 42rem; }
-.classic-unavailable code { background: var(--panel); padding: 0 0.2rem; border-radius: 3px; }
-
-/* Plain mode */
+/* Output and command line (output-view.js) */
 .plain-out { flex: 1; margin: 0; padding: 0.75rem 1rem; overflow: auto; white-space: pre-wrap; word-break: break-word; }
 .plain-out .echo { color: var(--echo); }
 .plain-out .error { color: var(--error); }
@@ -107,7 +107,7 @@ aside input[type=file] { display: none; }
 #drop-overlay[hidden] { display: none; }
 
 /* Enhanced mode */
-#mode-root.enhanced { display: grid; grid-template-rows: 0.58fr 6px 0.42fr; grid-template-columns: minmax(0, 1fr); min-height: 0; }
+.mode-tab.enhanced { display: grid; grid-template-rows: 0.58fr 6px 0.42fr; grid-template-columns: minmax(0, 1fr); min-height: 0; }
 .enh-top { display: grid; min-height: 0; }
 .pane { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
 .pane-head {
@@ -407,3 +407,111 @@ aside input[type=file] { display: none; }
 .explain-line { margin: 0; padding: 0.5rem 0.9rem; border-bottom: 1px solid var(--border); white-space: pre-wrap; overflow-wrap: anywhere; }
 .explain-body { margin: 0; padding: 0.6rem 0.9rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .explain-body .error { color: var(--error); }
+
+/* Solver tab (modes/solver.js) */
+.solver-bar, .solver-actions {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap; padding: 0.4rem 0.75rem;
+  background: var(--panel); border-bottom: 1px solid var(--border);
+}
+.solver-actions { border-bottom: none; border-top: 1px solid var(--border); }
+.solver-bar button, .solver-bar select, .solver-actions button {
+  font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--border); border-radius: 4px;
+  padding: 0.1rem 0.5rem; cursor: pointer;
+}
+.solver-bar select { padding: 0.1rem 0.3rem; max-width: 14rem; }
+.solver-bar-label { color: var(--muted); }
+.solver-name { font-weight: 600; margin-right: 0.5rem; }
+.solver-actions button.primary:not(:disabled) { background: var(--accent); border-color: var(--accent); color: var(--bg); }
+.solver-actions button:disabled { cursor: default; opacity: 0.5; }
+.solver-actions button[hidden] { display: none; }
+.solver-message { color: var(--muted); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; }
+.solver-main { flex: 1; display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; }
+.solver-hint { margin-left: auto; font-size: 0.9em; }
+.solver-edit { flex: 1; display: flex; min-height: 0; background: var(--bg); }
+.solver-gutter, .solver-editor, .solver-highlight { font: inherit; line-height: 1.5; margin: 0; padding: 0.5rem 0; }
+.solver-gutter {
+  flex: none; min-width: 3.5ch; padding-left: 0.5rem; padding-right: 0.5rem; overflow: hidden; text-align: right;
+  color: var(--muted); background: var(--panel); border-right: 1px solid var(--border); user-select: none;
+}
+.solver-code { flex: 1; min-width: 0; position: relative; }
+/* The textarea over its highlighted copy: same box, font and scroll. The
+   copy has room for the textarea's scrollbars, so it can scroll as far. */
+.solver-editor, .solver-highlight {
+  position: absolute; inset: 0; padding-left: 0.6rem; padding-right: 0.6rem; border: none;
+  white-space: pre; tab-size: 2; font-variant-ligatures: none;
+}
+.solver-editor { resize: none; outline: none; color: var(--fg); background: transparent; overflow: auto; }
+.solver-editor.highlighted { color: transparent; caret-color: var(--fg); }
+.solver-highlight {
+  overflow: hidden; pointer-events: none; color: var(--fg);
+  padding-right: calc(0.6rem + 24px); padding-bottom: calc(0.5rem + 24px);
+}
+.scp-kw { color: var(--breakpoint); }
+.scp-kind { color: var(--cursor-accent); }
+.scp-name { color: var(--label); }
+.scp-var { color: var(--variable); }
+.scp-num { color: var(--echo); }
+.scp-paren { color: var(--muted); }
+.scp-bad { color: var(--error); background: var(--error-bg); }
+.solver-output .row.line { display: block; }
+.solver-output .sol-var { color: var(--variable); }
+.solver-output .sol-eq { color: var(--muted); }
+.solver-output .sol-val { color: var(--fg); font-weight: 600; }
+.solver-output .sol-answer { color: var(--echo); font-weight: 600; }
+.solver-errors {
+  margin: 0; padding: 0.5rem 0.75rem; color: var(--error); white-space: pre-wrap; word-break: break-word;
+  border-bottom: 1px solid var(--border); max-height: 40%; overflow: auto;
+}
+.solver-errors[hidden] { display: none; }
+.solver-output { flex: 1; min-height: 0; overflow: auto; padding: 0.25rem 0; position: relative; overscroll-behavior-x: none; }
+@media (max-width: 700px) {
+  .solver-main { grid-template-columns: minmax(0, 1fr) !important; grid-template-rows: minmax(0, 1fr) minmax(0, 1fr); }
+  .solver-main .splitter { display: none; }
+  .solver-hint { display: none; }
+}
+
+/* Solver tab: diagnostics, bracket matching and completion (modes/scp-editor.js) */
+.scp-err { text-decoration: underline wavy var(--error); text-decoration-skip-ink: none; text-underline-offset: 3px; }
+.scp-match { background: color-mix(in srgb, var(--accent) 28%, transparent); border-radius: 2px; }
+.solver-gutter .err { color: var(--error); font-weight: 600; }
+.solver-problems {
+  flex: none; max-height: 9em; overflow: auto; border-top: 1px solid var(--border); background: var(--panel);
+  padding: 0.25rem 0;
+}
+.solver-problems-title { display: block; padding: 0 0.6rem; color: var(--muted); }
+.solver-problems[data-state="clean"] .solver-problems-title { color: var(--ok); }
+.solver-problems[data-state="errors"] .solver-problems-title { color: var(--error); }
+.solver-problems.stale > * { opacity: 0.55; }
+.solver-problems-list { list-style: none; margin: 0; padding: 0; }
+.solver-problems-list li { display: flex; gap: 0.6rem; padding: 0 0.6rem; cursor: pointer; white-space: nowrap; }
+.solver-problems-list li:hover, .solver-problems-list li:focus-visible { background: color-mix(in srgb, var(--fg) 7%, transparent); outline: none; }
+.solver-problems-list .where { color: var(--muted); min-width: 4ch; text-align: right; }
+.solver-problems-list .what { color: var(--error); }
+.solver-problems-list .what.kind-unsupported { color: var(--label); }
+.solver-problems-list .message { overflow: hidden; text-overflow: ellipsis; }
+.scp-complete {
+  position: absolute; z-index: 5; min-width: 10rem; max-width: min(36rem, 90%);
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
+}
+.scp-options { list-style: none; margin: 0; padding: 0.15rem 0; max-height: 12em; overflow: auto; }
+.scp-option-note {
+  padding: 0.2rem 0.5rem; border-top: 1px solid var(--border); color: var(--muted); white-space: normal; line-height: 1.4;
+}
+.scp-option-note[hidden] { display: none; }
+.scp-complete[hidden] { display: none; }
+.scp-complete li { display: flex; gap: 1.5rem; padding: 0 0.5rem; cursor: pointer; line-height: 1.5; }
+.scp-complete li[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.scp-complete .name { color: var(--variable); }
+.scp-complete .name.kind { color: var(--cursor-accent); }
+.solver-signature {
+  flex: none; padding: 0.15rem 0.6rem; border-top: 1px solid var(--border); background: var(--panel);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.solver-signature[hidden] { display: none; }
+.solver-signature .arguments { color: var(--fg); }
+.solver-signature .summary { color: var(--muted); }
+.scp-complete .detail { margin-left: auto; color: var(--muted); }
+.solver-build { margin-left: auto; color: var(--muted); text-decoration: none; font-size: 0.9em; }
+.solver-build:hover { text-decoration: underline; }
+.solver-build.dev { color: var(--label); }
+.solver-build[hidden] { display: none; }

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Builds web/ from the checked-out sources and copies it to a web server's
+# Builds web/ from the checked-out sources (cp-solver: the submodule's commit
+# on main, build-web.sh --release) and copies it to a web server's
 # document root: updates the submodules, prepares work/ (resetting it),
 # builds web/pkg/, then mirrors web/ (without web/test/) into <dir>,
 # deleting files there that web/ does not have. Uses sudo for the copy when
@@ -13,7 +14,7 @@ dest="${1:-/var/www/html}"
 
 git -C "$root" submodule update --init
 "$root/scripts/prepare.sh"
-"$root/scripts/build-web.sh"
+"$root/scripts/build-web.sh" --release
 
 sudo=""
 [ -w "$dest" ] || sudo="sudo"

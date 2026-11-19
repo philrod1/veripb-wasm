@@ -4,11 +4,11 @@
 # tests. Stops before committing: it prints the commit command to run once
 # you are happy with the result.
 #
-# Usage: scripts/update-upstream.sh <veripb|veripb-repl|crossterm> [<ref>]
+# Usage: scripts/update-upstream.sh <veripb|veripb-repl|crossterm|cp-solver> [<ref>]
 #   <ref>: a commit, tag or branch of the submodule's origin (default: the
 #   branch named in .gitmodules).
 # Environment:
-#   SKIP_PARITY=1  skip web/test/compare.sh and compare-tui.py (they build
+#   SKIP_PARITY=1  skip web/test/compare.sh (it builds
 #                  veripb and veripb-repl natively)
 #   CHROME=<path>  also run web/test/browser-smoke.mjs, under scripts/serve.py
 #                  on SMOKE_PORT (default 8790); PLAYWRIGHT_CORE as for that test
@@ -21,12 +21,13 @@ root="$(cd "$(dirname "$0")/.." && pwd)"
 # Bind mounts can report a foreign owner intermittently; trust every repo these scripts touch.
 export GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=safe.directory GIT_CONFIG_VALUE_0='*'
 
-name="${1:?usage: $0 <veripb|veripb-repl|crossterm> [<ref>]}"
+name="${1:?usage: $0 <veripb|veripb-repl|crossterm|cp-solver> [<ref>]}"
 case "$name" in
     veripb) trees="veripb" ;;
     veripb-repl) trees="veripb-repl veripb-repl-tui" ;;
     crossterm) trees="crossterm" ;;
-    *) echo "unknown submodule $name (veripb, veripb-repl or crossterm)" >&2; exit 1 ;;
+    cp-solver) trees="" ;;  # built straight from upstream/cp-solver, no patches
+    *) echo "unknown submodule $name (veripb, veripb-repl, crossterm or cp-solver)" >&2; exit 1 ;;
 esac
 sub="$root/upstream/$name"
 
@@ -54,9 +55,9 @@ else
 fi
 git -C "$sub" checkout -q "$new"
 
-go_back="git -C upstream/$name checkout $old && scripts/prepare.sh $trees"
+go_back="git -C upstream/$name checkout $old${trees:+ && scripts/prepare.sh $trees}"
 # shellcheck disable=SC2086  # $trees is a word list
-if ! "$root/scripts/prepare.sh" $trees; then
+if [ -n "$trees" ] && ! "$root/scripts/prepare.sh" $trees; then
     echo >&2
     echo "A local patch no longer applies to upstream/$name." >&2
     echo "  To go on: fix it in work/<tree>, git am --continue, apply any later patches," >&2
@@ -66,7 +67,7 @@ if ! "$root/scripts/prepare.sh" $trees; then
 fi
 
 echo "== Building web/pkg"
-"$root/scripts/build-web.sh" > /dev/null
+"$root/scripts/build-web.sh" --release > /dev/null
 
 failed=""
 run() {
@@ -78,11 +79,11 @@ run node "$root/web/test/state-check.mjs"
 run node "$root/web/test/teach-check.mjs"
 run node "$root/web/test/refs-check.mjs"
 run node "$root/web/test/host-check.mjs"
+run node "$root/web/test/solver-check.mjs"
 if [ -z "${SKIP_PARITY:-}" ]; then
     run "$root/web/test/compare.sh"
-    run python3 "$root/web/test/compare-tui.py"
 else
-    echo "== Parity tests skipped (SKIP_PARITY)"
+    echo "== Parity test skipped (SKIP_PARITY)"
 fi
 if [ -n "${CHROME:-}" ]; then
     port="${SMOKE_PORT:-8790}"

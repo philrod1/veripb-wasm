@@ -1,4 +1,4 @@
-// Browser smoke test for all three modes, against a running scripts/serve.py.
+// Browser smoke test of the page, against a running scripts/serve.py.
 //
 // Usage: CHROME=<chrome or chrome-headless-shell> [PLAYWRIGHT_CORE=<path to playwright-core>] \
 //          node web/test/browser-smoke.mjs [base-url]   (default http://127.0.0.1:8000/)
@@ -56,38 +56,20 @@ async function dropFiles(files) {
 }
 const demo = (name) => [name, readFileSync(join(web, "pkg/demos", name), "utf8")];
 
-// ---- Plain ----
-await page.goto(`${base}?mode=plain`);
-check("plain: REPL starts", await ready());
+// ---- Enhanced ----
+await page.goto(`${base}?mode=verify`);
+check("enhanced: REPL starts", await ready());
 await dropFiles([demo("two-of-three.opb"), demo("two-of-three.pbp")]);
-check("plain: dropped files listed", await until(async () => (await fileNames()).includes("two-of-three.pbp")));
+check("enhanced: dropped files listed", await until(async () => (await fileNames()).includes("two-of-three.pbp")));
 await command(":instance two-of-three");
 await command(":verify");
-const plainOut = await page.textContent(".plain-out");
-check("plain: :verify", plainOut.includes("Verified 4 line(s)."));
-check("plain: veripb output folded", (await page.$$(".plain-out details.trace")).length === 1);
-await page.type(".plain-in", ":ve");
-await sleep(150);
-check("plain: no suggestion strip", (await page.$$(".suggest")).length === 0);
-await page.fill(".plain-in", "");
-
-// ---- Classic ----
-await page.selectOption("#mode", "classic");
-const screen = () => page.evaluate(() => [...document.querySelectorAll(".xterm-rows > div")].map((r) => r.textContent).join("\n"));
-check("classic: TUI draws", await until(async () => (await screen()).includes("pbp>")));
-check("classic: files carried over", (await fileNames()).includes("two-of-three.pbp"));
-await page.click(".classic-term");
-await page.keyboard.type(":instance two-of-three\n:verify\n", { delay: 5 });
-check("classic: :verify", await until(async () => (await screen()).includes("Verified 4 line")));
+check("enhanced: :verify", (await page.textContent(".plain-out")).includes("Verified 4 line(s)."));
+check("enhanced: veripb output folded", (await page.$$(".plain-out details.trace")).length === 1);
 await page.click("#examples");
-check("classic: example files loaded", await until(async () => (await fileNames()).includes("tiny_unsat.opb")));
+check("enhanced: example files loaded", await until(async () => (await fileNames()).includes("tiny_unsat.opb")));
 await fileRow("tiny_unsat.opb").locator(".file-name").dblclick();
-check("classic: double-click :load", await until(async () => (await screen()).includes("from tiny_unsat.opb")));
-
-// ---- Enhanced ----
-await page.selectOption("#mode", "enhanced");
-check("enhanced: REPL starts", await ready());
-check("enhanced: files carried over", (await fileNames()).includes("two-of-three.pbp"));
+check("enhanced: double-click :load", await until(async () => (await page.textContent(".plain-out")).includes("from tiny_unsat.opb")));
+await ready();
 await dropFiles([demo("chain.opb"), demo("chain.pbp")]);
 check("enhanced: dropped files listed", await until(async () => (await fileNames()).includes("chain.pbp")));
 await command(":instance chain");
@@ -107,7 +89,7 @@ check("enhanced: explain modal leaves Output alone", (await page.textContent(".p
 check("enhanced: a rejected line has no plain-English view", await page.$eval(".explain-views", (e) => e.hidden));
 if (process.env.SHOT) await page.screenshot({ path: process.env.SHOT });
 await page.keyboard.press("Escape");
-check("enhanced: Esc closes the modal", await until(async () => !(await page.$eval(".explain-modal", (d) => d.open))));
+check("enhanced: Esc closes the modal", await until(async () => !(await page.$eval(".explain-modal:not(.stats-modal)", (d) => d.open))));
 await command(":explain 3");
 check("enhanced: :explain still prints to Output", (await page.textContent(".plain-out")).endsWith("ConstraintId 1: @x1_or_x2 1 x1 1 x2 >= 1\n"));
 await page.fill(".db-filter", "@x3_imp");
@@ -160,9 +142,9 @@ await page.click(".explain-plain .g-link:has-text('Reverse unit propagation')");
 const glossaryTitle = () => page.textContent(".glossary-entry h2");
 // openGlossary closes the modal first: wait for that, so a later fill isn't
 // undone by it (the Glossary may already show this entry from an earlier run).
-check("enhanced: a link opens the Glossary entry", await until(async () => !(await page.$eval(".explain-modal", (d) => d.open))
+check("enhanced: a link opens the Glossary entry", await until(async () => !(await page.$eval(".explain-modal:not(.stats-modal)", (d) => d.open))
   && (await page.isVisible(".tab-glossary")) && (await glossaryTitle()) === "Reverse unit propagation (RUP)"));
-check("enhanced: following a link closes the modal", !(await page.$eval(".explain-modal", (d) => d.open)));
+check("enhanced: following a link closes the modal", !(await page.$eval(".explain-modal:not(.stats-modal)", (d) => d.open)));
 await page.fill(".glossary-search", "witness");
 const glossaryItems = () => page.$$eval(".glossary-item", (items) => items.map((i) => i.textContent));
 check("enhanced: glossary search", await until(async () => (await glossaryItems()).includes("Witness") && !(await glossaryItems()).includes("Slack")),
@@ -172,7 +154,6 @@ check("enhanced: glossary entry", (await glossaryTitle()) === "Witness" && (awai
 await page.fill(".glossary-search", "setlvl");
 check("enhanced: the level rules are in the Glossary", await until(async () => (await glossaryItems()).includes("setlvl") && (await glossaryItems()).includes("Levels")),
   (await glossaryItems()).join(", "));
-await page.fill(".glossary-search", "");
 await page.fill(".glossary-search", "");
 await page.click(".glossary-item.rule:text-is('pol')");
 check("enhanced: rule entries come from :help", (await page.textContent(".glossary-usage")) === "pol <reverse-polish sequence> ;");
@@ -562,6 +543,30 @@ await command(":verify");
 check("enhanced: extras shows the intended conclusion", await until(async () => (await extras()).includes("IntendedUNSAT : @contradiction (not verified yet)")),
   (await extras()).slice(0, 240));
 
+// Large files: past 2 GiB refused, past 512 MiB added with a warning, and a
+// failed read reported. Each file's size and read are faked, since a
+// DataTransfer hands the page the same File objects.
+await page.evaluate(() => {
+  const transfer = new DataTransfer();
+  const fake = (name, size, unreadable = false) => {
+    const file = new File(["% small\n"], name);
+    Object.defineProperty(file, "size", { value: size });
+    if (unreadable) file.arrayBuffer = () => Promise.reject(new DOMException("The requested file could not be read.", "NotReadableError"));
+    transfer.items.add(file);
+  };
+  fake("huge.pbp", 3.79 * 1024 ** 3);
+  fake("large.pbp", 600 * 1024 ** 2);
+  fake("unreadable.pbp", 1024, true);
+  for (const type of ["dragenter", "dragover", "drop"]) {
+    document.body.dispatchEvent(new DragEvent(type, { bubbles: true, cancelable: true, dataTransfer: transfer }));
+  }
+});
+const output = () => page.textContent(".plain-out");
+check("large files: past the limit refused", await until(async () => (await output()).includes("Error: huge.pbp (3.79 GiB) was not loaded: the web version supports files up to 2 GiB.")));
+check("large files: a large one added, with a warning", (await output()).includes("Added large.pbp.")
+  && (await output()).includes("Warning: large.pbp (600 MiB) is large: the web version may run out of memory") && (await fileNames()).includes("large.pbp") && !(await fileNames()).includes("huge.pbp"));
+check("large files: a failed read reported", (await output()).includes("Error: the browser could not read unreadable.pbp (1.00 KiB): The requested file could not be read."));
+
 // After :quit (as after a crash), Restart starts a new REPL on the same files.
 const filesBefore = await fileNames();
 await page.fill(".plain-in", ":quit");
@@ -587,6 +592,91 @@ await page.locator(".restart-offer .restart").last().click();
 check("crash: Restart brings the prompt back", await ready());
 await command(":instance two-of-three");
 check("crash: and a new session loads", await until(async () => (await page.textContent(".pane-proof .pane-title-text")).startsWith("Proof (4)")));
+
+// ---- Solver tab ----
+const tab = (label) => page.locator("#tabs button", { hasText: label });
+await tab("Solver").click();
+check("solver: tab shown, Verify hidden", await page.isVisible(".solver-editor") && !(await page.isVisible(".pane-proof")));
+await page.selectOption(".solver-examples", "nqueens_8.scp");
+check("solver: example opened", await until(async () => (await page.textContent(".solver-name")) === "nqueens_8.scp"),
+  await page.textContent(".solver-name"));
+check("solver: example added to the files", await until(async () => (await fileNames()).includes("nqueens_8.scp")));
+check("solver: Verify disabled before a solve", await page.isDisabled(".solver-actions button:has-text('Verify')"));
+await page.click(".solver-actions button:has-text('Solve')");
+const resultTitle = () => page.textContent(".pane-result .pane-title-text");
+check("solver: 92 solutions", await until(async () => (await resultTitle()).startsWith("Result: 92 solutions")), await resultTitle());
+check("solver: solutions listed", (await page.$$(".solver-output .row.line")).length > 10);
+check("solver: OPB and proof added to the files", await until(async () => { const names = await fileNames(); return names.includes("nqueens_8.opb") && names.includes("nqueens_8.pbp"); }));
+await page.fill(".pane-result .pane-filter", "q0=0 ");
+await sleep(100);
+const filteredSolutions = await page.$$eval(".solver-output .row.line", (r) => r.map((x) => x.textContent));
+check("solver: result filter", filteredSolutions.length === 4 && filteredSolutions.every((t) => t.includes("q0=0 ")), filteredSolutions.length);
+await page.fill(".pane-result .pane-filter", "");
+await page.click(".solver-actions button:has-text('Verify')");
+check("solver: Verify shows the Verify tab", await until(async () => page.isVisible(".pane-proof")));
+await ready();
+check("solver: Verify loads the formula", await until(async () => (await title("formula")).startsWith("Formula: nqueens_8.opb")), await title("formula"));
+await command(":verify");
+check("solver: :verify checks every line", (await page.textContent(".plain-out")).includes("Verified 17695 line(s)."));
+await command(":check");
+// cp-solver's nqueens proof has unchecked assertions, hence UNDER ASSERTIONS.
+check("solver: the proof checks", await until(async () => /s (VERIFIED|UNDER ASSERTIONS) COMPLETE ENUMERATION OF 92 SOLUTIONS/.test(await page.textContent(".plain-out"))));
+await tab("Solver").click();
+check("solver: the model is kept across tabs", (await page.inputValue(".solver-editor")).includes("all_different"));
+await page.focus(".solver-editor");
+await page.keyboard.press("End");
+await page.keyboard.type(" ");
+check("solver: an edit marks the model changed", (await page.textContent(".solver-name")) === "nqueens_8.scp •");
+check("solver: an edit makes Verify stale", await page.isDisabled(".solver-actions button:has-text('Verify')"));
+
+// Editor: completion of variables, auto-closed and matched brackets,
+// cp-solver's diagnostics.
+const editorValue = () => page.inputValue(".solver-editor");
+const caretTo = (at) => page.$eval(".solver-editor", (t, at) => { t.focus(); t.setSelectionRange(at, at); }, at);
+await caretTo((await editorValue()).indexOf("(columns"));
+const suggestions = () => page.$$eval(".scp-complete:not([hidden]) li .name", (l) => l.map((x) => x.textContent));
+await page.keyboard.type("(q");
+check("editor: no completion where a constraint's name goes", (await suggestions()).length === 0);
+await page.keyboard.type("q lin_");
+const kindsOffered = "lin_equals,lin_less_equal,lin_less_than,lin_greater_equal,lin_greater_than";
+check("editor: completion offers cps's constraint kinds", (await suggestions()).join() === kindsOffered, (await suggestions()).join());
+check("editor: with what the chosen one says", (await page.textContent(".scp-option-note")).includes("Σ coeff·var = value"), await page.textContent(".scp-option-note"));
+await page.keyboard.press("Enter");
+check("editor: a kind is inserted with a space", (await editorValue()).includes("(qq lin_equals (columns"));
+const signature = () => page.$eval(".solver-signature:not([hidden])", (e) => e.textContent).catch(() => null);
+check("editor: the constraint's signature", await until(async () => (await signature()) === "lin_equals (coeff var ...) value · Σ coeff·var = value"), await signature());
+await page.keyboard.type("(1 q");
+check("editor: completion offers the variables", (await suggestions()).join() === "q0,q1,q2,q3,q4,q5,q6,q7", (await suggestions()).join());
+await page.keyboard.press("ArrowDown");
+await page.keyboard.press("Enter");
+check("editor: completion inserts the choice", (await editorValue()).includes("(qq lin_equals (1 q1(columns"));
+check("editor: the signature inside the arguments", (await signature())?.startsWith("lin_equals "), await signature());
+await page.fill(".solver-editor", "");
+await page.keyboard.type("(a");
+check("editor: ( adds )", (await editorValue()) === "(a)");
+await page.keyboard.type(")");
+check("editor: ) steps over the added one", (await editorValue()) === "(a)" && (await page.$eval(".solver-editor", (t) => t.selectionStart)) === 3);
+await page.fill(".solver-editor", "( (version 1) )");
+await caretTo(3);
+check("editor: the bracket at the caret and its partner", await until(async () =>
+  (await page.$$eval(".solver-highlight .scp-match", (s) => s.map((x) => x.textContent))).join("") === "()"));
+await page.fill(".solver-editor", "( (version 1)\n  (variables (x 0 1) (x 0 2))\n  (constraints (c frob x))\n  (prob_type enumerate) )");
+const problemsText = () => page.textContent(".solver-problems");
+check("editor: every problem listed", await until(async () => (await problemsText()).startsWith("2 problems")), await problemsText());
+check("editor: with its place and cp-solver's message", (await problemsText()).includes("2:23") && (await problemsText()).includes("duplicate variable 'x'")
+  && (await problemsText()).includes("unsupported constraint 'frob'"), await problemsText());
+check("editor: problems underlined", (await page.$$eval(".solver-highlight .scp-err", (s) => s.map((x) => x.textContent))).join() === "x,frob");
+check("editor: their lines marked", (await page.$$eval(".solver-gutter .err", (s) => s.map((x) => x.textContent))).join() === "2,3");
+await page.click(".solver-problems-list li >> nth=1");
+check("editor: a problem selects its text", (await page.$eval(".solver-editor", (t) => t.value.slice(t.selectionStart, t.selectionEnd))) === "frob");
+await page.fill(".solver-editor", "( (version 1) (variables (x 0 1)) (constraints) (prob_type enumerate) )");
+check("editor: a good model has no problems", await until(async () => (await problemsText()).startsWith("No problems")), await problemsText());
+
+await page.fill(".solver-editor", "( (version 1) (variables (x 0 1))");
+await page.keyboard.press("Control+Enter");
+check("solver: a broken model shows cps's problems", await until(async () => (await page.textContent(".solver-errors")).includes("/nqueens_8.scp:1:1: error: ")),
+  await page.textContent(".solver-errors"));
+check("solver: and its result is an error", (await resultTitle()).startsWith("Result: error"), await resultTitle());
 
 check("no page errors", errors.length === 0, errors.join(" | "));
 await browser.close();
