@@ -8,7 +8,7 @@ modified. Local changes are kept as patch series and applied into `work/`.
 | Target | What |
 |---|---|
 | `wasm32-unknown-unknown` | veripb library (browser), veripb-repl core without the TUI |
-| `wasm32-wasip1` | veripb command-line binary, run under a WASI runtime; veripb-repl's line interface as a WASI reactor (`web-repl`, the page's Verify tab); cp-solver's `cps` command-line binary (the Solver tab) |
+| `wasm32-wasip1` | veripb command-line binary, run under a WASI runtime; veripb-repl's line interface as a WASI reactor (`web-repl`, the page's Verify tab); cp-solver's `cps` command-line binary and `scp-check` (the Solver tab) |
 
 ## Layout
 
@@ -17,7 +17,7 @@ modified. Local changes are kept as patch series and applied into `work/`.
 | `upstream/veripb` | submodule: `https://gitlab.com/MIAOresearch/software/VeriPB.git`, branch `main` |
 | `upstream/veripb-repl` | submodule: `https://github.com/philrod1/veripb-repl.git`, branch `dev` |
 | `upstream/crossterm` | submodule: `https://github.com/crossterm-rs/crossterm.git`, tag `0.29` (the crates.io 0.29.0 release) |
-| `upstream/cp-solver` | submodule: `https://github.com/philrod1/cp-solver.git`, branch `main`; built as it is, with no patches and no `work/` tree |
+| `upstream/cp-solver` | submodule: `https://github.com/philrod1/cp-solver.git`, branch `dev`; built as it is, with no patches and no `work/` tree |
 | `patches/<name>/` | local changes, one `git format-patch` file per change, applied in name order |
 | `scripts/prepare.sh` | creates the trees in `work/` (table below) |
 | `scripts/refresh-patches.sh` | regenerates a patch series from the commits in a `work/` tree |
@@ -26,6 +26,7 @@ modified. Local changes are kept as patch series and applied into `work/`.
 | `repl-core/` | wrapper crate for the veripb-repl core; enables `getrandom`'s `wasm_js` backend |
 | `wasi-run/` | Node.js `node:wasi` runners for the WASI binary and WASI test binaries |
 | `bigint-probe/` | prints `malachite-bigint` and `i128` results, for diffing native against wasm |
+| `scp-check/` | cp-solver's `lang::check_scp` as a `wasm32-wasip1` command, built against `upstream/cp-solver`: `scp-check <model.scp>` prints every problem in the model as JSON (`[{kind, message, start, end}]`, positions as `{line, column}`), for the Solver tab's diagnostics |
 | `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state` (a session summary; `vr_state_quick` without the database), `vr_view` (a window of a pane's rows, filtered; `src/views.rs`), `vr_find` (one constraint by label or ID), `vr_preserved`, `vr_explain` (`:explain <n>`'s checker output, and the plain-English explanation from veripb-repl's `teach`, as JSON by `src/teach.rs`), `vr_extras` (`:check` and `:objective` output, bounds), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, `vr_glossary` (veripb-repl's `teach::glossary`), `vr_line_ids` (the constraint IDs checked proof lines in a range derived, from one streamed trace; `src/trace.rs`), `vr_buffer_edit` (one undoable proof-line edit), plus `vr_toggle_breakpoint` and `vr_result_ptr` |
 | `web/` | browser page: Solver and Verify tabs, cps and veripb in Web Workers |
 | `scripts/build-web.sh` | builds `web/pkg/` (generated, not tracked) |
@@ -93,11 +94,12 @@ export CARGO_TARGET_DIR=~/.cache/veripb-wasm-target
 (cd veripb-wasm && cargo build --release --target wasm32-unknown-unknown)
 (cd work/veripb && cargo build --release --bin veripb --no-default-features --target wasm32-wasip1)
 (cd upstream/cp-solver && cargo build --release -p cli --bin cps --target wasm32-wasip1)
+(cd scp-check && cargo build --release --target wasm32-wasip1)
 (cd repl-core && cargo check --target wasm32-unknown-unknown)
 ```
 
 The WASI binaries are `$CARGO_TARGET_DIR/wasm32-wasip1/release/veripb.wasm`
-and `cps.wasm` beside it.
+and `cps.wasm` and `scp-check.wasm` beside it.
 
 ## Update an upstream
 
@@ -239,12 +241,29 @@ Solver tab:
   panel); **Save** (Ctrl+S) and **Save as…** write the model to the files
   panel; **Download** saves it to this computer. Opening another model asks
   before discarding changes.
-- **Editor:** text with line numbers and highlighting by position, as
-  cp-solver reads the file (`modes/scp-syntax.js`): section heads,
-  variables (where declared and after), constraint names and kinds,
-  integers, and parentheses, with a `)` that closes nothing marked. Models
-  over 256 KiB are shown plain. Tab inserts two spaces; after Esc, Tab
-  moves the focus on. Ctrl+Enter (⌘+Enter) solves.
+- **Editor** (`modes/scp-editor.js`):
+  - **Highlighting** by position, as cp-solver reads the file
+    (`modes/scp-syntax.js`): section heads, variables (where declared and
+    after), constraint names and kinds, integers, and parentheses, with a
+    `)` that closes nothing marked. Models over 256 KiB are shown plain.
+  - **Problems:** once typing pauses (0.3 s), cp-solver's own checker
+    (`lang::check_scp`, as `pkg/scp-check.wasm`) reads the model and lists
+    every problem below the editor: its line and column, what kind
+    (`syntax`, `error`, or `not supported yet`) and cp-solver's message. Each
+    is underlined on its first line and its line number is marked; click
+    one (or Enter) to select its text. A model with none shows "No problems:
+    cp-solver accepts this model".
+  - **Brackets:** the bracket next to the caret and its partner are
+    shaded. Typing `(` before whitespace, a `)` or the end adds the `)`;
+    typing `)` there steps over it, and Backspace between the two deletes
+    both.
+  - **Completion:** where a variable can stand (a constraint's arguments,
+    an objective), typing offers the model's variables that start with
+    what is typed, with their bounds; Ctrl+Space offers them all. ↑/↓
+    choose, Enter or Tab inserts, Esc closes. Constraint kinds are not
+    offered: cp-solver does not publish a list of them.
+  - **Keys:** Tab inserts two spaces; after Esc, Tab moves the focus on.
+    Ctrl+Enter (⌘+Enter) solves.
 - **Solve:** runs `cps <stem>.scp --proof <stem>` (cp-solver's
   command-line binary, `pkg/cps.wasm`) on the editor's text, in a Web Worker
   of its own, so the REPL stays usable meanwhile. The model's file name
@@ -501,7 +520,10 @@ How it works:
   `host.js`'s `runCommand` on a fresh in-memory filesystem holding only the
   model, posts cps's stdout and stderr lines in batches as they come, then
   posts the `.opb` and `.pbp` it wrote. Stop terminates the worker; the next
-  solve starts another.
+  solve starts another. The editor's checks run in `check-worker.js`, a
+  worker of their own so a solve does not hold them up: `pkg/scp-check.wasm`
+  on the model, its JSON posted back; an answer for text since changed is
+  dropped.
 - **Running veripb:** for each veripb invocation, `host.js` creates a fresh
   veripb instance on the same filesystem, with regular files as
   stdout/stderr. It copies those to `/.tmp/.veripb-stdout` and
@@ -520,7 +542,7 @@ node web/test/transcript.mjs <files-dir> [<dump-dir>] < script.txt
 node web/test/state-check.mjs    # web-repl's JSON views vs the REPL's own :list, :show and :preserved output
 node --max-old-space-size=6000 web/test/large-check.mjs   # opt-in, ~7 GB RAM: a 1.1M-line proof through the views
 node web/test/host-check.mjs     # host.js's fixes to the WASI shim's in-memory files (linear-time writes)
-node web/test/solver-check.mjs   # pkg/cps.wasm on pkg/models: its proofs verify with pkg/veripb.wasm; output as native cps with CPS=<cps>
+node web/test/solver-check.mjs   # pkg/cps.wasm on pkg/models: its proofs verify with pkg/veripb.wasm; output as native cps with CPS=<cps>; pkg/scp-check.wasm's problems
 node web/test/refs-check.mjs     # which words of a proof line are constraint refs (modes/refs.js)
 node web/test/teach-check.mjs    # plain-English explanations: sample lines, and a sweep of veripb's correct instances
 CHROME=<chrome> [PLAYWRIGHT_CORE=<dir>] node web/test/browser-smoke.mjs [url]   # the page in a browser

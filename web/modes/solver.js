@@ -14,7 +14,8 @@
 // writes <stem>.opb and <stem>.pbp, which are added to the files panel.
 
 import { createLineList } from "./linelist.js";
-import { ANSWER, highlightScp, solutionLine } from "./scp-syntax.js";
+import { createScpEditor } from "./scp-editor.js";
+import { ANSWER, solutionLine } from "./scp-syntax.js";
 import { splitter } from "./splitter.js";
 import { bytes } from "../resources.js";
 
@@ -29,8 +30,6 @@ const TEMPLATE = `( (version 1)
 // Lines of output kept for the Result pane; past this, only how many more
 // there were and the last.
 const MAX_LINES = 200000;
-// Models past this many characters are shown without highlighting.
-const HIGHLIGHT_LIMIT = 256 * 1024;
 
 const el = (tag, props = {}, ...children) => {
   const node = Object.assign(document.createElement(tag), props);
@@ -64,21 +63,13 @@ export function mount(root, host) {
     el("span", { className: "solver-bar-label", textContent: "Model" }), nameText, picker, examples,
     newButton, openButton, upload, saveButton, saveAsButton, downloadButton);
 
-  // ---- Editor ----
-  const gutter = el("pre", { className: "solver-gutter" });
-  gutter.setAttribute("aria-hidden", "true");
-  // The textarea's text is transparent over `highlight`, a copy of it in
-  // coloured spans, kept at the same scroll position.
-  const highlight = el("pre", { className: "solver-highlight" });
-  highlight.setAttribute("aria-hidden", "true");
-  const editor = el("textarea", { className: "solver-editor", spellcheck: false, wrap: "off" });
-  editor.setAttribute("aria-label", "Model");
-  editor.setAttribute("autocapitalize", "off");
-  editor.setAttribute("autocomplete", "off");
+  // ---- Editor (modes/scp-editor.js) ----
+  const scp = createScpEditor({ onInput: () => renderState(), onSolve: () => solve() });
+  const editor = scp.textarea;
   const editorPane = el("section", { className: "pane pane-model" },
     el("header", { className: "pane-head" }, el("span", { className: "pane-title-text", textContent: "Model (.scp)" }),
-      el("span", { className: "solver-hint", textContent: "Ctrl+Enter solves" })),
-    el("div", { className: "solver-edit" }, gutter, el("div", { className: "solver-code" }, highlight, editor)));
+      el("span", { className: "solver-hint", textContent: "Ctrl+Space completes · Ctrl+Enter solves" })),
+    scp.edit, scp.problems);
 
   // ---- Result ----
   const resultTitle = el("span", { className: "pane-title-text", textContent: "Result" });
@@ -129,25 +120,6 @@ export function mount(root, host) {
   let solved = null;   // {text, stem} of the last solve that wrote both files
   const dirty = () => editor.value !== saved;
 
-  // Line numbers and highlighting, after each change to the text.
-  function renderEditor() {
-    const text = editor.value;
-    const lines = text.split("\n").length;
-    if (gutter.dataset.lines !== String(lines)) {
-      gutter.textContent = Array.from({ length: lines }, (_, i) => i + 1).join("\n");
-      gutter.dataset.lines = String(lines);
-    }
-    const highlighted = text.length <= HIGHLIGHT_LIMIT;
-    editor.classList.toggle("highlighted", highlighted);
-    // A last empty line still needs its height.
-    highlight.innerHTML = highlighted ? `${highlightScp(text)}\n` : "";
-    syncScroll();
-  }
-  function syncScroll() {
-    gutter.scrollTop = editor.scrollTop;
-    highlight.scrollTop = editor.scrollTop;
-    highlight.scrollLeft = editor.scrollLeft;
-  }
   function renderState() {
     nameText.textContent = `${name}${dirty() ? " •" : ""}`;
     nameText.title = dirty() ? `${name}, edited since it was opened or saved` : name;
@@ -162,28 +134,11 @@ export function mount(root, host) {
     saved = text;
     editor.value = text;
     editor.scrollTop = 0;
-    renderEditor();
+    scp.refresh();
     renderState();
   }
   const discardOk = () => !dirty() || confirm(`Discard the changes to ${name}?`);
 
-  editor.addEventListener("input", () => { renderEditor(); renderState(); });
-  editor.addEventListener("scroll", syncScroll);
-  // Tab indents (two spaces); after Esc, Tab moves focus on as usual.
-  let tabMoves = false;
-  editor.addEventListener("keydown", (event) => {
-    const mod = event.ctrlKey || event.metaKey;
-    if (event.key === "Escape") { tabMoves = true; return; }
-    if (event.key === "Tab" && !tabMoves && !mod && !event.altKey && !event.shiftKey) {
-      event.preventDefault();
-      if (!document.execCommand?.("insertText", false, "  ")) editor.setRangeText("  ", editor.selectionStart, editor.selectionEnd, "end");
-      renderEditor();
-      renderState();
-      return;
-    }
-    tabMoves = false;
-    if (mod && event.key === "Enter") { event.preventDefault(); solve(); }
-  });
   root.addEventListener("keydown", (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "s") { event.preventDefault(); save(); }
   });

@@ -469,3 +469,32 @@ aside input[type=file] { display: none; }
   .solver-main .splitter { display: none; }
   .solver-hint { display: none; }
 }
+
+/* Solver tab: diagnostics, bracket matching and completion (modes/scp-editor.js) */
+.scp-err { text-decoration: underline wavy var(--error); text-decoration-skip-ink: none; text-underline-offset: 3px; }
+.scp-match { background: color-mix(in srgb, var(--accent) 28%, transparent); border-radius: 2px; }
+.solver-gutter .err { color: var(--error); font-weight: 600; }
+.solver-problems {
+  flex: none; max-height: 9em; overflow: auto; border-top: 1px solid var(--border); background: var(--panel);
+  padding: 0.25rem 0;
+}
+.solver-problems-title { display: block; padding: 0 0.6rem; color: var(--muted); }
+.solver-problems[data-state="clean"] .solver-problems-title { color: var(--ok); }
+.solver-problems[data-state="errors"] .solver-problems-title { color: var(--error); }
+.solver-problems.stale > * { opacity: 0.55; }
+.solver-problems-list { list-style: none; margin: 0; padding: 0; }
+.solver-problems-list li { display: flex; gap: 0.6rem; padding: 0 0.6rem; cursor: pointer; white-space: nowrap; }
+.solver-problems-list li:hover, .solver-problems-list li:focus-visible { background: color-mix(in srgb, var(--fg) 7%, transparent); outline: none; }
+.solver-problems-list .where { color: var(--muted); min-width: 4ch; text-align: right; }
+.solver-problems-list .what { color: var(--error); }
+.solver-problems-list .what.kind-unsupported { color: var(--label); }
+.solver-problems-list .message { overflow: hidden; text-overflow: ellipsis; }
+.scp-complete {
+  position: absolute; z-index: 5; list-style: none; margin: 0; padding: 0.15rem 0; min-width: 10rem; max-height: 12em; overflow: auto;
+  background: var(--bg); border: 1px solid var(--border); border-radius: 4px; box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
+}
+.scp-complete[hidden] { display: none; }
+.scp-complete li { display: flex; gap: 1.5rem; padding: 0 0.5rem; cursor: pointer; line-height: 1.5; }
+.scp-complete li[aria-selected="true"] { background: color-mix(in srgb, var(--accent) 22%, transparent); }
+.scp-complete .name { color: var(--variable); }
+.scp-complete .detail { margin-left: auto; color: var(--muted); }

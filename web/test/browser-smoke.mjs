@@ -628,6 +628,41 @@ await page.keyboard.press("End");
 await page.keyboard.type(" ");
 check("solver: an edit marks the model changed", (await page.textContent(".solver-name")) === "nqueens_8.scp •");
 check("solver: an edit makes Verify stale", await page.isDisabled(".solver-actions button:has-text('Verify')"));
+
+// Editor: completion of variables, auto-closed and matched brackets,
+// cp-solver's diagnostics.
+const editorValue = () => page.inputValue(".solver-editor");
+const caretTo = (at) => page.$eval(".solver-editor", (t, at) => { t.focus(); t.setSelectionRange(at, at); }, at);
+await caretTo((await editorValue()).indexOf("(columns"));
+const suggestions = () => page.$$eval(".scp-complete:not([hidden]) li .name", (l) => l.map((x) => x.textContent));
+await page.keyboard.type("(q");
+check("editor: no completion where a constraint's name goes", (await suggestions()).length === 0);
+await page.keyboard.type("q not_equals q");
+check("editor: completion offers the variables", (await suggestions()).join() === "q0,q1,q2,q3,q4,q5,q6,q7", (await suggestions()).join());
+await page.keyboard.press("ArrowDown");
+await page.keyboard.press("Enter");
+check("editor: completion inserts the choice", (await editorValue()).includes("(qq not_equals q1(columns"));
+await page.fill(".solver-editor", "");
+await page.keyboard.type("(a");
+check("editor: ( adds )", (await editorValue()) === "(a)");
+await page.keyboard.type(")");
+check("editor: ) steps over the added one", (await editorValue()) === "(a)" && (await page.$eval(".solver-editor", (t) => t.selectionStart)) === 3);
+await page.fill(".solver-editor", "( (version 1) )");
+await caretTo(3);
+check("editor: the bracket at the caret and its partner", await until(async () =>
+  (await page.$$eval(".solver-highlight .scp-match", (s) => s.map((x) => x.textContent))).join("") === "()"));
+await page.fill(".solver-editor", "( (version 1)\n  (variables (x 0 1) (x 0 2))\n  (constraints (c frob x))\n  (prob_type enumerate) )");
+const problemsText = () => page.textContent(".solver-problems");
+check("editor: every problem listed", await until(async () => (await problemsText()).startsWith("2 problems")), await problemsText());
+check("editor: with its place and cp-solver's message", (await problemsText()).includes("2:23") && (await problemsText()).includes("duplicate variable 'x'")
+  && (await problemsText()).includes("unsupported constraint 'frob'"), await problemsText());
+check("editor: problems underlined", (await page.$$eval(".solver-highlight .scp-err", (s) => s.map((x) => x.textContent))).join() === "x,frob");
+check("editor: their lines marked", (await page.$$eval(".solver-gutter .err", (s) => s.map((x) => x.textContent))).join() === "2,3");
+await page.click(".solver-problems-list li >> nth=1");
+check("editor: a problem selects its text", (await page.$eval(".solver-editor", (t) => t.value.slice(t.selectionStart, t.selectionEnd))) === "frob");
+await page.fill(".solver-editor", "( (version 1) (variables (x 0 1)) (constraints) (prob_type enumerate) )");
+check("editor: a good model has no problems", await until(async () => (await problemsText()).startsWith("No problems")), await problemsText());
+
 await page.fill(".solver-editor", "( (version 1) (variables (x 0 1))");
 await page.keyboard.press("Control+Enter");
 check("solver: a broken model shows cps's error", await until(async () => (await page.textContent(".solver-errors")).includes("cps: /nqueens_8.scp: ")),

@@ -2,7 +2,8 @@
 // as solver-worker.js runs it, on each of pkg/models/*.scp. Its output must
 // match a native cps (if $CPS names one) and the OPB and proof it writes must
 // verify with pkg/veripb.wasm. A broken model must fail with cps's error and
-// write no files.
+// write no files. pkg/scp-check.wasm must find no problems in the examples
+// and every problem, with its place, in broken models.
 //
 // Usage: [CPS=<native cps>] node web/test/solver-check.mjs
 // Exit status 1 on any failure.
@@ -24,6 +25,7 @@ function check(name, ok, detail = "") {
 
 const cps = await WebAssembly.compile(readFileSync(join(web, "pkg/cps.wasm")));
 const veripb = await WebAssembly.compile(readFileSync(join(web, "pkg/veripb.wasm")));
+const scpCheck = await WebAssembly.compile(readFileSync(join(web, "pkg/scp-check.wasm")));
 
 /** Runs `module` with `args` on `root`: `{exit, out, err}` (lines). */
 function run(module, args, root) {
@@ -75,6 +77,24 @@ const bad = run(cps, ["cps", "/broken.scp", "--proof", "/broken"], broken);
 check("broken model: cps exits 1", bad.exit === 1, `exit ${bad.exit}`);
 check("broken model: cps's error on stderr", bad.err.some((l) => l.startsWith("cps: /broken.scp: ")), bad.err.join(" | "));
 check("broken model: no files written", !readFile(broken, "broken.opb") && !readFile(broken, "broken.pbp"));
+
+// scp-check.wasm (the Solver tab's diagnostics, check-worker.js): every
+// error in the model, with where it is.
+const checkModel = (text) => {
+  const root = createRoot();
+  writeFile(root, "model.scp", text);
+  const result = run(scpCheck, ["scp-check", "/model.scp"], root);
+  return result.exit === 0 ? JSON.parse(result.out.join("\n")) : null;
+};
+for (const name of models) {
+  const errors = checkModel(readFileSync(join(web, "pkg/models", name), "utf8"));
+  check(`scp-check: ${name} has no problems`, Array.isArray(errors) && errors.length === 0, JSON.stringify(errors));
+}
+const two = checkModel("( (version 1)\n  (variables (x 0 1) (x 0 2))\n  (constraints (c frob x))\n  (prob_type enumerate) )");
+check("scp-check: every error, in order", two?.length === 2 && two[0].kind === "malformed" && two[1].kind === "unsupported", JSON.stringify(two));
+check("scp-check: with its line and column", two?.[0].start.line === 2 && two[0].start.column === 23 && two[1].start.line === 3, JSON.stringify(two?.map((e) => e.start)));
+const unclosed = checkModel("( (version 1)\n  (variables (x 0 1)\n");
+check("scp-check: a syntax error", unclosed?.length === 1 && unclosed[0].kind === "syntax" && unclosed[0].message.includes("unclosed"), JSON.stringify(unclosed));
 
 console.log(failures ? `${failures} failed` : "all passed");
 process.exit(failures ? 1 : 0);

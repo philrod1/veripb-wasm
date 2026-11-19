@@ -1,0 +1,12 @@
+[package]
+name = "scp-check"
+version = "0.0.0"
+edition = "2024"
+
+[[bin]]
+name = "scp-check"
+path = "src/main.rs"
+
+[dependencies]
+lang = { path = "../upstream/cp-solver/crates/lang" }
+serde_json = "1"
