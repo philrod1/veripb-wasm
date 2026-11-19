@@ -14,6 +14,7 @@
 // writes <stem>.opb and <stem>.pbp, which are added to the files panel.
 
 import { createLineList } from "./linelist.js";
+import { ANSWER, highlightScp, solutionLine } from "./scp-syntax.js";
 import { splitter } from "./splitter.js";
 import { bytes } from "../resources.js";
 
@@ -25,11 +26,11 @@ const TEMPLATE = `( (version 1)
   (constraints (c1 lin_equals (2 x 1 y) 12) (c2 not_equals x y))
   (prob_type enumerate) )
 `;
-// cps's answer, one line of its output.
-const ANSWER = /^(SATISFIABLE|UNSATISFIABLE|UNKNOWN|\d+ solutions?)$/;
 // Lines of output kept for the Result pane; past this, only how many more
 // there were and the last.
 const MAX_LINES = 200000;
+// Models past this many characters are shown without highlighting.
+const HIGHLIGHT_LIMIT = 256 * 1024;
 
 const el = (tag, props = {}, ...children) => {
   const node = Object.assign(document.createElement(tag), props);
@@ -66,6 +67,10 @@ export function mount(root, host) {
   // ---- Editor ----
   const gutter = el("pre", { className: "solver-gutter" });
   gutter.setAttribute("aria-hidden", "true");
+  // The textarea's text is transparent over `highlight`, a copy of it in
+  // coloured spans, kept at the same scroll position.
+  const highlight = el("pre", { className: "solver-highlight" });
+  highlight.setAttribute("aria-hidden", "true");
   const editor = el("textarea", { className: "solver-editor", spellcheck: false, wrap: "off" });
   editor.setAttribute("aria-label", "Model");
   editor.setAttribute("autocapitalize", "off");
@@ -73,7 +78,7 @@ export function mount(root, host) {
   const editorPane = el("section", { className: "pane pane-model" },
     el("header", { className: "pane-head" }, el("span", { className: "pane-title-text", textContent: "Model (.scp)" }),
       el("span", { className: "solver-hint", textContent: "Ctrl+Enter solves" })),
-    el("div", { className: "solver-edit" }, gutter, editor));
+    el("div", { className: "solver-edit" }, gutter, el("div", { className: "solver-code" }, highlight, editor)));
 
   // ---- Result ----
   const resultTitle = el("span", { className: "pane-title-text", textContent: "Result" });
@@ -124,13 +129,24 @@ export function mount(root, host) {
   let solved = null;   // {text, stem} of the last solve that wrote both files
   const dirty = () => editor.value !== saved;
 
-  function renderGutter() {
-    const lines = editor.value.split("\n").length;
+  // Line numbers and highlighting, after each change to the text.
+  function renderEditor() {
+    const text = editor.value;
+    const lines = text.split("\n").length;
     if (gutter.dataset.lines !== String(lines)) {
       gutter.textContent = Array.from({ length: lines }, (_, i) => i + 1).join("\n");
       gutter.dataset.lines = String(lines);
     }
+    const highlighted = text.length <= HIGHLIGHT_LIMIT;
+    editor.classList.toggle("highlighted", highlighted);
+    // A last empty line still needs its height.
+    highlight.innerHTML = highlighted ? `${highlightScp(text)}\n` : "";
+    syncScroll();
+  }
+  function syncScroll() {
     gutter.scrollTop = editor.scrollTop;
+    highlight.scrollTop = editor.scrollTop;
+    highlight.scrollLeft = editor.scrollLeft;
   }
   function renderState() {
     nameText.textContent = `${name}${dirty() ? " •" : ""}`;
@@ -146,13 +162,13 @@ export function mount(root, host) {
     saved = text;
     editor.value = text;
     editor.scrollTop = 0;
-    renderGutter();
+    renderEditor();
     renderState();
   }
   const discardOk = () => !dirty() || confirm(`Discard the changes to ${name}?`);
 
-  editor.addEventListener("input", () => { renderGutter(); renderState(); });
-  editor.addEventListener("scroll", () => { gutter.scrollTop = editor.scrollTop; });
+  editor.addEventListener("input", () => { renderEditor(); renderState(); });
+  editor.addEventListener("scroll", syncScroll);
   // Tab indents (two spaces); after Esc, Tab moves focus on as usual.
   let tabMoves = false;
   editor.addEventListener("keydown", (event) => {
@@ -161,7 +177,7 @@ export function mount(root, host) {
     if (event.key === "Tab" && !tabMoves && !mod && !event.altKey && !event.shiftKey) {
       event.preventDefault();
       if (!document.execCommand?.("insertText", false, "  ")) editor.setRangeText("  ", editor.selectionStart, editor.selectionEnd, "end");
-      renderGutter();
+      renderEditor();
       renderState();
       return;
     }
@@ -311,7 +327,7 @@ export function mount(root, host) {
     dropped = 0;
     lastLine = null;
     answerLine = null;
-    list ??= createLineList(output, lines);
+    list ??= createLineList(output, lines, { render: solutionLine });
     list.setFilter(filter.value);
     errors.textContent = "";
     errors.hidden = true;

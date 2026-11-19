@@ -1,15 +1,18 @@
 // A virtual list of text lines held in an array (modes/vlist.js over local
 // data): only the lines on screen are in the DOM, however long the array.
 //
-// createLineList(body, lines) -> { update(), setFilter(text), atBottom(),
+// createLineList(body, lines, { render }) -> { update(), setFilter(text), atBottom(),
 //                                  toBottom(), total }
 //   body: the scroll container; lines: an array the caller may append to,
 //   then call update(). setFilter(text): show only the lines containing
-//   `text` (case-insensitive); "" shows all.
+//   `text` (case-insensitive); "" shows all. render(line) -> Element,
+//   optional: one line's row (default: a "row line" div of its text).
 
 import { createVirtualList } from "./vlist.js";
 
-export function createLineList(body, lines) {
+const plainRow = (line) => Object.assign(document.createElement("div"), { className: "row line", textContent: line || " " });
+
+export function createLineList(body, lines, { render = plainRow } = {}) {
   let query = "";
   let matches = null; // indices into `lines` while filtered
   let scanned = 0; // lines already checked against `query`
@@ -29,7 +32,7 @@ export function createLineList(body, lines) {
       const view = shown();
       return Promise.resolve({ total: view.length, rows: Array.from({ length: Math.max(0, Math.min(count, view.length - start)) }, (_, i) => text(start + i)), generation: 0 });
     },
-    render: (line) => Object.assign(document.createElement("div"), { className: "row line", textContent: line || " " }),
+    render,
   });
   return {
     get total() {

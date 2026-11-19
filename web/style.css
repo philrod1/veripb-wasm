@@ -428,15 +428,36 @@ aside input[type=file] { display: none; }
 .solver-main { flex: 1; display: grid; grid-template-rows: minmax(0, 1fr); min-height: 0; }
 .solver-hint { margin-left: auto; font-size: 0.9em; }
 .solver-edit { flex: 1; display: flex; min-height: 0; background: var(--bg); }
-.solver-gutter, .solver-editor { font: inherit; line-height: 1.5; margin: 0; padding: 0.5rem 0; }
+.solver-gutter, .solver-editor, .solver-highlight { font: inherit; line-height: 1.5; margin: 0; padding: 0.5rem 0; }
 .solver-gutter {
   flex: none; min-width: 3.5ch; padding-left: 0.5rem; padding-right: 0.5rem; overflow: hidden; text-align: right;
   color: var(--muted); background: var(--panel); border-right: 1px solid var(--border); user-select: none;
 }
-.solver-editor {
-  flex: 1; min-width: 0; padding-left: 0.6rem; padding-right: 0.6rem; resize: none; border: none; outline: none;
-  color: var(--fg); background: transparent; white-space: pre; overflow: auto; tab-size: 2;
+.solver-code { flex: 1; min-width: 0; position: relative; }
+/* The textarea over its highlighted copy: same box, font and scroll. The
+   copy has room for the textarea's scrollbars, so it can scroll as far. */
+.solver-editor, .solver-highlight {
+  position: absolute; inset: 0; padding-left: 0.6rem; padding-right: 0.6rem; border: none;
+  white-space: pre; tab-size: 2; font-variant-ligatures: none;
 }
+.solver-editor { resize: none; outline: none; color: var(--fg); background: transparent; overflow: auto; }
+.solver-editor.highlighted { color: transparent; caret-color: var(--fg); }
+.solver-highlight {
+  overflow: hidden; pointer-events: none; color: var(--fg);
+  padding-right: calc(0.6rem + 24px); padding-bottom: calc(0.5rem + 24px);
+}
+.scp-kw { color: var(--breakpoint); }
+.scp-kind { color: var(--cursor-accent); }
+.scp-name { color: var(--label); }
+.scp-var { color: var(--variable); }
+.scp-num { color: var(--echo); }
+.scp-paren { color: var(--muted); }
+.scp-bad { color: var(--error); background: var(--error-bg); }
+.solver-output .row.line { display: block; }
+.solver-output .sol-var { color: var(--variable); }
+.solver-output .sol-eq { color: var(--muted); }
+.solver-output .sol-val { color: var(--fg); font-weight: 600; }
+.solver-output .sol-answer { color: var(--echo); font-weight: 600; }
 .solver-errors {
   margin: 0; padding: 0.5rem 0.75rem; color: var(--error); white-space: pre-wrap; word-break: break-word;
   border-bottom: 1px solid var(--border); max-height: 40%; overflow: auto;

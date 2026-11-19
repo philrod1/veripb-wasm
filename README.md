@@ -239,13 +239,18 @@ Solver tab:
   panel); **Save** (Ctrl+S) and **Save as…** write the model to the files
   panel; **Download** saves it to this computer. Opening another model asks
   before discarding changes.
-- **Editor:** plain text with line numbers. Tab inserts two spaces; after
-  Esc, Tab moves the focus on. Ctrl+Enter (⌘+Enter) solves.
+- **Editor:** text with line numbers and highlighting by position, as
+  cp-solver reads the file (`modes/scp-syntax.js`): section heads,
+  variables (where declared and after), constraint names and kinds,
+  integers, and parentheses, with a `)` that closes nothing marked. Models
+  over 256 KiB are shown plain. Tab inserts two spaces; after Esc, Tab
+  moves the focus on. Ctrl+Enter (⌘+Enter) solves.
 - **Solve:** runs `cps <stem>.scp --proof <stem>` (cp-solver's
   command-line binary, `pkg/cps.wasm`) on the editor's text, in a Web Worker
   of its own, so the REPL stays usable meanwhile. The model's file name
   gives the stem (`untitled` until saved).
-  - **Result:** what cps printed, as it prints it: one line per solution,
+  - **Result:** what cps printed, as it prints it (in each `name=value`,
+    the name and value coloured apart): one line per solution,
     then its answer (`SATISFIABLE`, `UNSATISFIABLE`, `N solutions`), which
     the pane title shows with the time taken. The list draws only the lines
     on screen; the filter box shows only the lines containing its text.
