@@ -1,13 +1,14 @@
 # veripb-wasm
 
-WebAssembly builds of veripb and veripb-repl, and a browser page that runs
-them. The upstream sources are pinned git submodules and are not modified. Local changes are kept as
-patch series and applied into `work/`.
+WebAssembly builds of veripb, veripb-repl and cp-solver, and a browser page
+that runs them: write a constraint model, solve it with a proof, and check
+the proof. The upstream sources are pinned git submodules and are not
+modified. Local changes are kept as patch series and applied into `work/`.
 
 | Target | What |
 |---|---|
 | `wasm32-unknown-unknown` | veripb library (browser), veripb-repl core without the TUI |
-| `wasm32-wasip1` | veripb command-line binary, run under a WASI runtime; veripb-repl's line interface as a WASI reactor (`web-repl`, the page's enhanced mode) |
+| `wasm32-wasip1` | veripb command-line binary, run under a WASI runtime; veripb-repl's line interface as a WASI reactor (`web-repl`, the page's Verify tab); cp-solver's `cps` command-line binary (the Solver tab) |
 
 ## Layout
 
@@ -16,6 +17,7 @@ patch series and applied into `work/`.
 | `upstream/veripb` | submodule: `https://gitlab.com/MIAOresearch/software/VeriPB.git`, branch `main` |
 | `upstream/veripb-repl` | submodule: `https://github.com/philrod1/veripb-repl.git`, branch `dev` |
 | `upstream/crossterm` | submodule: `https://github.com/crossterm-rs/crossterm.git`, tag `0.29` (the crates.io 0.29.0 release) |
+| `upstream/cp-solver` | submodule: `https://github.com/philrod1/cp-solver.git`, branch `main`; built as it is, with no patches and no `work/` tree |
 | `patches/<name>/` | local changes, one `git format-patch` file per change, applied in name order |
 | `scripts/prepare.sh` | creates the trees in `work/` (table below) |
 | `scripts/refresh-patches.sh` | regenerates a patch series from the commits in a `work/` tree |
@@ -25,7 +27,7 @@ patch series and applied into `work/`.
 | `wasi-run/` | Node.js `node:wasi` runners for the WASI binary and WASI test binaries |
 | `bigint-probe/` | prints `malachite-bigint` and `i128` results, for diffing native against wasm |
 | `web-repl/` | veripb-repl's line interface as a `wasm32-wasip1` reactor, built against `work/veripb-repl-tui` and `work/crossterm`: `vr_init`, `vr_line`, `vr_alloc`, `vr_free`; JSON views `vr_state` (a session summary; `vr_state_quick` without the database), `vr_view` (a window of a pane's rows, filtered; `src/views.rs`), `vr_find` (one constraint by label or ID), `vr_preserved`, `vr_explain` (`:explain <n>`'s checker output, and the plain-English explanation from veripb-repl's `teach`, as JSON by `src/teach.rs`), `vr_extras` (`:check` and `:objective` output, bounds), `vr_complete` (the TUI's completer), `vr_themes` (the TUI's palettes), `vr_commands`, `vr_glossary` (veripb-repl's `teach::glossary`), `vr_line_ids` (the constraint IDs checked proof lines in a range derived, from one streamed trace; `src/trace.rs`), `vr_buffer_edit` (one undoable proof-line edit), plus `vr_toggle_breakpoint` and `vr_result_ptr` |
-| `web/` | browser page: enhanced mode, veripb in Web Workers |
+| `web/` | browser page: Solver and Verify tabs, cps and veripb in Web Workers |
 | `scripts/build-web.sh` | builds `web/pkg/` (generated, not tracked) |
 | `scripts/serve.py` | serves `web/` locally |
 
@@ -90,11 +92,12 @@ scripts/prepare.sh
 export CARGO_TARGET_DIR=~/.cache/veripb-wasm-target
 (cd veripb-wasm && cargo build --release --target wasm32-unknown-unknown)
 (cd work/veripb && cargo build --release --bin veripb --no-default-features --target wasm32-wasip1)
+(cd upstream/cp-solver && cargo build --release -p cli --bin cps --target wasm32-wasip1)
 (cd repl-core && cargo check --target wasm32-unknown-unknown)
 ```
 
-The WASI binary is
-`$CARGO_TARGET_DIR/wasm32-wasip1/release/veripb.wasm`.
+The WASI binaries are `$CARGO_TARGET_DIR/wasm32-wasip1/release/veripb.wasm`
+and `cps.wasm` beside it.
 
 ## Update an upstream
 
@@ -154,10 +157,19 @@ batches crash Node.
 
 ## Browser version
 
-`web/` runs veripb-repl in the browser. Nothing runs on a server; files
+`web/` runs cp-solver and veripb-repl in the browser. Nothing runs on a server; files
 live in an in-memory filesystem in the tab and are lost on reload.
 
-The page runs enhanced mode: browser-native panes driven by session data.
+Two tabs, chosen in the header or with `?mode=solver` or `?mode=verify` in
+the URL (the last choice is remembered; Solver by default):
+
+| Tab | What |
+|---|---|
+| Solver | edit a constraint model (`.scp`) and solve it with cp-solver, which writes an OPB formula and a VeriPB proof |
+| Verify | veripb-repl's enhanced mode: browser-native panes driven by session data |
+
+Both tabs stay open while hidden: switching keeps the model, the results and
+the proof session.
 
 If the REPL crashes (for example, out of WebAssembly memory on a very
 large proof) or after `:quit`, the page offers **Restart the
@@ -168,10 +180,10 @@ for the new one's.
 
 Leaving the page loses the session (files exist only in the tab), so
 Backspace outside a text field does nothing, a horizontal trackpad swipe
-does not go back (`overscroll-behavior-x`), and while there are files the
-browser asks before leaving or reloading.
+does not go back (`overscroll-behavior-x`), and while there are files (or an
+edited model not saved) the browser asks before leaving or reloading.
 
-Resource usage (the gauge at the right of the header, every mode):
+Resource usage (the gauge at the right of the header, either tab; the REPL's figures):
 - **Memory:** the REPL's WebAssembly memory and the last veripb run's, each
   against the 4 GiB limit; the largest veripb run; the files; the page's
   JavaScript heap and the device memory, where the browser reports them.
@@ -191,8 +203,9 @@ Files panel (left; "Files" in the header hides and shows it, remembered):
 - **Load demo files:** copies veripb-repl's `demos/files` into `/`.
 - **Load example files:** copies veripb-repl's `examples` into `/`.
 - **Upload:** adds local files.
-- **Badges:** F marks a formula (`.opb`), P a proof (`.pbp`). Hover a name for its size.
-- **Use a file:** double-click its name (or focus it and press Enter) to run
+- **Badges:** M marks a model (`.scp`), F a formula (`.opb`), P a proof (`.pbp`). Hover a name for its size.
+- **Use a file:** double-click its name (or focus it and press Enter) to open
+  a model in the Solver tab, or, in the Verify tab, to run
   `:load <name>` for a formula or `:source <name>` for a proof, as if typed
   at the prompt.
 - **Download:** ↓ next to a file.
@@ -210,7 +223,7 @@ scripts/prepare.sh
 scripts/build-web.sh
 scripts/serve.py [port] [address]      # default 8000 127.0.0.1; then open http://localhost:8000
 scripts/deploy.sh [dir]                # on a web server: submodules, prepare, build, copy web/ to dir (default /var/www/html)
-scripts/update-upstream.sh <veripb|veripb-repl|crossterm> [ref]   # move a submodule to its branch head (or ref), re-apply patches, build, test; stops before committing
+scripts/update-upstream.sh <veripb|veripb-repl|crossterm|cp-solver> [ref]   # move a submodule to its branch head (or ref), re-apply patches, build, test; stops before committing
 ```
 
 `serve.py` sends `Cross-Origin-Opener-Policy: same-origin`,
@@ -218,7 +231,38 @@ scripts/update-upstream.sh <veripb|veripb-repl|crossterm> [ref]   # move a submo
 Serve from the host if the container publishes no ports: `web/` is part of
 the bind-mounted repo.
 
-Output and command line:
+Solver tab:
+- **Model bar:** the model's name (• once edited and not saved); **From
+  files…** opens a model in the files panel; **Examples…** opens one of
+  cp-solver's `examples` (adding it to the files panel); **New** starts from
+  a small model; **Open…** opens a local `.scp` (adding it to the files
+  panel); **Save** (Ctrl+S) and **Save as…** write the model to the files
+  panel; **Download** saves it to this computer. Opening another model asks
+  before discarding changes.
+- **Editor:** plain text with line numbers. Tab inserts two spaces; after
+  Esc, Tab moves the focus on. Ctrl+Enter (⌘+Enter) solves.
+- **Solve:** runs `cps <stem>.scp --proof <stem>` (cp-solver's
+  command-line binary, `pkg/cps.wasm`) on the editor's text, in a Web Worker
+  of its own, so the REPL stays usable meanwhile. The model's file name
+  gives the stem (`untitled` until saved).
+  - **Result:** what cps printed, as it prints it: one line per solution,
+    then its answer (`SATISFIABLE`, `UNSATISFIABLE`, `N solutions`), which
+    the pane title shows with the time taken. The list draws only the lines
+    on screen; the filter box shows only the lines containing its text.
+    Past 200,000 lines the rest are counted, not kept, and the last is
+    shown.
+  - **Errors:** cps's error messages (a syntax error, an unsupported
+    constraint, an optimisation problem) above the list, in red.
+  - **Files:** on success, `<stem>.opb` and `<stem>.pbp` are added to the
+    files panel, replacing any of the same name.
+- **Stop:** ends a solve that is still running. The lines printed so far
+  stay; no files are added.
+- **Verify ▸:** once the model in the editor has been solved, shows the
+  Verify tab and runs `:instance <stem>` there, which loads `<stem>.opb`
+  and sources `<stem>.pbp`. Editing the model disables it until the next
+  solve. If the REPL is busy, Output says so and nothing is run.
+
+Output and command line (Verify tab):
 - **Input:** one line per Enter. Up and Down step through command history.
 - **Paths:** relative paths resolve against `/`, for example
   `:instance two-of-three`.
@@ -246,7 +290,7 @@ Output and command line:
 - **Timing:** the header shows the last command's duration and veripb run
   count.
 
-Enhanced mode:
+Verify tab (enhanced mode):
 - **Panes:** Formula | Database | Proof on top; Output, Transcript,
   Preserved and Extras tabs and the command line below. Each top pane draws
   only the rows on screen plus a screen either side, fetched from the REPL
@@ -427,10 +471,13 @@ Differences from `veripb-repl --plain`:
 - No "Working…" line before `:source` and `:instance`.
 
 How it works:
-- **Shell:** `index.html`, `style.css` and `shell.js` provide the mode
-  menu, status line, resource usage and files panel. Each mode is a module in `web/modes/`
-  with `mount(root, host)`; the interface is described in `web/shell.js`.
-- **Enhanced mode:** `modes/repl-client.js` starts
+- **Shell:** `index.html`, `style.css` and `shell.js` provide the tab bar,
+  status line, resource usage and files panel. Both tabs are mounted at
+  start, each in its own element, and hidden rather than unmounted. The
+  files panel's files live in the Verify tab's worker; the Solver tab reads
+  and adds them through the shell. Interfaces: `web/shell.js` (Verify) and
+  `web/modes/solver.js`.
+- **Verify tab (enhanced mode):** `modes/repl-client.js` starts
   `repl-worker.js`, a module Web Worker. The worker compiles `pkg/repl.wasm`
   and `pkg/veripb.wasm`, then runs the REPL through `host.js`.
   - `modes/output-view.js` is the output pane and command line.
@@ -444,6 +491,12 @@ How it works:
     `vr_find`; Links asks `vr_line_ids` for the lines on screen; the Vim
     editor reads lines from the Proof pane's rows, plus its own edits until
     a fetch includes them.
+- **Solver tab:** `modes/solver.js` starts `solver-worker.js`, a module Web
+  Worker, on the first solve. For each solve it runs `pkg/cps.wasm` with
+  `host.js`'s `runCommand` on a fresh in-memory filesystem holding only the
+  model, posts cps's stdout and stderr lines in batches as they come, then
+  posts the `.opb` and `.pbp` it wrote. Stop terminates the worker; the next
+  solve starts another.
 - **Running veripb:** for each veripb invocation, `host.js` creates a fresh
   veripb instance on the same filesystem, with regular files as
   stdout/stderr. It copies those to `/.tmp/.veripb-stdout` and
@@ -462,6 +515,7 @@ node web/test/transcript.mjs <files-dir> [<dump-dir>] < script.txt
 node web/test/state-check.mjs    # web-repl's JSON views vs the REPL's own :list, :show and :preserved output
 node --max-old-space-size=6000 web/test/large-check.mjs   # opt-in, ~7 GB RAM: a 1.1M-line proof through the views
 node web/test/host-check.mjs     # host.js's fixes to the WASI shim's in-memory files (linear-time writes)
+node web/test/solver-check.mjs   # pkg/cps.wasm on pkg/models: its proofs verify with pkg/veripb.wasm; output as native cps with CPS=<cps>
 node web/test/refs-check.mjs     # which words of a proof line are constraint refs (modes/refs.js)
 node web/test/teach-check.mjs    # plain-English explanations: sample lines, and a sweep of veripb's correct instances
 CHROME=<chrome> [PLAYWRIGHT_CORE=<dir>] node web/test/browser-smoke.mjs [url]   # the page in a browser
@@ -484,12 +538,14 @@ exists.
 
 `browser-smoke.mjs` needs the `playwright-core` npm package and a Chrome or
 `chrome-headless-shell` executable, and a running `scripts/serve.py`
-(default URL `http://127.0.0.1:8000/`). It drives enhanced mode: dropped files,
+(default URL `http://127.0.0.1:8000/`). It drives the Verify tab: dropped files,
 a verify run, example files and double-click `:load`, the
 pane titles and statuses, the database filter, breakpoints, a splitter drag
 remembered across a reload, Tab completion, `:theme`, the transcript, and the Extras
 tab (objective bounds, `:check` verdict), the Preserved tab, the pane filters,
-and the size limits on added files.
+and the size limits on added files; then the Solver tab: an example solved,
+the result filter, Verify into the REPL and `:check`, the model kept across
+tabs, Verify going stale after an edit, and a broken model's error.
 
 `compare.sh` builds native veripb and veripb-repl from the unpatched
 submodules. It removes prompts, "Working…" lines and temp-file names from

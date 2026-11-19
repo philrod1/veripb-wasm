@@ -79,6 +79,7 @@ run node "$root/web/test/state-check.mjs"
 run node "$root/web/test/teach-check.mjs"
 run node "$root/web/test/refs-check.mjs"
 run node "$root/web/test/host-check.mjs"
+run node "$root/web/test/solver-check.mjs"
 if [ -z "${SKIP_PARITY:-}" ]; then
     run "$root/web/test/compare.sh"
 else

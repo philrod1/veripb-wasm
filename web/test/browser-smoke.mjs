@@ -57,7 +57,7 @@ async function dropFiles(files) {
 const demo = (name) => [name, readFileSync(join(web, "pkg/demos", name), "utf8")];
 
 // ---- Enhanced ----
-await page.goto(`${base}?mode=enhanced`);
+await page.goto(`${base}?mode=verify`);
 check("enhanced: REPL starts", await ready());
 await dropFiles([demo("two-of-three.opb"), demo("two-of-three.pbp")]);
 check("enhanced: dropped files listed", await until(async () => (await fileNames()).includes("two-of-three.pbp")));
@@ -592,6 +592,47 @@ await page.locator(".restart-offer .restart").last().click();
 check("crash: Restart brings the prompt back", await ready());
 await command(":instance two-of-three");
 check("crash: and a new session loads", await until(async () => (await page.textContent(".pane-proof .pane-title-text")).startsWith("Proof (4)")));
+
+// ---- Solver tab ----
+const tab = (label) => page.locator("#tabs button", { hasText: label });
+await tab("Solver").click();
+check("solver: tab shown, Verify hidden", await page.isVisible(".solver-editor") && !(await page.isVisible(".pane-proof")));
+await page.selectOption(".solver-examples", "nqueens_8.scp");
+check("solver: example opened", await until(async () => (await page.textContent(".solver-name")) === "nqueens_8.scp"),
+  await page.textContent(".solver-name"));
+check("solver: example added to the files", await until(async () => (await fileNames()).includes("nqueens_8.scp")));
+check("solver: Verify disabled before a solve", await page.isDisabled(".solver-actions button:has-text('Verify')"));
+await page.click(".solver-actions button:has-text('Solve')");
+const resultTitle = () => page.textContent(".pane-result .pane-title-text");
+check("solver: 92 solutions", await until(async () => (await resultTitle()).startsWith("Result: 92 solutions")), await resultTitle());
+check("solver: solutions listed", (await page.$$(".solver-output .row.line")).length > 10);
+check("solver: OPB and proof added to the files", await until(async () => { const names = await fileNames(); return names.includes("nqueens_8.opb") && names.includes("nqueens_8.pbp"); }));
+await page.fill(".pane-result .pane-filter", "q0=0 ");
+await sleep(100);
+const filteredSolutions = await page.$$eval(".solver-output .row.line", (r) => r.map((x) => x.textContent));
+check("solver: result filter", filteredSolutions.length === 4 && filteredSolutions.every((t) => t.includes("q0=0 ")), filteredSolutions.length);
+await page.fill(".pane-result .pane-filter", "");
+await page.click(".solver-actions button:has-text('Verify')");
+check("solver: Verify shows the Verify tab", await until(async () => page.isVisible(".pane-proof")));
+await ready();
+check("solver: Verify loads the formula", await until(async () => (await title("formula")).startsWith("Formula: nqueens_8.opb")), await title("formula"));
+await command(":verify");
+check("solver: :verify checks every line", (await page.textContent(".plain-out")).includes("Verified 17695 line(s)."));
+await command(":check");
+// cp-solver's nqueens proof has unchecked assertions, hence UNDER ASSERTIONS.
+check("solver: the proof checks", await until(async () => /s (VERIFIED|UNDER ASSERTIONS) COMPLETE ENUMERATION OF 92 SOLUTIONS/.test(await page.textContent(".plain-out"))));
+await tab("Solver").click();
+check("solver: the model is kept across tabs", (await page.inputValue(".solver-editor")).includes("all_different"));
+await page.focus(".solver-editor");
+await page.keyboard.press("End");
+await page.keyboard.type(" ");
+check("solver: an edit marks the model changed", (await page.textContent(".solver-name")) === "nqueens_8.scp •");
+check("solver: an edit makes Verify stale", await page.isDisabled(".solver-actions button:has-text('Verify')"));
+await page.fill(".solver-editor", "( (version 1) (variables (x 0 1))");
+await page.keyboard.press("Control+Enter");
+check("solver: a broken model shows cps's error", await until(async () => (await page.textContent(".solver-errors")).includes("cps: /nqueens_8.scp: ")),
+  await page.textContent(".solver-errors"));
+check("solver: and its result is an error", (await resultTitle()).startsWith("Result: error"), await resultTitle());
 
 check("no page errors", errors.length === 0, errors.join(" | "));
 await browser.close();
