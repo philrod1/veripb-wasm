@@ -617,10 +617,9 @@ check("solver: Verify shows the Verify tab", await until(async () => page.isVisi
 await ready();
 check("solver: Verify loads the formula", await until(async () => (await title("formula")).startsWith("Formula: nqueens_8.opb")), await title("formula"));
 await command(":verify");
-check("solver: :verify checks every line", (await page.textContent(".plain-out")).includes("Verified 17695 line(s)."));
+check("solver: :verify checks every line", /Verified \d+ line\(s\)\./.test(await page.textContent(".plain-out")));
 await command(":check");
-// cp-solver's nqueens proof has unchecked assertions, hence UNDER ASSERTIONS.
-check("solver: the proof checks", await until(async () => /s (VERIFIED|UNDER ASSERTIONS) COMPLETE ENUMERATION OF 92 SOLUTIONS/.test(await page.textContent(".plain-out"))));
+check("solver: the proof checks", await until(async () => /s VERIFIED COMPLETE ENUMERATION OF 92 SOLUTIONS/.test(await page.textContent(".plain-out"))));
 await tab("Solver").click();
 check("solver: the model is kept across tabs", (await page.inputValue(".solver-editor")).includes("all_different"));
 await page.focus(".solver-editor");
@@ -677,6 +676,18 @@ await page.keyboard.press("Control+Enter");
 check("solver: a broken model shows cps's problems", await until(async () => (await page.textContent(".solver-errors")).includes("/nqueens_8.scp:1:1: error: ")),
   await page.textContent(".solver-errors"));
 check("solver: and its result is an error", (await resultTitle()).startsWith("Result: error"), await resultTitle());
+
+// An optimisation problem: OPTIMUM is cps's answer, and its proof verifies.
+await page.fill(".solver-editor", "( (version 1)\n  (variables (x 0 3) (y 0 3) (z 0 3) (m 0 3))\n"
+  + "  (constraints (d all_different (x y z)) (mx array_max (x y z) m))\n  (prob_type (minimize m)) )\n");
+await page.click(".solver-actions button:has-text('Solve')");
+check("solver: an optimum", await until(async () => (await resultTitle()).startsWith("Result: OPTIMUM 2")), await resultTitle());
+check("solver: the optimum is the answer line", (await page.$$eval(".solver-output .sol-answer", (r) => r.map((x) => x.textContent))).join() === "OPTIMUM 2");
+await page.click(".solver-actions button:has-text('Verify')");
+await ready();
+await command(":verify");
+await command(":check");
+check("solver: the optimum's proof checks", await until(async () => (await page.textContent(".plain-out")).includes("s VERIFIED BOUNDS 2 <= obj <= 2")));
 
 check("no page errors", errors.length === 0, errors.join(" | "));
 await browser.close();

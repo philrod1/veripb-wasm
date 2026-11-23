@@ -27,7 +27,7 @@
 
 const TOKEN = /(\s+)|([()])|([^\s()]+)/g;
 const INTEGER = /^-?\d+$/;
-export const ANSWER = /^(SATISFIABLE|UNSATISFIABLE|UNKNOWN|\d+ solutions?)$/;
+export const ANSWER = /^(SATISFIABLE|UNSATISFIABLE|UNKNOWN|\d+ solutions?|OPTIMUM -?\d+)$/;
 
 const escape = (text) => text.replace(/[&<>]/g, (c) => (c === "&" ? "&amp;" : c === "<" ? "&lt;" : "&gt;"));
 
