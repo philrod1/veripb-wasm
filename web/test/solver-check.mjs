@@ -106,5 +106,17 @@ const kinds = listed.exit === 0 ? JSON.parse(listed.out.join("\n")) : [];
 check("constraints: listed", kinds.length > 0 && kinds.some((k) => k.keyword === "all_different"), kinds.map((k) => k.keyword).join(" "));
 check("constraints: each with arguments, summary and example", kinds.every((k) => Array.isArray(k.arguments) && k.summary && typeof k.example === "string"));
 
+// An optimisation problem: each better solution, then OPTIMUM and the best
+// value (the Solver tab's answer line), with a proof veripb accepts.
+const optimise = createRoot();
+writeFile(optimise, "opt.scp", "( (version 1)\n  (variables (x 0 3) (y 0 3) (z 0 3) (m 0 3))\n"
+  + "  (constraints (d all_different (x y z)) (mx array_max (x y z) m))\n  (prob_type (minimize m)) )\n");
+const optimised = run(cps, ["cps", "/opt.scp", "--proof", "/opt"], optimise);
+check("optimisation: OPTIMUM 2", optimised.exit === 0 && optimised.out.at(-1) === "OPTIMUM 2", `exit ${optimised.exit}, ${optimised.out.join(" | ")} ${optimised.err.join(" | ")}`);
+const optimumProof = run(veripb, ["veripb", "/opt.opb", "/opt.pbp"], optimise);
+const optimumStatus = optimumProof.out.find((l) => l.startsWith("s ")) ?? "";
+check("optimisation: veripb verifies the proof", optimumProof.exit === 0 && optimumStatus.startsWith("s VERIFIED"),
+  `exit ${optimumProof.exit}, ${optimumStatus || optimumProof.err.slice(-1)[0] || "no status"}`);
+
 console.log(failures ? `${failures} failed` : "all passed");
 process.exit(failures ? 1 : 0);

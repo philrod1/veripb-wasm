@@ -289,15 +289,15 @@ Solver tab:
   of its own, so the REPL stays usable meanwhile. The model's file name
   gives the stem (`untitled` until saved).
   - **Result:** what cps printed, as it prints it (in each `name=value`,
-    the name and value coloured apart): one line per solution,
-    then its answer (`SATISFIABLE`, `UNSATISFIABLE`, `N solutions`), which
+    the name and value coloured apart): one line per solution (for an
+    optimisation problem, each better one as it is found), then its answer
+    (`SATISFIABLE`, `UNSATISFIABLE`, `N solutions`, `OPTIMUM <value>`), which
     the pane title shows with the time taken. The list draws only the lines
     on screen; the filter box shows only the lines containing its text.
     Past 200,000 lines the rest are counted, not kept, and the last is
     shown.
   - **Errors:** what cps reports when it cannot solve the model (each
-    problem as `path:line:column: kind: message`, or an optimisation
-    problem) above the list, in red.
+    problem as `path:line:column: kind: message`) above the list, in red.
   - **Files:** on success, `<stem>.opb` and `<stem>.pbp` are added to the
     files panel, replacing any of the same name.
 - **Stop:** ends a solve that is still running. The lines printed so far
